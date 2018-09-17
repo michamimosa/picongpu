@@ -1,0 +1,3 @@
+[submodule "thirdParty/resource_manager"]
+	path = thirdParty/resource_manager
+	url = https://github.com/ComputationalRadiationPhysics/resource_manager.git
