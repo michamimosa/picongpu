@@ -28,6 +28,8 @@
 #include "pmacc/assert.hpp"
 #include "pmacc/types.hpp"
 
+#include <rmngr/resource/fieldresource.hpp>
+
 #include <limits>
 
 namespace pmacc
@@ -41,6 +43,7 @@ namespace pmacc
      */
     template <class TYPE, unsigned DIM>
     class Buffer
+        : public rmngr::FieldResource< DIM >
     {
     public:
 
