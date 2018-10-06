@@ -217,13 +217,13 @@ private:
          * transfer for the case the core calculation is finished earlier,    *
          * GridBuffer.asyncComm returns a transaction handle we can check     */
         auto send = read->asyncCommunication(splitEvent);
-        evo.run<CORE>( read->getDeviceBuffer().getDataBox(),
-                       write->getDeviceBuffer().getDataBox() );
+        evo.run<CORE>( read->getDeviceBuffer(),
+                       write->getDeviceBuffer() );
         /* Join communication with worker tasks, Now all next tasks run sequential */
         __setTransactionEvent(send);
         /* Calculate Borders */
-        evo.run<BORDER>( read->getDeviceBuffer().getDataBox(),
-                         write->getDeviceBuffer().getDataBox() );
+        evo.run<BORDER>( read->getDeviceBuffer(),
+                         write->getDeviceBuffer() );
         write->deviceToHost();
 
         /* gather::operator() gathers all the buffers and assembles those to  *
