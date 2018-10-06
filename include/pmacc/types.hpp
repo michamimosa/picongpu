@@ -185,6 +185,22 @@ enum EventType
 };
 
 /**
+ * Scheduler Configuration
+ */
+#include <rmngr/scheduler/scheduler_singleton.hpp>
+#include <rmngr/scheduler/resource.hpp>
+#include <rmngr/scheduler/dispatch.hpp>
+#include <rmngr/scheduler/fifo.hpp>
+
+using Scheduler = rmngr::SchedulerSingleton<
+    boost::mpl::vector<
+        rmngr::ResourceUserPolicy,
+        rmngr::DispatchPolicy< rmngr::FIFO >
+    >
+>;
+
+
+/**
  * Print a cuda error message including file/line info to stderr
  */
 #define PMACC_PRINT_CUDA_ERROR(msg) \
