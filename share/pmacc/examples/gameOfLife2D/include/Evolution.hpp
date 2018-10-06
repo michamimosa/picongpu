@@ -279,32 +279,50 @@ namespace kernel
             );
         }
 
-        template<
-            uint32_t Area,
+        template <
+            uint32_t T_Area,
             typename DBox
         >
         void run(
-            DBox const & readBox,
-            DBox const & writeBox
+            Buffer const & readBuffer,
+            Buffer const & writeBuffer
         )
         {
-            AreaMapping <
-                Area,
-                T_MappingDesc
-            > mapper( *mapping );
-            constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                math::CT::volume< typename T_MappingDesc::SuperCellSize >::type::value
-            >::value;
+            auto impl =
+                [ &mapping, &readBuffer, &writeBuffer ]()
+                {
+                    AreaMapping <
+                        T_Area,
+                        T_MappingDesc
+                    > mapper( *mapping );
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume< typename T_MappingDesc::SuperCellSize >::type::value
+                    >::value;
 
-            PMACC_KERNEL( kernel::Evolution< numWorkers >{ } )(
-                mapper.getGridDim( ),
-                numWorkers
-            )(
-                readBox,
-                writeBox,
-                rule,
-                mapper
-            );
+                    PMACC_KERNEL( kernel::Evolution< numWorkers >{ } )(
+                        mapper.getGridDim( ),
+                        numWorkers
+                    )(
+                        readBuffer.getDataBox(),
+                        writeBuffer.getDataBox(),
+                        rule,
+                        mapper
+                    );
+                };
+
+            auto prop =
+                [ &mapping, &readBuffer, &writeBuffer ]( rmngr::observer_ptr<Scheduler::Schedulable> & s )
+                {
+                    auto gridLayout = mapping->getGridLayout();
+                    auto gridAccess = gridLayout.getAccess< T_Area >();
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    {
+                       writeBuffer.write( gridAccess ),
+                       readBuffer.read( rmngr::Stencil< GridAccess >( gridAccess ) ),
+                    };
+                };
+
+            Scheduler::enqueue_functor( impl, prop );
         }
     };
 
