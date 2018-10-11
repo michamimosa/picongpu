@@ -29,6 +29,7 @@
 #include "pmacc/types.hpp"
 
 #include <rmngr/resource/fieldresource.hpp>
+#include <rmngr/resource/ioresource.hpp>
 
 #include <limits>
 
@@ -159,8 +160,17 @@ namespace pmacc
          */
         virtual size_t getCurrentSize()
         {
-            __startOperation(ITask::TASK_HOST);
-            return *current_size;
+            auto queue = Scheduler::get_current_queue();
+            auto f = queue.make_functor( Scheduler::make_proto(
+                [this](){ return *(this->current_size); }
+                [this]( Scheduler::SchedulablePtr s )
+                {
+                    s.proto_property< ResourceUserPolicy >().access_list =
+                    { this->size_resource.read() };
+                }
+            ));
+
+            return f().get();
         }
 
         /*! sets the current size (count of elements)
@@ -168,9 +178,18 @@ namespace pmacc
          */
         virtual void setCurrentSize(const size_t newsize)
         {
-            __startOperation(ITask::TASK_HOST);
-            PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
-            *current_size = newsize;
+            Scheduler::enqueue_functor(
+                [this, newsize]()
+                {
+                    PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
+                    *(this->current_size) = newsize;
+                },
+                [this]( Scheduler::SchedulablePtr s )
+                {
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    { this->size_resource.write()  };
+                }
+            );
         }
 
         virtual void reset(bool preserveData = false)=0;
@@ -199,6 +218,7 @@ namespace pmacc
         DataSpace<DIM> m_physicalMemorySize;
 
         size_t *current_size;
+        rmngr::IOResource size_resource;
 
         bool data1D;
 
