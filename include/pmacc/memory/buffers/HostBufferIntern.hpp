@@ -66,12 +66,23 @@ public:
      */
     virtual ~HostBufferIntern()
     {
-        __startOperation(ITask::TASK_HOST);
+        auto queue = Scheduler::get_current_queue();
+        auto f = queue.make_functor( Scheduler::make_proto(
+            [this]()
+            {
+                if (pointer && ownPointer)
+                {
+                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(pointer));
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
+            }
+        ));
 
-        if (pointer && ownPointer)
-        {
-            CUDA_CHECK_NO_EXCEPT(cudaFreeHost(pointer));
-        }
+        f().get();
     }
 
     /*! Get pointer of memory
@@ -79,67 +90,87 @@ public:
      */
     TYPE* getBasePointer()
     {
-        __startOperation(ITask::TASK_HOST);
         return pointer;
     }
 
     TYPE* getPointer()
     {
-        __startOperation(ITask::TASK_HOST);
         return pointer;
     }
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+
+        // TODO
         Environment<>::get().Factory().createTaskCopyDeviceToHost(other, *this);
     }
 
     void reset(bool preserveData = true)
     {
-        __startOperation(ITask::TASK_HOST);
-        this->setCurrentSize(this->getDataSpace().productOfComponents());
-        if (!preserveData)
-        {
-            /* if it is a pointer out of other memory we can not assume that
-             * that the physical memory is contiguous
-             */
-            if(ownPointer)
-                memset(pointer, 0, this->getDataSpace().productOfComponents() * sizeof (TYPE));
-            else
+        Scheduler::enqueue_functor(
+            [this, preserveData]()
             {
-                TYPE value;
-                /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
-                uint8_t* valuePtr = (uint8_t*)&value;
-                for( size_t b = 0; b < sizeof(TYPE); ++b)
+                this->setCurrentSize(this->getDataSpace().productOfComponents());
+                if (!preserveData)
                 {
-                    valuePtr[b] = static_cast<uint8_t>(0);
+                    /* if it is a pointer out of other memory we can not assume that
+                     * that the physical memory is contiguous
+                     */
+                    if(ownPointer)
+                        memset(pointer, 0, this->getDataSpace().productOfComponents() * sizeof (TYPE));
+                    else
+                    {
+                        TYPE value;
+                        /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
+                        uint8_t* valuePtr = (uint8_t*)&value;
+                        for( size_t b = 0; b < sizeof(TYPE); ++b)
+                        {
+                            valuePtr[b] = static_cast<uint8_t>(0);
+                        }
+                        /* set value with zero-ed `TYPE` */
+                        setValue(value);
+                    }
                 }
-                /* set value with zero-ed `TYPE` */
-                setValue(value);
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
             }
-        }
+        );
     }
 
     void setValue(const TYPE& value)
     {
-        __startOperation(ITask::TASK_HOST);
-        int64_t current_size = static_cast< int64_t >(this->getCurrentSize());
-        auto memBox = getDataBox();
-        typedef DataBoxDim1Access<DataBoxType > D1Box;
-        D1Box d1Box(memBox, this->getDataSpace());
-        #pragma omp parallel for
-        for (int64_t i = 0; i < current_size; i++)
-        {
-            d1Box[i] = value;
-        }
+        Scheduler::enqueue_functor(
+            [this, value]()
+            {
+                int64_t current_size = static_cast< int64_t >(this->getCurrentSize());
+                auto memBox = getDataBox();
+                typedef DataBoxDim1Access<DataBoxType > D1Box;
+                D1Box d1Box(memBox, this->getDataSpace());
+                #pragma omp parallel for
+                for (int64_t i = 0; i < current_size; i++)
+                {
+                    d1Box[i] = value;
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
+            }
+        );
     }
 
     DataBoxType getDataBox()
     {
-        __startOperation(ITask::TASK_HOST);
-        return DataBoxType(PitchedBox<TYPE, DIM > (pointer, DataSpace<DIM > (),
-                                                   this->getPhysicalMemorySize(), this->getPhysicalMemorySize()[0] * sizeof (TYPE)));
+        return DataBoxType(
+                   PitchedBox<TYPE, DIM > (pointer, DataSpace<DIM > (),
+                   this->getPhysicalMemorySize(),
+                   this->getPhysicalMemorySize()[0] * sizeof (TYPE)
+               );
     }
 
 private:
