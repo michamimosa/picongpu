@@ -83,49 +83,66 @@ public:
 
     virtual ~DeviceBufferIntern()
     {
-        __startOperation(ITask::TASK_DEVICE);
+        auto queue = Scheduler::get_current_queue();
+        auto f = queue.make_functor( Scheduler::make_proto(
+            [this]()
+            {
+                if (sizeOnDevice)
+                {
+                    CUDA_CHECK_NO_EXCEPT(cudaFree(sizeOnDevicePtr));
+                }
+                if (!useOtherMemory)
+                {
+                    CUDA_CHECK_NO_EXCEPT(cudaFree(data.ptr));
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                { this->write() };
+            }
+        ));
 
-        if (sizeOnDevice)
-        {
-            CUDA_CHECK_NO_EXCEPT(cuplaFree(sizeOnDevicePtr));
-        }
-        if (!useOtherMemory)
-        {
-            CUDA_CHECK_NO_EXCEPT(cuplaFree(data.ptr));
-
-        }
+        f().get();
     }
 
     void reset(bool preserveData = true)
     {
         this->setCurrentSize(Buffer<TYPE, DIM>::getDataSpace().productOfComponents());
 
-        __startOperation(ITask::TASK_DEVICE);
-        if (!preserveData)
-        {
-            TYPE value;
-            /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
-            uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
-            for( size_t b = 0; b < sizeof(TYPE); ++b)
+        Scheduler::enqueue_functor(
+            [this, preserverData]()
             {
-                valuePtr[b] = static_cast<uint8_t>(0);
+                if (!preserveData)
+                {
+                    TYPE value;
+                    /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
+                    uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
+                    for( size_t b = 0; b < sizeof(TYPE); ++b)
+                    {
+                        valuePtr[b] = static_cast<uint8_t>(0);
+                    }
+                    /* set value with zero-ed `TYPE` */
+                    setValue(value);
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
             }
-            /* set value with zero-ed `TYPE` */
-            setValue(value);
-        }
+        );
     }
 
     DataBoxType getDataBox()
     {
-        __startOperation(ITask::TASK_DEVICE);
-        return DataBoxType(PitchedBox<TYPE, DIM > ((TYPE*) data.ptr, offset,
-                                                   this->getPhysicalMemorySize(), data.pitch));
+        return DataBoxType(
+                   PitchedBox<TYPE, DIM >( (TYPE*) data.ptr, offset, this->getPhysicalMemorySize(), data.pitch )
+               );
     }
 
     TYPE* getPointer()
     {
-        __startOperation(ITask::TASK_DEVICE);
-
         if (DIM == DIM1)
         {
             return (TYPE*) (data.ptr) + this->offset[0];
@@ -154,7 +171,6 @@ public:
 
     size_t* getCurrentSizeOnDevicePointer()
     {
-        __startOperation(ITask::TASK_DEVICE);
         if (!sizeOnDevice)
         {
             throw std::runtime_error("Buffer has no size on device!, currentSize is only stored on host side.");
@@ -164,13 +180,11 @@ public:
 
     size_t* getCurrentSizeHostSidePointer()
     {
-        __startOperation(ITask::TASK_HOST);
         return this->current_size;
     }
 
     TYPE* getBasePointer()
     {
-        __startOperation(ITask::TASK_DEVICE);
         return (TYPE*) data.ptr;
     }
 
@@ -218,7 +232,6 @@ public:
 
     const cuplaPitchedPtr getCudaPitched() const
     {
-        __startOperation(ITask::TASK_DEVICE);
         return data;
     }
 
