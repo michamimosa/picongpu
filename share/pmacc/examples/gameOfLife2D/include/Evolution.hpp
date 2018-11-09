@@ -309,7 +309,7 @@ namespace kernel
                 };
 
             auto prop =
-                [ &mapping, &readBuffer, &writeBuffer ]( rmngr::observer_ptr<Scheduler::Schedulable> & s )
+                [ &mapping, &readBuffer, &writeBuffer ]( Scheduler::SchedulablePtr s )
                 {
                     auto gridLayout = mapping->getGridLayout();
                     auto gridAccess = gridLayout.getAccess< T_Area >();
