@@ -76,6 +76,10 @@
 #include <stdint.h>
 #include <stdexcept>
 
+#include <rmngr/scheduler/scheduler_singleton.hpp>
+#include <rmngr/scheduler/resource.hpp>
+#include <rmngr/scheduler/dispatch.hpp>
+#include <rmngr/scheduler/fifo.hpp>
 
 namespace pmacc
 {
@@ -187,11 +191,6 @@ enum EventType
 /**
  * Scheduler Configuration
  */
-#include <rmngr/scheduler/scheduler_singleton.hpp>
-#include <rmngr/scheduler/resource.hpp>
-#include <rmngr/scheduler/dispatch.hpp>
-#include <rmngr/scheduler/fifo.hpp>
-
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
         rmngr::ResourceUserPolicy,
