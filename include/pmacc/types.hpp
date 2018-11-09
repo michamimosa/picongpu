@@ -62,7 +62,6 @@
 #include <boost/mpl/placeholders.hpp>
 #include <boost/filesystem.hpp>
 
-
 namespace pmacc
 {
 
