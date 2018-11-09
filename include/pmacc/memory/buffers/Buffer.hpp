@@ -162,10 +162,10 @@ namespace pmacc
         {
             auto queue = Scheduler::get_current_queue();
             auto f = queue.make_functor( Scheduler::make_proto(
-                [this](){ return *(this->current_size); }
+                [this](){ return *(this->current_size); },
                 [this]( Scheduler::SchedulablePtr s )
                 {
-                    s.proto_property< ResourceUserPolicy >().access_list =
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.read() };
                 }
             ));
@@ -187,7 +187,7 @@ namespace pmacc
                 [this]( Scheduler::SchedulablePtr s )
                 {
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->size_resource.write()  };
+                    { this->size_resource.write() };
                 }
             );
         }

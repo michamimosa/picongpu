@@ -23,10 +23,10 @@
 #pragma once
 
 #include "pmacc/memory/buffers/HostBuffer.hpp"
-#include "pmacc/eventSystem/tasks/Factory.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/memory/boxes/DataBoxDim1Access.hpp"
 #include "pmacc/assert.hpp"
+
+#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
 
 namespace pmacc
 {
@@ -66,8 +66,7 @@ public:
      */
     virtual ~HostBufferIntern()
     {
-        auto queue = Scheduler::get_current_queue();
-        auto f = queue.make_functor( Scheduler::make_proto(
+        auto res = Scheduler::enqueue_functor(
             [this]()
             {
                 if (pointer && ownPointer)
@@ -77,12 +76,12 @@ public:
             },
             [this]( Scheduler::SchedulablePtr s )
             {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write() };
             }
-        ));
+        );
 
-        f().get();
+        res.get();
     }
 
     /*! Get pointer of memory
@@ -101,9 +100,7 @@ public:
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-
-        // TODO
-        Environment<>::get().Factory().createTaskCopyDeviceToHost(other, *this);
+        //NEW::enqueue_task< NEW::TaskCopyDeviceToHost<TYPE, DIM> >( other, *this );
     }
 
     void reset(bool preserveData = true)
@@ -135,8 +132,8 @@ public:
             },
             [this]( Scheduler::SchedulablePtr s )
             {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write(), this->size_resource.write() };
             }
         );
     }
@@ -147,9 +144,11 @@ public:
             [this, value]()
             {
                 int64_t current_size = static_cast< int64_t >(this->getCurrentSize());
-                auto memBox = getDataBox();
-                typedef DataBoxDim1Access<DataBoxType > D1Box;
-                D1Box d1Box(memBox, this->getDataSpace());
+                DataBoxDim1Access< DataBoxType > d1Box(
+                    this->getDataBox(),
+                    this->getDataSpace()
+                );
+
                 #pragma omp parallel for
                 for (int64_t i = 0; i < current_size; i++)
                 {
@@ -158,8 +157,8 @@ public:
             },
             [this]( Scheduler::SchedulablePtr s )
             {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write(), this->size_resource.read() };
             }
         );
     }
@@ -167,9 +166,12 @@ public:
     DataBoxType getDataBox()
     {
         return DataBoxType(
-                   PitchedBox<TYPE, DIM > (pointer, DataSpace<DIM > (),
-                   this->getPhysicalMemorySize(),
-                   this->getPhysicalMemorySize()[0] * sizeof (TYPE)
+                   PitchedBox<TYPE, DIM>(
+                       pointer,
+                       DataSpace<DIM>(),
+                       this->getPhysicalMemorySize(),
+                       this->getPhysicalMemorySize()[0] * sizeof (TYPE)
+                   )
                );
     }
 
@@ -178,4 +180,5 @@ private:
     bool ownPointer;
 };
 
-}
+} // namespace pmacc
+
