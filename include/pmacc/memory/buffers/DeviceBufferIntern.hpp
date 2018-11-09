@@ -23,10 +23,15 @@
 #pragma once
 
 #include "pmacc/dimensions/DataSpace.hpp"
-#include "pmacc/eventSystem/tasks/Factory.hpp"
 #include "pmacc/memory/buffers/DeviceBuffer.hpp"
 #include "pmacc/memory/boxes/DataBox.hpp"
 #include "pmacc/assert.hpp"
+
+#include <pmacc/tasks/StreamTask.hpp>
+//#include <pmacc/memory/buffers/SetValueOnDevice.hpp>
+
+//#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
+//#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
 
 namespace pmacc
 {
@@ -83,8 +88,7 @@ public:
 
     virtual ~DeviceBufferIntern()
     {
-        auto queue = Scheduler::get_current_queue();
-        auto f = queue.make_functor( Scheduler::make_proto(
+        auto res = Scheduler::enqueue_functor(
             [this]()
             {
                 if (sizeOnDevice)
@@ -98,40 +102,29 @@ public:
             },
             [this]( Scheduler::SchedulablePtr s )
             {
-                s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                s->proto_property<rmngr::ResourceUserPolicy>().access_list =
                 { this->write() };
             }
-        ));
+        );
 
-        f().get();
+        res.get();
     }
 
     void reset(bool preserveData = true)
     {
         this->setCurrentSize(Buffer<TYPE, DIM>::getDataSpace().productOfComponents());
-
-        Scheduler::enqueue_functor(
-            [this, preserverData]()
+        if (!preserveData)
+        {
+            TYPE value;
+            /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
+            uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
+            for( size_t b = 0; b < sizeof(TYPE); ++b)
             {
-                if (!preserveData)
-                {
-                    TYPE value;
-                    /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
-                    uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
-                    for( size_t b = 0; b < sizeof(TYPE); ++b)
-                    {
-                        valuePtr[b] = static_cast<uint8_t>(0);
-                    }
-                    /* set value with zero-ed `TYPE` */
-                    setValue(value);
-                }
-            },
-            [this]( Scheduler::SchedulablePtr s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                valuePtr[b] = static_cast<uint8_t>(0);
             }
-        );
+            /* set value with zero-ed `TYPE` */
+            setValue(value);
+        }
     }
 
     DataBoxType getDataBox()
@@ -195,9 +188,24 @@ public:
     {
         if (sizeOnDevice)
         {
-            __startTransaction(__getTransactionEvent());
-            Environment<>::get().Factory().createTaskGetCurrentSizeFromDevice(*this);
-            __endTransaction().waitForFinished();
+          NEW::StreamTask stream_task;
+            Scheduler::enqueue_functor(
+                [this, &stream_task]()
+                {
+                    CUDA_CHECK(cudaMemcpyAsync((void*) this->getCurrentSizeHostSidePointer(),
+                                               this->getCurrentSizeOnDevicePointer(),
+                                               sizeof (size_t),
+                                               cudaMemcpyDeviceToHost,
+                                               stream_task.getCudaStream()));
+                },
+                [this, &stream_task]( Scheduler::SchedulablePtr s )
+                {
+                    stream_task.properties( s );
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
+                        this->size_resource.write()
+                    );
+                }
+            );
         }
 
         return DeviceBuffer<TYPE, DIM>::getCurrentSize();
@@ -206,28 +214,43 @@ public:
     virtual void setCurrentSize(const size_t size)
     {
         Buffer<TYPE, DIM>::setCurrentSize(size);
-
         if (sizeOnDevice)
         {
-            Environment<>::get().Factory().createTaskSetCurrentSizeOnDevice(
-                                                                            *this, size);
+            NEW::StreamTask stream_task;
+            Scheduler::enqueue_functor(
+                [this, &stream_task, size]()
+                {
+                    CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
+                        1,
+                        1,
+                        0,
+                        stream_task.getCudaStream()
+                    )(
+                        this->getCurrentSizeOnDevicePointer(),
+                        size
+                    );
+                },
+                [this, &stream_task, size](Scheduler::SchedulablePtr s)
+                {
+                    stream_task.properties(s);
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
+                        this->size_resource.write()
+                    );
+                }
+            );
         }
     }
 
     void copyFrom(HostBuffer<TYPE, DIM>& other)
     {
-
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        Environment<>::get().Factory().createTaskCopyHostToDevice(other, *this);
-
+        //enqueue_task< TaskCopyHostToDevice<TYPE, DIM> >( other, *this );
     }
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
-
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        Environment<>::get().Factory().createTaskCopyDeviceToDevice(other, *this);
-
+        //enqueue_task< TaskCopyDeviceToDevice<TYPE, DIM> >( other, *this )
     }
 
     const cudaPitchedPtr getCudaPitched() const
@@ -242,7 +265,7 @@ public:
 
     virtual void setValue(const TYPE& value)
     {
-        Environment<>::get().Factory().createTaskSetValue(*this, value);
+      //enqueue_task< TaskSetValue<> >this, value);
     };
 
 private:
@@ -251,35 +274,42 @@ private:
      */
     void createData()
     {
-        __startOperation(ITask::TASK_CUDA);
-        data.ptr = nullptr;
-        data.pitch = 1;
-        data.xsize = this->getDataSpace()[0] * sizeof (TYPE);
-        data.ysize = 1;
+        Scheduler::enqueue_functor(
+            [this]()
+            {
+                data.ptr = nullptr;
+                data.pitch = 1;
+                data.xsize = this->getDataSpace()[0] * sizeof (TYPE);
+                data.ysize = 1;
 
-        if (DIM == DIM1)
-        {
-            log<ggLog::MEMORY >("Create device 1D data: %1% MiB") % (data.xsize / 1024 / 1024);
-            CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, 1));
-        }
-        if (DIM == DIM2)
-        {
-            data.ysize = this->getDataSpace()[1];
-            log<ggLog::MEMORY >("Create device 2D data: %1% MiB") % (data.xsize * data.ysize / 1024 / 1024);
-            CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, data.ysize));
+                if (DIM == DIM1)
+                {
+                    log<ggLog::MEMORY >("Create device 1D data: %1% MiB") % (data.xsize / 1024 / 1024);
+                    CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, 1));
+                }
+                if (DIM == DIM2)
+                {
+                    data.ysize = this->getDataSpace()[1];
+                    log<ggLog::MEMORY >("Create device 2D data: %1% MiB") % (data.xsize * data.ysize / 1024 / 1024);
+                    CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, data.ysize));
+                }
+                if (DIM == DIM3)
+                {
+                    cudaExtent extent;
+                    extent.width = this->getDataSpace()[0] * sizeof (TYPE);
+                    extent.height = this->getDataSpace()[1];
+                    extent.depth = this->getDataSpace()[2];
 
-        }
-        if (DIM == DIM3)
-        {
-            cudaExtent extent;
-            extent.width = this->getDataSpace()[0] * sizeof (TYPE);
-            extent.height = this->getDataSpace()[1];
-            extent.depth = this->getDataSpace()[2];
-
-            log<ggLog::MEMORY >("Create device 3D data: %1% MiB") % (this->getDataSpace().productOfComponents() * sizeof (TYPE) / 1024 / 1024);
-            CUDA_CHECK(cudaMalloc3D(&data, extent));
-        }
-
+                    log<ggLog::MEMORY >("Create device 3D data: %1% MiB") % (this->getDataSpace().productOfComponents() * sizeof (TYPE) / 1024 / 1024);
+                    CUDA_CHECK(cudaMalloc3D(&data, extent));
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
+            }
+        );
         reset(false);
     }
 
@@ -287,35 +317,54 @@ private:
      */
     void createFakeData()
     {
-        __startOperation(ITask::TASK_CUDA);
-        data.ptr = nullptr;
-        data.pitch = 1;
-        data.xsize = this->getDataSpace()[0] * sizeof (TYPE);
-        data.ysize = 1;
+        Scheduler::enqueue_functor(
+            [this]()
+            {
+                data.ptr = nullptr;
+                data.pitch = 1;
+                data.xsize = this->getDataSpace()[0] * sizeof (TYPE);
+                data.ysize = 1;
 
-        log<ggLog::MEMORY >("Create device fake data: %1% MiB") % (this->getDataSpace().productOfComponents() * sizeof (TYPE) / 1024 / 1024);
-        CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, this->getDataSpace().productOfComponents() * sizeof (TYPE), 1));
+                log<ggLog::MEMORY >("Create device fake data: %1% MiB") % (this->getDataSpace().productOfComponents() * sizeof (TYPE) / 1024 / 1024);
+                CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, this->getDataSpace().productOfComponents() * sizeof (TYPE), 1));
 
-        //fake the pitch, thus we can use this 1D Buffer as 2D or 3D
-        data.pitch = this->getDataSpace()[0] * sizeof (TYPE);
+                //fake the pitch, thus we can use this 1D Buffer as 2D or 3D
+                data.pitch = this->getDataSpace()[0] * sizeof (TYPE);
 
-        if (DIM > DIM1)
-        {
-            data.ysize = this->getDataSpace()[1];
-        }
+                if (DIM > DIM1)
+                {
+                    data.ysize = this->getDataSpace()[1];
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
+            }
+        );
 
         reset(false);
     }
 
     void createSizeOnDevice(bool sizeOnDevice)
     {
-        __startOperation(ITask::TASK_HOST);
-        sizeOnDevicePtr = nullptr;
+        Scheduler::enqueue_functor(
+            [this, sizeOnDevice]()
+            {
+                this->sizeOnDevicePtr = nullptr;
 
-        if (sizeOnDevice)
-        {
-            CUDA_CHECK(cudaMalloc((void**)&sizeOnDevicePtr, sizeof (size_t)));
-        }
+                if (sizeOnDevice)
+                {
+                    CUDA_CHECK(cudaMalloc((void**)&this->sizeOnDevicePtr, sizeof (size_t)));
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->size_resource.write() };
+            }
+        );
+
         setCurrentSize(this->getDataSpace().productOfComponents());
     }
 
