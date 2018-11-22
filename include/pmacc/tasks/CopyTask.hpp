@@ -1,4 +1,6 @@
 
+
+
 #pragma once
 
 #include <pmacc/tasks/Task.hpp>
@@ -16,26 +18,18 @@ class CopyTask
     : public virtual Task
 {
 public:
-    CopyTask(
-        Src & src_,
-        Dst & dst_
-    )
-      : src(src_)
-      , dst(dst_)
-    {}
-
     virtual ~CopyTask() {}
 
     virtual void properties( Scheduler::SchedulablePtr s )
     {
         auto & access = s->proto_property< rmngr::ResourceUserPolicy >().access_list;
-        access.push_back( src.read() );
-        access.push_back( dst.write() );
+        access.push_back( src->read() );
+        access.push_back( dst->write() );
     }
 
 protected:
-    Src & src;
-    Dst & dst;
+    Src * src;
+    Dst * dst;
 };
 
   }
