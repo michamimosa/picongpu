@@ -26,6 +26,7 @@
 #include <pmacc/types.hpp>
 #include <pmacc/tasks/StreamTask.hpp>
 #include <pmacc/tasks/CopyTask.hpp>
+#include <rmngr/task.hpp>
 
 namespace pmacc
 {
@@ -36,36 +37,41 @@ class HostBuffer;
 template < typename T, size_t T_Dim >
 class DeviceBuffer;
 
-template < typename T, size_t T_Dim >
+template <
+    typename Impl,
+    typename T,
+    size_t T_Dim
+>
 class TaskCopyDeviceToHostBase
-    : public StreamTask
-    , public CopyTask<
-          DeviceBuffer<T, T_Dim>,
-          HostBuffer<T, T_Dim>
+    : public rmngr::Task<
+          Impl,
+          boost::mpl::vector<
+              NEW::StreamTask,
+              NEW::CopyTask<
+                  DeviceBuffer<T, T_Dim>,
+                  HostBuffer<T, T_Dim>
+              >
+          >
       >
 {
 public:
     TaskCopyDeviceToHostBase(
         DeviceBuffer<T, T_Dim> & src,
-        HostBuffer<T, T_Dim>& dst
+        HostBuffer<T, T_Dim> & dst
     )
-      : CopyTask< DeviceBuffer<T, T_Dim>, HostBuffer<T, T_Dim> >( src, dst )
-    {}
-
-    virtual void properties( Scheduler::SchedulablePtr s )
     {
-        StreamTask::properties( s );
-        CopyTask<DeviceBuffer<T, T_Dim>, HostBuffer<T, T_Dim>>::properties( s );
+        this->src = &src;
+        this->dst = &dst;
     }
 
     virtual void run()
     {
-        size_t current_size = this->src.getCurrentSize();
-        this->dst.setCurrentSize(current_size);
-        DataSpace<T_Dim> devCurrentSize = this->src.getCurrentDataSpace(current_size);
+        size_t current_size = this->src->getCurrentSize();
+        this->dst->setCurrentSize(current_size);
+        DataSpace<T_Dim> devCurrentSize = this->src->getCurrentDataSpace(current_size);
 
-        if (this->src.is1D() && this->dst.is1D())
-            fastCopy(this->src.getPointer(), this->dst.getPointer(), devCurrentSize.productOfComponents());
+        if (this->src->is1D() && this->dst->is1D())
+            fastCopy(this->src->getPointer(), this->dst->getPointer(), devCurrentSize.productOfComponents());
         else
             copy(devCurrentSize);
     }
@@ -87,8 +93,12 @@ template < typename T, unsigned T_Dim>
 class TaskCopyDeviceToHost;
 
 template < typename T >
-class TaskCopyDeviceToHost<T, DIM1>
-    : public TaskCopyDeviceToHostBase<T, DIM1>
+class TaskCopyDeviceToHost< T, DIM1 >
+    : public TaskCopyDeviceToHostBase<
+          TaskCopyDeviceToHost< T, DIM1 >,
+          T,
+          DIM1
+      >
 {
 public:
     TaskCopyDeviceToHost( DeviceBuffer<T, DIM1>& src, HostBuffer<T, DIM1>& dst)
@@ -98,8 +108,8 @@ public:
 private:
     virtual void copy(DataSpace<DIM1> & devCurrentSize)
     {
-        CUDA_CHECK(cudaMemcpyAsync(this->dst.getBasePointer(),
-                                   this->src.getPointer(),
+        CUDA_CHECK(cudaMemcpyAsync(this->dst->getBasePointer(),
+                                   this->src->getPointer(),
                                    devCurrentSize[0] * sizeof (T),
                                    cudaMemcpyDeviceToHost,
                                    this->getCudaStream()));
@@ -107,8 +117,12 @@ private:
 };
 
 template < typename T >
-class TaskCopyDeviceToHost<T, DIM2>
-    : public TaskCopyDeviceToHostBase<T, DIM2>
+class TaskCopyDeviceToHost< T, DIM2 >
+    : public TaskCopyDeviceToHostBase<
+          TaskCopyDeviceToHost< T, DIM2 >,
+          T,
+          DIM2
+      >
 {
 public:
     TaskCopyDeviceToHost(DeviceBuffer<T, DIM2> & src, HostBuffer<T, DIM2> & dst)
@@ -118,10 +132,10 @@ public:
 private:
     virtual void copy(DataSpace<DIM2> &devCurrentSize)
     {
-        CUDA_CHECK(cudaMemcpy2DAsync(this->dst.getBasePointer(),
-                                     this->dst.getDataSpace()[0] * sizeof (T), /*this is pitch*/
-                                     this->src.getPointer(),
-                                     this->src.getPitch(), /*this is pitch*/
+        CUDA_CHECK(cudaMemcpy2DAsync(this->dst->getBasePointer(),
+                                     this->dst->getDataSpace()[0] * sizeof (T), /*this is pitch*/
+                                     this->src->getPointer(),
+                                     this->src->getPitch(), /*this is pitch*/
                                      devCurrentSize[0] * sizeof (T),
                                      devCurrentSize[1],
                                      cudaMemcpyDeviceToHost,
@@ -130,8 +144,12 @@ private:
 };
 
 template <class TYPE>
-class TaskCopyDeviceToHost<TYPE, DIM3>
-    : public TaskCopyDeviceToHostBase<TYPE, DIM3>
+class TaskCopyDeviceToHost< TYPE, DIM3 >
+    : public TaskCopyDeviceToHostBase<
+          TaskCopyDeviceToHost< TYPE, DIM3 >,
+          TYPE,
+          DIM3
+      >
 {
 public:
     TaskCopyDeviceToHost( DeviceBuffer<TYPE, DIM3>& src, HostBuffer<TYPE, DIM3>& dst )
@@ -142,17 +160,17 @@ private:
     virtual void copy(DataSpace<DIM3> &devCurrentSize)
     {
         cudaPitchedPtr hostPtr;
-        hostPtr.pitch = this->dst.getDataSpace()[0] * sizeof (TYPE);
-        hostPtr.ptr = this->dst.getBasePointer();
-        hostPtr.xsize = this->dst.getDataSpace()[0] * sizeof (TYPE);
-        hostPtr.ysize = this->dst.getDataSpace()[1];
+        hostPtr.pitch = this->dst->getDataSpace()[0] * sizeof (TYPE);
+        hostPtr.ptr = this->dst->getBasePointer();
+        hostPtr.xsize = this->dst->getDataSpace()[0] * sizeof (TYPE);
+        hostPtr.ysize = this->dst->getDataSpace()[1];
 
         cudaMemcpy3DParms params;
         params.srcArray = nullptr;
-        params.srcPos = make_cudaPos(this->src.getOffset()[0] * sizeof (TYPE),
-                                     this->src.getOffset()[1],
-                                     this->src.getOffset()[2]);
-        params.srcPtr = this->src.getCudaPitched();
+        params.srcPos = make_cudaPos(this->src->getOffset()[0] * sizeof (TYPE),
+                                     this->src->getOffset()[1],
+                                     this->src->getOffset()[2]);
+        params.srcPtr = this->src->getCudaPitched();
 
         params.dstArray = nullptr;
         params.dstPos = make_cudaPos(0, 0, 0);
