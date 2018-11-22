@@ -104,6 +104,7 @@ public:
             {
                 s->proto_property<rmngr::ResourceUserPolicy>().access_list =
                 { this->write() };
+                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
             }
         );
 
@@ -204,6 +205,7 @@ public:
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
                         this->size_resource.write()
                     );
+                    s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::getCurrentSize()";
                 }
             );
         }
@@ -236,6 +238,7 @@ public:
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
                         this->size_resource.write()
                     );
+                    s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::setCurrentSize()";
                 }
             );
         }
@@ -308,6 +311,7 @@ private:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write() };
+                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createData()";
             }
         );
         reset(false);
@@ -340,6 +344,7 @@ private:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write() };
+                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createFakeData()";
             }
         );
 
@@ -362,6 +367,7 @@ private:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->size_resource.write() };
+                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createSizeOnDevice()";
             }
         );
 

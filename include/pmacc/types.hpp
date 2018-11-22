@@ -80,6 +80,7 @@
 #include <rmngr/scheduler/resource.hpp>
 #include <rmngr/scheduler/dispatch.hpp>
 #include <rmngr/scheduler/fifo.hpp>
+#include <rmngr/scheduler/graphviz.hpp>
 
 namespace pmacc
 {
@@ -191,10 +192,12 @@ enum EventType
 /**
  * Scheduler Configuration
  */
+using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy<rmngr::FIFO>::RuntimeProperty >;
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
         rmngr::ResourceUserPolicy,
-        rmngr::DispatchPolicy< rmngr::FIFO >
+        GraphvizPolicy,
+        rmngr::DispatchPolicy<rmngr::FIFO>
     >
 >;
 
