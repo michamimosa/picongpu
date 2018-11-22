@@ -1,14 +1,11 @@
 
 #pragma once
 
-#include <pmacc/tasks/Task.hpp>
-
 namespace pmacc
 {
   namespace NEW{
 
 class StreamTask
-    : public virtual Task
 {
 public:
     virtual ~StreamTask() {};

@@ -91,7 +91,6 @@ namespace detail
          */
         virtual size_t* getCurrentSizePointer()
         {
-            __startOperation(ITask::TASK_HOST);
             return this->current_size;
         }
 

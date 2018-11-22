@@ -50,6 +50,7 @@
 #include "pmacc/type/Area.hpp"
 #include "pmacc/type/Integral.hpp"
 #include "pmacc/type/Exchange.hpp"
+#include "pmacc/type/Scheduler.hpp"
 #include "pmacc/attribute/FunctionSpecifier.hpp"
 #include "pmacc/attribute/Constexpr.hpp"
 #include "pmacc/attribute/Fallthrough.hpp"
