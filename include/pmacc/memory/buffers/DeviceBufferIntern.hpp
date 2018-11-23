@@ -103,7 +103,7 @@ public:
             [this]( Scheduler::SchedulablePtr s )
             {
                 s->proto_property<rmngr::ResourceUserPolicy>().access_list =
-                { this->write() };
+                { this->size_resource.write(), this->write() };
                 s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
             }
         );
