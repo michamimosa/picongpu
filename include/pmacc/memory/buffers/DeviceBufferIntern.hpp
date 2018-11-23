@@ -113,19 +113,34 @@ public:
 
     void reset(bool preserveData = true)
     {
-        this->setCurrentSize(Buffer<TYPE, DIM>::getDataSpace().productOfComponents());
-        if (!preserveData)
-        {
-            TYPE value;
-            /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
-            uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
-            for( size_t b = 0; b < sizeof(TYPE); ++b)
+        Scheduler::enqueue_functor(
+            [this, preserveData]()
             {
-                valuePtr[b] = static_cast<uint8_t>(0);
+                this->setCurrentSize(Buffer<TYPE, DIM>::getDataSpace().productOfComponents());
+                if (!preserveData)
+                {
+                    TYPE value;
+                    /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
+                    uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
+                    for( size_t b = 0; b < sizeof(TYPE); ++b)
+                    {
+                        valuePtr[b] = static_cast<uint8_t>(0);
+                    }
+                    /* set value with zero-ed `TYPE` */
+                    setValue(value);
+                }
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write(), this->size_resource.write() };
+
+                NEW::StreamTask streamtask;
+                streamtask.properties( s );
+
+                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::reset()";
             }
-            /* set value with zero-ed `TYPE` */
-            setValue(value);
-        }
+        );
     }
 
     DataBoxType getDataBox()
@@ -189,9 +204,9 @@ public:
     {
         if (sizeOnDevice)
         {
-          NEW::StreamTask stream_task;
+            NEW::StreamTask stream_task;
             Scheduler::enqueue_functor(
-                [this, &stream_task]()
+                [this, stream_task]()
                 {
                     CUDA_CHECK(cudaMemcpyAsync((void*) this->getCurrentSizeHostSidePointer(),
                                                this->getCurrentSizeOnDevicePointer(),
@@ -199,7 +214,7 @@ public:
                                                cudaMemcpyDeviceToHost,
                                                stream_task.getCudaStream()));
                 },
-                [this, &stream_task]( Scheduler::SchedulablePtr s )
+                [this, stream_task]( Scheduler::SchedulablePtr s )
                 {
                     stream_task.properties( s );
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
@@ -220,7 +235,7 @@ public:
         {
             NEW::StreamTask stream_task;
             Scheduler::enqueue_functor(
-                [this, &stream_task, size]()
+                [this, stream_task, size]()
                 {
                     CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
                         1,
@@ -232,9 +247,9 @@ public:
                         size
                     );
                 },
-                [this, &stream_task, size](Scheduler::SchedulablePtr s)
+                [this, stream_task, size](Scheduler::SchedulablePtr s)
                 {
-                    stream_task.properties(s);
+                    stream_task.properties( s );
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
                         this->size_resource.write()
                     );
@@ -310,7 +325,7 @@ private:
             [this]( Scheduler::SchedulablePtr s )
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                  { this->write(), this->size_resource.read() };
                 s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createData()";
             }
         );
@@ -343,7 +358,7 @@ private:
             [this]( Scheduler::SchedulablePtr s )
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                { this->write(), this->size_resource.read() };
                 s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createFakeData()";
             }
         );
@@ -367,6 +382,7 @@ private:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->size_resource.write() };
+
                 s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createSizeOnDevice()";
             }
         );

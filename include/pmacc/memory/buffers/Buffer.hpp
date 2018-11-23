@@ -47,7 +47,6 @@ namespace pmacc
         : public rmngr::FieldResource< DIM >
     {
     public:
-
         typedef DataBox<PitchedBox<TYPE, DIM> > DataBoxType;
 
         /** constructor
@@ -186,8 +185,7 @@ namespace pmacc
          */
         virtual size_t getCurrentSize()
         {
-            auto queue = Scheduler::get_current_queue();
-            auto f = queue.make_functor( Scheduler::make_proto(
+            auto res = Scheduler::enqueue_functor(
                 [this](){ return *(this->current_size); },
                 [this]( Scheduler::SchedulablePtr s )
                 {
@@ -196,9 +194,9 @@ namespace pmacc
 
                     s->proto_property< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
                 }
-            ));
+            );
 
-            return f().get();
+            return res.get();
         }
 
         /*! sets the current size (count of elements)
@@ -233,6 +231,8 @@ namespace pmacc
             return data1D;
         }
 
+      rmngr::IOResource size_resource;
+
     protected:
 
         /*! Check if my DataSpace is greater than other.
@@ -248,7 +248,6 @@ namespace pmacc
         DataSpace<DIM> m_physicalMemorySize;
 
         size_t *current_size;
-        rmngr::IOResource size_resource;
 
         bool data1D;
 
