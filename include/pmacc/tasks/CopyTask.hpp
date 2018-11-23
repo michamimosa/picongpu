@@ -1,9 +1,7 @@
 
-
-
 #pragma once
 
-#include <pmacc/tasks/Task.hpp>
+#include <pmacc/types.hpp>
 
 namespace pmacc
 {
@@ -15,16 +13,16 @@ template <
     typename Dst
 >
 class CopyTask
-    : public virtual Task
 {
 public:
-    virtual ~CopyTask() {}
-
-    virtual void properties( Scheduler::SchedulablePtr s )
+    void properties( Scheduler::SchedulablePtr s )
     {
         auto & access = s->proto_property< rmngr::ResourceUserPolicy >().access_list;
         access.push_back( src->read() );
+        access.push_back( src->size_resource.write() );
+
         access.push_back( dst->write() );
+        access.push_back( dst->size_resource.write() );
     }
 
 protected:

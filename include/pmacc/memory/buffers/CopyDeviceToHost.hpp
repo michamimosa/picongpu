@@ -30,12 +30,23 @@
 
 namespace pmacc
 {
-  namespace NEW{
-template < typename T, size_t T_Dim >
+
+template < typename T, unsigned T_Dim >
 class HostBuffer;
 
-template < typename T, size_t T_Dim >
+template < typename T, unsigned T_Dim >
 class DeviceBuffer;
+
+namespace NEW
+{
+
+  struct LabelDeviceToHost
+  {
+    void properties(Scheduler::SchedulablePtr s)
+    {
+      s->proto_property< GraphvizPolicy >().label = "CopyDeviceToHost()";
+    }
+  };
 
 template <
     typename Impl,
@@ -46,11 +57,12 @@ class TaskCopyDeviceToHostBase
     : public rmngr::Task<
           Impl,
           boost::mpl::vector<
-              NEW::StreamTask,
-              NEW::CopyTask<
+              StreamTask,
+              CopyTask<
                   DeviceBuffer<T, T_Dim>,
                   HostBuffer<T, T_Dim>
-              >
+              >,
+              LabelDeviceToHost
           >
       >
 {
@@ -64,9 +76,10 @@ public:
         this->dst = &dst;
     }
 
-    virtual void run()
+    void run()
     {
         size_t current_size = this->src->getCurrentSize();
+
         this->dst->setCurrentSize(current_size);
         DataSpace<T_Dim> devCurrentSize = this->src->getCurrentDataSpace(current_size);
 
@@ -102,7 +115,7 @@ class TaskCopyDeviceToHost< T, DIM1 >
 {
 public:
     TaskCopyDeviceToHost( DeviceBuffer<T, DIM1>& src, HostBuffer<T, DIM1>& dst)
-        : TaskCopyDeviceToHostBase<T, DIM1>(src, dst)
+      : TaskCopyDeviceToHostBase<TaskCopyDeviceToHost<T, DIM1>, T, DIM1>(src, dst)
     {}
 
 private:
@@ -126,7 +139,7 @@ class TaskCopyDeviceToHost< T, DIM2 >
 {
 public:
     TaskCopyDeviceToHost(DeviceBuffer<T, DIM2> & src, HostBuffer<T, DIM2> & dst)
-        : TaskCopyDeviceToHostBase<T, DIM2>(src, dst)
+      : TaskCopyDeviceToHostBase<TaskCopyDeviceToHost<T, DIM2>, T, DIM2>(src, dst)
     {}
 
 private:
@@ -153,7 +166,8 @@ class TaskCopyDeviceToHost< TYPE, DIM3 >
 {
 public:
     TaskCopyDeviceToHost( DeviceBuffer<TYPE, DIM3>& src, HostBuffer<TYPE, DIM3>& dst )
-        : TaskCopyDeviceToHostBase<TYPE, DIM3>(src, dst)
+      : TaskCopyDeviceToHostBase<TaskCopyDeviceToHost<TYPE, DIM3
+                                                      >, TYPE, DIM3>(src, dst)
     {}
 
 private:
@@ -185,6 +199,7 @@ private:
         CUDA_CHECK(cudaMemcpy3DAsync(&params, this->getCudaStream()))
     }
 };
+
   }
 } //namespace pmacc
 

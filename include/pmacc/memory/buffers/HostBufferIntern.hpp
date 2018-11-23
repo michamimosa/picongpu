@@ -26,7 +26,7 @@
 #include "pmacc/memory/boxes/DataBoxDim1Access.hpp"
 #include "pmacc/assert.hpp"
 
-//#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
+#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
 
 namespace pmacc
 {
@@ -113,8 +113,22 @@ public:
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
-        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        //NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
+      /*
+        Scheduler::enqueue_functor(
+            [this, &other]()
+            {
+                PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+            },
+            [this, &other](Scheduler::SchedulablePtr s)
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { other.size_resource.read() };
+
+                s->proto_property< GraphvizPolicy >().label = "HostBuffer::copyFrom()";
+            }
+        );
+*/
+        NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
     }
 
     void reset(bool preserveData = true)
