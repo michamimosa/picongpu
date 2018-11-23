@@ -60,16 +60,42 @@ namespace pmacc
         Buffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize) :
         data_space(size), data1D(true), current_size(nullptr), m_physicalMemorySize(physicalMemorySize)
         {
-            CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof (size_t)));
-            *current_size = size.productOfComponents();
+            Scheduler::enqueue_functor(
+                [this, size]()
+                {
+                    CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof (size_t)));
+                    *current_size = size.productOfComponents();
+                },
+                [this]( Scheduler::SchedulablePtr s )
+                {
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    { this->size_resource.write() };
+
+                    s->proto_property< GraphvizPolicy >().label = "Buffer::Buffer()";
+                }
+            );
         }
 
         /**
          * destructor
          */
-        virtual ~Buffer()
+        ~Buffer()
         {
-            CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
+            auto res = Scheduler::enqueue_functor(
+                [this]()
+                {
+                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
+                },
+                [this]( Scheduler::SchedulablePtr s )
+                {
+                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    { this->size_resource.write() };
+
+                    s->proto_property< GraphvizPolicy >().label = "Buffer::~Buffer()";
+                }
+            );
+
+            res.get();
         }
 
         /*! Get base pointer to memory
@@ -167,6 +193,8 @@ namespace pmacc
                 {
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.read() };
+
+                    s->proto_property< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
                 }
             ));
 
@@ -188,6 +216,8 @@ namespace pmacc
                 {
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.write() };
+
+                    s->proto_property< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
                 }
             );
         }

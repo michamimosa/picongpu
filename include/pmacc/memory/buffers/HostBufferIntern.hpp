@@ -49,7 +49,19 @@ public:
     HostBuffer<TYPE, DIM>(size, size),
     pointer(nullptr),ownPointer(true)
     {
-        CUDA_CHECK(cudaMallocHost((void**)&pointer, size.productOfComponents() * sizeof (TYPE)));
+        Scheduler::enqueue_functor(
+            [this, size]()
+            {
+                CUDA_CHECK(cudaMallocHost((void**)&pointer, size.productOfComponents() * sizeof (TYPE)));
+            },
+            [this]( Scheduler::SchedulablePtr s )
+            {
+                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                { this->write() };
+
+                s->proto_property< GraphvizPolicy >().label = "HostBuffer::HostBuffer()";
+            }
+        );
         reset(false);
     }
 
@@ -78,6 +90,8 @@ public:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write() };
+
+                s->proto_property< GraphvizPolicy >().label = "HostBuffer::~HostBuffer()";
             }
         );
 
@@ -134,6 +148,8 @@ public:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.write() };
+
+                s->proto_property< GraphvizPolicy >().label = "HostBuffer::reset()";
             }
         );
     }
@@ -159,6 +175,8 @@ public:
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.read() };
+
+                s->proto_property< GraphvizPolicy >().label = "HostBuffer::setValue()";
             }
         );
     }

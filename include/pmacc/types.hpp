@@ -195,9 +195,9 @@ enum EventType
 using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy<rmngr::FIFO>::RuntimeProperty >;
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
+        rmngr::DispatchPolicy<rmngr::FIFO>,
         rmngr::ResourceUserPolicy,
-        GraphvizPolicy,
-        rmngr::DispatchPolicy<rmngr::FIFO>
+        GraphvizPolicy
     >
 >;
 
