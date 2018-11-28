@@ -28,7 +28,7 @@
 #include "pmacc/assert.hpp"
 
 #include <pmacc/tasks/StreamTask.hpp>
-//#include <pmacc/memory/buffers/SetValueOnDevice.hpp>
+#include <pmacc/memory/buffers/SetValueOnDevice.hpp>
 
 //#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
 //#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
@@ -103,7 +103,7 @@ public:
             [this]( Scheduler::SchedulablePtr s )
             {
                 s->proto_property<rmngr::ResourceUserPolicy>().access_list =
-                { this->size_resource.write(), this->write() };
+                { this->size_resource.read(), this->write() };
                 s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
             }
         );
@@ -281,9 +281,14 @@ public:
         return data.pitch;
     }
 
-    virtual void setValue(const TYPE& value)
+    virtual void setValue(TYPE const& value)
     {
-      //enqueue_task< TaskSetValue<> >this, value);
+        enum
+        {
+            isSmall = (sizeof (TYPE) <= 128)
+        }; //if we use const variable the compiler create warnings
+
+        NEW::TaskSetValue<TYPE, DIM, isSmall>::create( Scheduler::getInstance(), *this, value );
     };
 
 private:
