@@ -192,15 +192,36 @@ enum EventType
 /**
  * Scheduler Configuration
  */
-using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy<rmngr::FIFO>::RuntimeProperty >;
+
+  template <
+    typename Job
+  >
+  struct PMaccDispatch : rmngr::FIFO<Job>
+  {
+
+    struct Property : rmngr::FIFO<Job>::Property
+    {
+        Property() : dont_schedule_me(false) {}
+        bool dont_schedule_me;
+    };
+
+    void push( Job const & j, Property const & prop = Property() )
+    {
+        if(! prop.dont_schedule_me )
+            this->rmngr::FIFO<Job>::push( j, prop );
+    }
+  };
+
+using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch >::RuntimeProperty >;
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
-        rmngr::DispatchPolicy<rmngr::FIFO>,
         rmngr::ResourceUserPolicy,
-        GraphvizPolicy
+        GraphvizPolicy,
+
+        // dispatcher should always be the last policy
+        rmngr::DispatchPolicy< PMaccDispatch >
     >
 >;
-
 
 /**
  * Print a cuda error message including file/line info to stderr
