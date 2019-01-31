@@ -89,7 +89,7 @@ public:
             [this]( Scheduler::SchedulablePtr s )
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                { this->write(), this->size_resource.write() };
 
                 s->proto_property< GraphvizPolicy >().label = "HostBuffer::~HostBuffer()";
             }
@@ -113,22 +113,28 @@ public:
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
-      /*
         Scheduler::enqueue_functor(
             [this, &other]()
             {
                 PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+                NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
             },
             [this, &other](Scheduler::SchedulablePtr s)
             {
                 s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { other.size_resource.read() };
+                {
+                    other.size_resource.write(),
+                    other.read(),
+                    this->size_resource.write(),
+                    this->write()
+                };
+
+                NEW::StreamTask streamtask;
+                streamtask.properties( s );
 
                 s->proto_property< GraphvizPolicy >().label = "HostBuffer::copyFrom()";
             }
         );
-*/
-        NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
     }
 
     void reset(bool preserveData = true)

@@ -88,7 +88,7 @@ namespace pmacc
                 [this]( Scheduler::SchedulablePtr s )
                 {
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->size_resource.write() };
+                    { this->write(), this->size_resource.write() };
 
                     s->proto_property< GraphvizPolicy >().label = "Buffer::~Buffer()";
                 }
