@@ -28,6 +28,8 @@
 #include <pmacc/tasks/CopyTask.hpp>
 #include <rmngr/task.hpp>
 
+#include "WaitForDevice.hpp"
+
 namespace pmacc
 {
 
@@ -65,6 +67,7 @@ class TaskCopyDeviceToHostBase
               LabelDeviceToHost
           >
       >
+
 {
 public:
     TaskCopyDeviceToHostBase(
@@ -87,6 +90,8 @@ public:
             fastCopy(this->src->getPointer(), this->dst->getPointer(), devCurrentSize.productOfComponents());
         else
             copy(devCurrentSize);
+
+        TaskWaitForDevice::create( Scheduler::getInstance() );
     }
 
 protected:
