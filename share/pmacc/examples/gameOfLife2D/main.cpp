@@ -74,7 +74,6 @@ int main( int argc, char **argv )
         return false;
     }
 
-
     /* fill periodic with 0 */
     while ( periodic.size( ) < DIM2 )
         periodic.push_back( 0 );
