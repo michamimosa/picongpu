@@ -248,12 +248,13 @@ namespace kernel
             );
         }
 
-        template< typename DBox >
         void initEvolution(
-            DBox const & writeBox,
+            Buffer & writeBuffer,
             float const fraction
         )
         {
+	  auto impl = [this, &writeBuffer, fraction]()
+	    {
             AreaMapping <
                 CORE + BORDER,
                 T_MappingDesc
@@ -269,24 +270,37 @@ namespace kernel
                 mapper.getGridDim( ),
                 numWorkers
             )(
-                writeBox,
+                writeBuffer.getDeviceBuffer().getDataBox(),
                 seed,
                 fraction,
                 mapper
             );
+	    };
+
+            Scheduler::enqueue_functor(
+	      impl,
+	      [&writeBuffer](Scheduler::SchedulablePtr s)
+	      {
+		  s->proto_property<rmngr::ResourceUserPolicy>().access_list =
+		  {
+  		   writeBuffer.getDeviceBuffer().write()
+		  };
+
+		  s->proto_property<GraphvizPolicy>().label = "initEvolution";
+	      }
+	    );
         }
 
         template <
-            uint32_t T_Area,
-            typename DBox
+            uint32_t T_Area
         >
         void run(
-            Buffer const & readBuffer,
-            Buffer const & writeBuffer
+	    Buffer const & readBuffer,
+            Buffer & writeBuffer
         )
         {
             auto impl =
-                [ &mapping, &readBuffer, &writeBuffer ]()
+     	        [this, &readBuffer, &writeBuffer ]()
                 {
                     AreaMapping <
                         T_Area,
@@ -300,23 +314,27 @@ namespace kernel
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-                        readBuffer.getDataBox(),
-                        writeBuffer.getDataBox(),
+     		        readBuffer.getDeviceBuffer().getDataBox(),
+                        writeBuffer.getDeviceBuffer().getDataBox(),
                         rule,
                         mapper
                     );
                 };
 
             auto prop =
-                [ &mapping, &readBuffer, &writeBuffer ]( Scheduler::SchedulablePtr s )
+                [ &readBuffer, &writeBuffer ]( Scheduler::SchedulablePtr s )
                 {
-                    auto gridLayout = mapping->getGridLayout();
-                    auto gridAccess = gridLayout.getAccess< T_Area >();
+		    //auto gridLayout = mapping->getGridLayout();
+                    //auto gridAccess = gridLayout.getAccess< T_Area >();
                     s->proto_property< rmngr::ResourceUserPolicy >().access_list =
                     {
-                       writeBuffer.write( gridAccess ),
-                       readBuffer.read( rmngr::Stencil< GridAccess >( gridAccess ) ),
+		     //writeBuffer.write( gridAccess ),
+		     // readBuffer.read( rmngr::Stencil< GridAccess >( gridAccess ) ),
+     		         writeBuffer.getDeviceBuffer().write(),
+			 readBuffer.getDeviceBuffer().read()
                     };
+
+		    s->proto_property< GraphvizPolicy >().label = "run";
                 };
 
             Scheduler::enqueue_functor( impl, prop );
