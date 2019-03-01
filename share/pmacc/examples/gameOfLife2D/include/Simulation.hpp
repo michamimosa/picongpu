@@ -31,9 +31,8 @@
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 
 #include "Evolution.hpp"
-#include <pmacc/eventSystem/EventSystem.hpp>
 
-#include "GatherSlice.hpp"
+//#include "GatherSlice.hpp"
 #include <pmacc/traits/NumberOfExchanges.hpp>
 
 #include <string>
@@ -52,7 +51,7 @@ private:
     Space gridSize;
     /* holds rule mask derived from 23/3 input, \see Evolution.hpp */
     Evolutiontype evo;
-    GatherSlice gather;
+    //GatherSlice gather;
 
     /* for storing black (dead) and white (alive) data for gol */
     Buffer* buff1; /* Buffer(\see types.h) for swapping between old and new world */
@@ -92,6 +91,9 @@ public:
          *                      PluginConnector, nvidia::memory::MemoryInfo   */
         Environment<DIM2>::get().initGrids( gridSize, localGridSize,
                                             gc.getPosition() * localGridSize);
+
+
+	pmacc::Scheduler::init( 4 );// std::thread::hardware_concurrency() );
     }
 
     virtual ~Simulation()
@@ -100,13 +102,16 @@ public:
 
     void finalize()
     {
-        gather.finalize();
+        //gather.finalize();
         __delete(buff1);
         __delete(buff2);
+
+	pmacc::Scheduler::finish();
     }
 
     void init()
     {
+        std::cout << "Simulation init..." << std::endl;
         /* subGrid holds global and
          * local SimulationSize and where the local SimArea is in the greater
          * scheme using Offsets from global LEFT, TOP, FRONT
@@ -160,7 +165,7 @@ public:
          * border cells of our neighbors to our guard cells, since we only read
          * from the guard cells but never write to it.
          * guardingCells holds the number of guard(super)cells in each dimension
-         */
+         *
         Space guardingCells(1, 1);
         for (uint32_t i = 1; i < traits::NumberOfExchanges<DIM2>::value; ++i)
         {
@@ -171,27 +176,28 @@ public:
              * std::cout << "Direction:" << i << " => Vec: (" << relVec[0]    *
              *           << "," << relVec[1] << ")\n";                        *
              * The result is: 1:right(1,0), 2:left(-1,0), 3:up(0,1),          *
-             *    4:up right(1,1), 5:(-1,1), 6:(0,-1), 7:(1,-1), 8:(-1,-1)    */
+             *    4:up right(1,1), 5:(-1,1), 6:(0,-1), 7:(1,-1), 8:(-1,-1)    *
 
-            /* types.hpp: enum CommunicationTags{ BUFF1 = 0u, BUFF2 = 1u };   */
+            /* types.hpp: enum CommunicationTags{ BUFF1 = 0u, BUFF2 = 1u };   *
             buff1->addExchange(GUARD, Mask(i), guardingCells, BUFF1);
             buff2->addExchange(GUARD, Mask(i), guardingCells, BUFF2);
-        }
+	 }
 
          /* Both next lines are defined in GatherSlice.hpp:                   *
           *  -gather saves the MessageHeader object                           *
           *  -Then do an Allgather for the gloabalRanks from GC, sort out     *
           *  -inactive processes (second/boolean ,argument in gather.init) and*
           *   save new MPI_COMMUNICATOR created from these into private var.  *
-          *  -return if rank == 0                                             */
+          *  -return if rank == 0                                             *
         MessageHeader header(gridSize, layout, subGrid.getLocalDomain().offset);
         isMaster = gather.init(header, true);
+
+	*/
 
         /* Calls kernel to initialize random generator. Game of Life is then  *
          * initialized using uniform random numbers. With 10% (second arg)    *
          * white points. World will be written to buffer in first argument    */
-        evo.initEvolution(buff1->getDeviceBuffer().getDataBox(), 0.1);
-
+        evo.initEvolution(*buff1, 0.1f);
     }
 
     void start()
@@ -200,39 +206,45 @@ public:
         Buffer* write = buff2;
         for (uint32_t i = 0; i < steps; ++i)
         {
-            oneStep(i, read, write);
+            oneStep(i, *read, *write);
             std::swap(read, write);
         }
     }
+
 private:
 
-    void oneStep(uint32_t currentStep, Buffer* read, Buffer* write)
+    void oneStep(uint32_t currentStep, Buffer const& read, Buffer& write)
     {
-        auto splitEvent = __getTransactionEvent();
-        /* GridBuffer 'read' will use 'splitEvent' to schedule transaction    *
-         * tasks from the Borders of the neighboring areas to the Guards of   *
-         * this local Area added by 'addExchange'. All transactions in        *
-         * Transaction Manager will then be done in parallel to the           *
-         * calculations in the core. In order to synchronize the data         *
-         * transfer for the case the core calculation is finished earlier,    *
-         * GridBuffer.asyncComm returns a transaction handle we can check     */
-        auto send = read->asyncCommunication(splitEvent);
-        evo.run<CORE>( read->getDeviceBuffer(),
-                       write->getDeviceBuffer() );
-        /* Join communication with worker tasks, Now all next tasks run sequential */
-        __setTransactionEvent(send);
-        /* Calculate Borders */
-        evo.run<BORDER>( read->getDeviceBuffer(),
-                         write->getDeviceBuffer() );
-        write->deviceToHost();
+        evo.run<CORE>( read, write );
+        evo.run<BORDER>( read, write );
+
+        write.deviceToHost();
 
         /* gather::operator() gathers all the buffers and assembles those to  *
-         * a complete picture discarding the guards.                          */
+         * a complete picture discarding the guards.                          *
         auto picture = gather(write->getHostBuffer().getDataBox());
         PngCreator png;
         if (isMaster) png(currentStep, picture, gridSize);
+	*/
 
+	Scheduler::enqueue_functor(
+	    [this,currentStep, &write]()
+	    {
+	        PngCreator png;
+		png( currentStep, write.getHostBuffer().getDataBox().shift(write.getGridLayout().getGuard()), gridSize );
+	    },
+	    [&write]( Scheduler::SchedulablePtr s )
+	    {
+     	        s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+		{
+		    write.getHostBuffer().read()
+		};
+
+		s->proto_property< GraphvizPolicy >().label = "write png";
+	    }
+	);
     }
+}; // class Simulation
 
-};
-}
+} // namespace gol
+
