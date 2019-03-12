@@ -231,6 +231,7 @@ public:
             );
 
             auto destBox = this->destination->getDataBox( );
+
             CUPLA_KERNEL(
                 KernelSetValue<
                     numWorkers,

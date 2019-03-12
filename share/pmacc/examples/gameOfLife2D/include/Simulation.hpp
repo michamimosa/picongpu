@@ -93,6 +93,7 @@ public:
                                             gc.getPosition() * localGridSize);
 
 
+	pmacc::waitfordevice::setup();
 	pmacc::Scheduler::init( 4 );// std::thread::hardware_concurrency() );
     }
 
