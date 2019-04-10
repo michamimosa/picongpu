@@ -88,9 +88,9 @@ namespace waitfordevice
 
 struct WaitForDeviceLabel
 {
-    void properties( Scheduler::SchedulablePtr s )
+    void properties( Scheduler::Schedulable& s )
     {
-        s->proto_property< GraphvizPolicy >().label = "WaitForDevice";
+        s.proto_property< GraphvizPolicy >().label = "WaitForDevice";
     }
 };
 
@@ -140,14 +140,14 @@ public:
         // create empty task
         auto res = Scheduler::enqueue_functor(
             [](){},
-            [&state_host_ptr](Scheduler::SchedulablePtr s)
+            [&state_host_ptr](Scheduler::Schedulable& s)
             {
-                s->proto_property<
+                s.proto_property<
                     rmngr::DispatchPolicy<PMaccDispatch>
                 >().dont_schedule_me = true;
-                s->proto_property< GraphvizPolicy >().label = "on device";
+                s.proto_property< GraphvizPolicy >().label = "on device";
 
-                state_host_ptr = std::addressof( s->runtime_property<rmngr::DispatchPolicy<PMaccDispatch>>().state );
+                state_host_ptr = std::addressof( s.runtime_property<rmngr::DispatchPolicy<PMaccDispatch>>().state );
             }
         );
 

@@ -100,11 +100,11 @@ public:
                     CUDA_CHECK_NO_EXCEPT(cudaFree(data.ptr));
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property<rmngr::ResourceUserPolicy>().access_list =
+                s.proto_property<rmngr::ResourceUserPolicy>().access_list =
                 { this->size_resource.read(), this->write() };
-                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
+                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
             }
         );
 
@@ -130,15 +130,15 @@ public:
                     setValue(value);
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.write() };
 
                 NEW::StreamTask streamtask;
                 streamtask.properties( s );
 
-                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::reset()";
+                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::reset()";
             }
         );
     }
@@ -214,13 +214,13 @@ public:
                                                cudaMemcpyDeviceToHost,
                                                stream_task.getCudaStream()));
                 },
-                [this, stream_task]( Scheduler::SchedulablePtr s )
+                [this, stream_task]( Scheduler::Schedulable& s )
                 {
                     stream_task.properties( s );
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
                         this->size_resource.write()
                     );
-                    s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::getCurrentSize()";
+                    s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::getCurrentSize()";
                 }
             );
         }
@@ -247,13 +247,13 @@ public:
                         size
                     );
                 },
-                [this, stream_task, size](Scheduler::SchedulablePtr s)
+                [this, stream_task, size](Scheduler::Schedulable& s)
                 {
                     stream_task.properties( s );
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
                         this->size_resource.write()
                     );
-                    s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::setCurrentSize()";
+                    s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::setCurrentSize()";
                 }
             );
         }
@@ -327,11 +327,11 @@ private:
                     CUDA_CHECK(cudaMalloc3D(&data, extent));
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                  { this->write(), this->size_resource.read() };
-                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createData()";
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+                  { this->write(), this->size_resource.write() };
+                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createData()";
             }
         );
         reset(false);
@@ -360,11 +360,11 @@ private:
                     data.ysize = this->getDataSpace()[1];
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.read() };
-                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createFakeData()";
+                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createFakeData()";
             }
         );
 
@@ -383,12 +383,12 @@ private:
                     CUDA_CHECK(cudaMalloc((void**)&this->sizeOnDevicePtr, sizeof (size_t)));
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->size_resource.write() };
 
-                s->proto_property< GraphvizPolicy >().label = "DeviceBuffer::createSizeOnDevice()";
+                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createSizeOnDevice()";
             }
         );
 

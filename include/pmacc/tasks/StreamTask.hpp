@@ -15,9 +15,9 @@ public:
         return 0;
     }
 
-    void properties( Scheduler::SchedulablePtr s ) const
+    void properties( Scheduler::Schedulable& s ) const
     {
-        s->proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
+        s.proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
             this->getStreamResource().write()
         );
     }

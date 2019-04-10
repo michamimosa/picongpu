@@ -92,7 +92,6 @@ public:
         Environment<DIM2>::get().initGrids( gridSize, localGridSize,
                                             gc.getPosition() * localGridSize);
 
-
 	pmacc::waitfordevice::setup();
 	pmacc::Scheduler::init( 4 );// std::thread::hardware_concurrency() );
     }
@@ -103,10 +102,11 @@ public:
 
     void finalize()
     {
+        std::cout << "finalize simulation..." << std::endl;
         //gather.finalize();
-        __delete(buff1);
-        __delete(buff2);
-
+        delete buff1;
+        delete buff2;
+	std::cout << "wait until all tasks finished..." << std::endl;
 	pmacc::Scheduler::finish();
     }
 
@@ -114,8 +114,7 @@ public:
     {
         std::cout << "Simulation init..." << std::endl;
         /* subGrid holds global and
-         * local SimulationSize and where the local SimArea is in the greater
-         * scheme using Offsets from global LEFT, TOP, FRONT
+         * local SimulationSize and where the local SimArea is in the greater         * scheme using Offsets from global LEFT, TOP, FRONT
          */
         const SubGrid<DIM2>& subGrid = Environment<DIM2>::get().SubGrid();
 
@@ -216,6 +215,7 @@ private:
 
     void oneStep(uint32_t currentStep, Buffer const& read, Buffer& write)
     {
+      std::cout << "Step " << currentStep << std::endl;
         evo.run<CORE>( read, write );
         evo.run<BORDER>( read, write );
 
@@ -234,14 +234,14 @@ private:
 	        PngCreator png;
 		png( currentStep, write.getHostBuffer().getDataBox().shift(write.getGridLayout().getGuard()), gridSize );
 	    },
-	    [&write]( Scheduler::SchedulablePtr s )
+	    [&write]( Scheduler::Schedulable& s )
 	    {
-     	        s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+     	        s.proto_property< rmngr::ResourceUserPolicy >().access_list =
 		{
-		    write.getHostBuffer().read()
+		   write.getHostBuffer().read(),
 		};
 
-		s->proto_property< GraphvizPolicy >().label = "write png";
+		s.proto_property< GraphvizPolicy >().label = "write png";
 	    }
 	);
     }

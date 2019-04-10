@@ -44,9 +44,9 @@ namespace NEW
 
   struct LabelDeviceToHost
   {
-    void properties(Scheduler::SchedulablePtr s)
+    void properties(Scheduler::Schedulable& s)
     {
-      s->proto_property< GraphvizPolicy >().label = "CopyDeviceToHost()";
+      s.proto_property< GraphvizPolicy >().label = "CopyDeviceToHost()";
     }
   };
 
