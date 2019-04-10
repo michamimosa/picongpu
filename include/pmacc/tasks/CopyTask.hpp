@@ -15,9 +15,9 @@ template <
 class CopyTask
 {
 public:
-    void properties( Scheduler::SchedulablePtr s )
+    void properties( Scheduler::Schedulable& s )
     {
-        auto & access = s->proto_property< rmngr::ResourceUserPolicy >().access_list;
+        auto & access = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
         access.push_back( src->read() );
         access.push_back( src->size_resource.write() );
 

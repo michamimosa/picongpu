@@ -150,13 +150,13 @@ class TaskSetValue;
 template < typename T, size_t T_Dim >
 struct SetValueTask
 {
-    void properties( Scheduler::SchedulablePtr s )
+    void properties( Scheduler::Schedulable& s )
     {
-        auto & l = s->proto_property< rmngr::ResourceUserPolicy >().access_list;
+        auto & l = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
         l.push_back( this->destination->write() );
         l.push_back( this->destination->size_resource.write() );
 
-        s->proto_property< GraphvizPolicy >().label = "SetValueOnDevice";
+        s.proto_property< GraphvizPolicy >().label = "SetValueOnDevice";
     }
 
     DeviceBuffer<T, T_Dim> * destination;
