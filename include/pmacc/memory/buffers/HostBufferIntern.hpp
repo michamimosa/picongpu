@@ -54,12 +54,12 @@ public:
             {
                 CUDA_CHECK(cudaMallocHost((void**)&pointer, size.productOfComponents() * sizeof (TYPE)));
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write() };
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
+		{ this->write() };
 
-                s->proto_property< GraphvizPolicy >().label = "HostBuffer::HostBuffer()";
+                s.proto_property< GraphvizPolicy >().label = "HostBuffer::HostBuffer()";
             }
         );
         reset(false);
@@ -86,12 +86,12 @@ public:
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(pointer));
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.write() };
 
-                s->proto_property< GraphvizPolicy >().label = "HostBuffer::~HostBuffer()";
+                s.proto_property< GraphvizPolicy >().label = "HostBuffer::~HostBuffer()";
             }
         );
 
@@ -119,9 +119,9 @@ public:
                 PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
                 NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
             },
-            [this, &other](Scheduler::SchedulablePtr s)
+            [this, &other](Scheduler::Schedulable& s)
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 {
                     other.size_resource.write(),
                     other.read(),
@@ -132,7 +132,7 @@ public:
                 NEW::StreamTask streamtask;
                 streamtask.properties( s );
 
-                s->proto_property< GraphvizPolicy >().label = "HostBuffer::copyFrom()";
+                s.proto_property< GraphvizPolicy >().label = "HostBuffer::copyFrom()";
             }
         );
     }
@@ -164,12 +164,12 @@ public:
                     }
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.write() };
 
-                s->proto_property< GraphvizPolicy >().label = "HostBuffer::reset()";
+                s.proto_property< GraphvizPolicy >().label = "HostBuffer::reset()";
             }
         );
     }
@@ -191,12 +191,12 @@ public:
                     d1Box[i] = value;
                 }
             },
-            [this]( Scheduler::SchedulablePtr s )
+            [this]( Scheduler::Schedulable& s )
             {
-                s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                 { this->write(), this->size_resource.read() };
 
-                s->proto_property< GraphvizPolicy >().label = "HostBuffer::setValue()";
+                s.proto_property< GraphvizPolicy >().label = "HostBuffer::setValue()";
             }
         );
     }

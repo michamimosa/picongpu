@@ -65,12 +65,12 @@ namespace pmacc
                     CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof (size_t)));
                     *current_size = size.productOfComponents();
                 },
-                [this]( Scheduler::SchedulablePtr s )
+                [this]( Scheduler::Schedulable& s )
                 {
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.write() };
 
-                    s->proto_property< GraphvizPolicy >().label = "Buffer::Buffer()";
+                    s.proto_property< GraphvizPolicy >().label = "Buffer::Buffer()";
                 }
             );
         }
@@ -85,12 +85,12 @@ namespace pmacc
                 {
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
                 },
-                [this]( Scheduler::SchedulablePtr s )
+                [this]( Scheduler::Schedulable& s )
                 {
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->write(), this->size_resource.write() };
 
-                    s->proto_property< GraphvizPolicy >().label = "Buffer::~Buffer()";
+                    s.proto_property< GraphvizPolicy >().label = "Buffer::~Buffer()";
                 }
             );
 
@@ -187,12 +187,12 @@ namespace pmacc
         {
             auto res = Scheduler::enqueue_functor(
                 [this](){ return *(this->current_size); },
-                [this]( Scheduler::SchedulablePtr s )
+                [this]( Scheduler::Schedulable& s )
                 {
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.read() };
 
-                    s->proto_property< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
+                    s.proto_property< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
                 }
             );
 
@@ -210,12 +210,12 @@ namespace pmacc
                     PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
                     *(this->current_size) = newsize;
                 },
-                [this]( Scheduler::SchedulablePtr s )
+                [this]( Scheduler::Schedulable& s )
                 {
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                     { this->size_resource.write() };
 
-                    s->proto_property< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
+                    s.proto_property< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
                 }
             );
         }

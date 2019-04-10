@@ -279,14 +279,15 @@ namespace kernel
 
             Scheduler::enqueue_functor(
 	      impl,
-	      [&writeBuffer](Scheduler::SchedulablePtr s)
+	      [&writeBuffer](Scheduler::Schedulable& s)
 	      {
-		  s->proto_property<rmngr::ResourceUserPolicy>().access_list =
+		  s.proto_property<rmngr::ResourceUserPolicy>().access_list =
 		  {
-  		   writeBuffer.getDeviceBuffer().write()
+  		      writeBuffer.getDeviceBuffer().write(),
+		      writeBuffer.getDeviceBuffer().size_resource.write()
 		  };
 
-		  s->proto_property<GraphvizPolicy>().label = "initEvolution";
+		  s.proto_property<GraphvizPolicy>().label = "Evolution::initEvolution()";
 	      }
 	    );
         }
@@ -322,11 +323,11 @@ namespace kernel
                 };
 
             auto prop =
-                [ &readBuffer, &writeBuffer ]( Scheduler::SchedulablePtr s )
+                [ &readBuffer, &writeBuffer ]( Scheduler::Schedulable& s )
                 {
 		    //auto gridLayout = mapping->getGridLayout();
                     //auto gridAccess = gridLayout.getAccess< T_Area >();
-                    s->proto_property< rmngr::ResourceUserPolicy >().access_list =
+                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
                     {
 		     //writeBuffer.write( gridAccess ),
 		     // readBuffer.read( rmngr::Stencil< GridAccess >( gridAccess ) ),
@@ -334,7 +335,10 @@ namespace kernel
 			 readBuffer.getDeviceBuffer().read()
                     };
 
-		    s->proto_property< GraphvizPolicy >().label = "run";
+		    if( T_Area == CORE )
+		      s.proto_property< GraphvizPolicy >().label = "run<CORE>";
+		    if( T_Area == BORDER )
+		      s.proto_property< GraphvizPolicy >().label = "run<BORDER>";
                 };
 
             Scheduler::enqueue_functor( impl, prop );
