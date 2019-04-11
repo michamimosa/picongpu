@@ -31,8 +31,8 @@
 #include <pmacc/memory/buffers/WaitForDevice.hpp>
 #include <pmacc/memory/buffers/SetValueOnDevice.hpp>
 
-//#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
-//#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
+#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
+#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
 
 namespace pmacc
 {
@@ -265,13 +265,13 @@ public:
     void copyFrom(HostBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        //enqueue_task< TaskCopyHostToDevice<TYPE, DIM> >( other, *this );
+	memory::buffers::TaskCopyHostToDevice<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
     }
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        //enqueue_task< TaskCopyDeviceToDevice<TYPE, DIM> >( other, *this )
+	memory::buffers::TaskCopyDeviceToDevice<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
     }
 
     const cudaPitchedPtr getCudaPitched() const
