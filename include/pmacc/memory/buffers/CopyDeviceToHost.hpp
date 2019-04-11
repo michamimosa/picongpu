@@ -24,8 +24,8 @@
 
 #include <iomanip>
 #include <pmacc/types.hpp>
+#include <pmacc/memory/buffers/CopyTask.hpp>
 #include <pmacc/tasks/StreamTask.hpp>
-#include <pmacc/tasks/CopyTask.hpp>
 #include <rmngr/task.hpp>
 
 #include "WaitForDevice.hpp"
@@ -39,16 +39,18 @@ class HostBuffer;
 template < typename T, unsigned T_Dim >
 class DeviceBuffer;
 
-namespace NEW
+namespace memory
+{
+namespace buffers
 {
 
-  struct LabelDeviceToHost
-  {
+struct LabelDeviceToHost
+{
     void properties(Scheduler::Schedulable& s)
     {
-      s.proto_property< GraphvizPolicy >().label = "CopyDeviceToHost()";
+        s.proto_property< GraphvizPolicy >().label = "CopyDeviceToHost()";
     }
-  };
+};
 
 template <
     typename Impl,
@@ -205,6 +207,9 @@ private:
     }
 };
 
-  }
-} //namespace pmacc
+} // namespace buffers
+
+} // namespace memory
+
+} // namespace pmacc
 
