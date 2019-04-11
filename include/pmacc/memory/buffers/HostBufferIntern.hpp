@@ -117,7 +117,7 @@ public:
             [this, &other]()
             {
                 PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-                NEW::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
+                memory::buffers::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
             },
             [this, &other](Scheduler::Schedulable& s)
             {

@@ -34,7 +34,7 @@ class TaskCopyHostToDeviceBase
     : public rmngr::Task<
           Impl,
           boost::mpl::vector<
-	      StreamTask,
+	      NEW::StreamTask,
 	      CopyTask<
 	          HostBuffer<T, T_DIM>,
 	          DeviceBuffer<T, T_DIM>
@@ -155,7 +155,7 @@ private:
 	params.dstPos = make_cudaPos(this->dst->getOffset()[0] * sizeof (T),
 				     this->dst->getOffset()[1],
 				     this->dst->getOffset()[2]);
-	params.dstPtr = this->device->getCudaPitched();
+	params.dstPtr = this->dst->getCudaPitched();
 
 	params.srcArray = nullptr;
 	params.srcPos = make_cudaPos(0, 0, 0);

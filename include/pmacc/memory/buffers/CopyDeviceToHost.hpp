@@ -61,7 +61,7 @@ class TaskCopyDeviceToHostBase
     : public rmngr::Task<
           Impl,
           boost::mpl::vector<
-              StreamTask,
+	    NEW::StreamTask,
               CopyTask<
                   DeviceBuffer<T, T_Dim>,
                   HostBuffer<T, T_Dim>
