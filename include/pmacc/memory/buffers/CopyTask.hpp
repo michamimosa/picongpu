@@ -5,8 +5,10 @@
 
 namespace pmacc
 {
-
-  namespace NEW{
+namespace memory
+{
+namespace buffers
+{
 
 template <
     typename Src,
@@ -30,7 +32,9 @@ protected:
     Dst * dst;
 };
 
-  }
+} // namespace buffers
+
+} // namespace memory
 
 } // namespace pmacc
 
