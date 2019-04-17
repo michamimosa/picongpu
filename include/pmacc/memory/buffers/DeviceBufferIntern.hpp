@@ -28,6 +28,7 @@
 #include "pmacc/assert.hpp"
 
 #include <pmacc/tasks/StreamTask.hpp>
+#include <pmacc/memory/buffers/WaitForDevice.hpp>
 #include <pmacc/memory/buffers/SetValueOnDevice.hpp>
 
 //#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
@@ -213,6 +214,8 @@ public:
                                                sizeof (size_t),
                                                cudaMemcpyDeviceToHost,
                                                stream_task.getCudaStream()));
+
+		    TaskWaitForDevice::create( Scheduler::getInstance() );
                 },
                 [this, stream_task]( Scheduler::Schedulable& s )
                 {
