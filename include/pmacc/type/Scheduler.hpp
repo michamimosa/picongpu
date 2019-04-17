@@ -49,6 +49,26 @@ namespace pmacc
   };
 
 using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch >::RuntimeProperty >;
+
+template <typename T>
+struct EnqueuePolicy
+{
+    static bool is_serial(T const & a, T const & b)
+    {
+        return rmngr::ResourceUser::is_serial(
+                   a->template proto_property< rmngr::ResourceUserPolicy >(),
+		   b->template proto_property< rmngr::ResourceUserPolicy >());
+    }
+    static bool is_superset(T const & super, T const & sub) {
+        return rmngr::ResourceUser::is_superset(
+                   super->template proto_property< rmngr::ResourceUserPolicy >(),
+		   sub->template proto_property< rmngr::ResourceUserPolicy >());
+    }
+};
+
+template <typename Graph>
+using RefinementGraph = rmngr::QueuedPrecedenceGraph< Graph, EnqueuePolicy< typename Graph::vertex_property_type > >;
+
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
         rmngr::ResourceUserPolicy,
@@ -56,7 +76,8 @@ using Scheduler = rmngr::SchedulerSingleton<
 
         // dispatcher should always be the last policy
         rmngr::DispatchPolicy< PMaccDispatch >
-    >
+    >,
+    RefinementGraph
 >;
 
 } // namespace pmacc
