@@ -65,6 +65,7 @@ namespace waitfordevice
         sigsegv_install_handler (&handler);
      */
         struct sigaction act;
+	memset(&act, 0, sizeof(act));
 	act.sa_sigaction = &segv_handler;
 	act.sa_flags = SA_SIGINFO;
         sigaction(SIGSEGV, &act, &old_sigaction);
@@ -75,6 +76,8 @@ namespace waitfordevice
 
 	page1 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
 	page2 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
+
+	std::cout << "pages used for WaitForDevice: p1 = " << page1 << ", p2 = " << page2 << std::endl;
 	/*
 	sigsegv_register (&dispatcher, page1, PAGE_SIZE, &segv_handler, &page1 );
 	sigsegv_register (&dispatcher, page2, PAGE_SIZE, &segv_handler, &page2 );
