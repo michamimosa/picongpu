@@ -57,14 +57,21 @@ struct setValueTest
             const Data value = 255;
             hostBufferIntern.setValue(value);
 
-            auto ptr = hostBufferIntern.getPointer( );
-            for(size_t j = 0; j < static_cast<size_t>(dataSpace.productOfComponents()); ++j)
-            {
-                BOOST_CHECK_EQUAL( ptr[j], value );
-            }
-
+            ::pmacc::Scheduler::enqueue_functor(
+                [&]()
+                {
+                    auto ptr = hostBufferIntern.getPointer( );
+                    for(size_t j = 0; j < static_cast<size_t>(dataSpace.productOfComponents()); ++j)
+                    {
+                        BOOST_CHECK_EQUAL( ptr[j], value );
+                    }
+                },
+                [&]( ::pmacc::Scheduler::Schedulable& s )
+                {
+                    s.proto_property<rmngr::ResourceUserPolicy>().access_list = {hostBufferIntern.read()};
+                }
+            );
         }
-
     }
 
     PMACC_NO_NVCC_HDWARNING
