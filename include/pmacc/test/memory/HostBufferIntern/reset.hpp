@@ -55,12 +55,20 @@ struct ResetTest {
 
             hostBufferIntern.reset();
 
-            for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i){
-                BOOST_CHECK_EQUAL( hostBufferIntern.getPointer()[i], 0 );
-            }
-
+            ::pmacc::Scheduler::enqueue_functor(
+                [&]()
+                {
+                    for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
+                    {
+                        BOOST_CHECK_EQUAL( hostBufferIntern.getPointer()[i], 0 );
+                    }
+                },
+                [&](::pmacc::Scheduler::Schedulable& s)
+                {
+                    s.proto_property<rmngr::ResourceUserPolicy>().access_list ={hostBufferIntern.read()};
+                }
+            );
         }
-
     }
 
     PMACC_NO_NVCC_HDWARNING
