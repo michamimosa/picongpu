@@ -24,7 +24,8 @@
 #include <pmacc/types.hpp>
 #include <pmacc/Environment.hpp>
 #include <pmacc/dimensions/DataSpace.hpp>
-
+#include <pmacc/memory/buffers/WaitForDevice.hpp>
+#include <thread>
 
 namespace pmacc
 {
@@ -37,6 +38,9 @@ struct PMaccFixture
 {
     PMaccFixture()
     {
+        pmacc::Scheduler::init( std::thread::hardware_concurrency() );
+        pmacc::waitfordevice::setup();
+
         const pmacc::DataSpace<T_dim> devices = pmacc::DataSpace<T_dim>::create(1);
         const pmacc::DataSpace<T_dim> periodic = pmacc::DataSpace<T_dim>::create(1);
         pmacc::Environment<T_dim>::get().initDevices(devices, periodic);
@@ -45,6 +49,7 @@ struct PMaccFixture
     ~PMaccFixture()
     {
         /* finalize the PMacc context */
+        pmacc::Scheduler::finish();
         pmacc::Environment<>::get().finalize();
     }
 };

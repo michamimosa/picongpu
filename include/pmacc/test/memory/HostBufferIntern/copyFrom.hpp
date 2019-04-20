@@ -23,7 +23,6 @@
 
 /* #includes in "test/memoryUT.cu" */
 
-
 namespace pmacc
 {
 namespace test
@@ -56,21 +55,45 @@ struct CopyFromTest {
 
             hostBufferIntern->reset();
 
-            for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i){
-                hostBufferIntern->getPointer()[i] = static_cast<Data>(i);
-            }
+            ::pmacc::Scheduler::enqueue_functor(
+                [&]()
+                {
+                    for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
+                    {
+                        hostBufferIntern->getPointer()[i] = static_cast<Data>(i);
+                    }
+                },
+                [&](::pmacc::Scheduler::Schedulable& s)
+                {
+                    s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                    {
+                        hostBufferIntern->write(),
+                        hostBufferIntern->size_resource.read()
+                    };
+                }
+            );
 
             deviceBufferIntern->copyFrom(*hostBufferIntern);
             hostBufferIntern->reset();
             hostBufferIntern->copyFrom(*deviceBufferIntern);
 
-            for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i){
-                BOOST_CHECK_EQUAL(hostBufferIntern->getPointer()[i], static_cast<Data>(i));
-            }
+            ::pmacc::Scheduler::enqueue_functor(
+                [&]()
+                {
+                    for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
+                    {
+                        BOOST_CHECK_EQUAL(hostBufferIntern->getPointer()[i], static_cast<Data>(i));
+                    }
+                },
+                [&](::pmacc::Scheduler::Schedulable& s)
+                {
+                    s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                    { hostBufferIntern->read() };
+                }
+            );
 
             delete hostBufferIntern;
             delete deviceBufferIntern;
-
         }
 
     }
