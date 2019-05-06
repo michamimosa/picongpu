@@ -62,7 +62,7 @@ private:
 
 public:
 
-    Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic) :
+    Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic, size_t n_threads) :
     evo(rule), steps(steps), gridSize(gridSize), isMaster(false), buff1(nullptr), buff2(nullptr)
     {
         /* -First this initializes the GridController with number of 'devices'*
@@ -92,8 +92,8 @@ public:
         Environment<DIM2>::get().initGrids( gridSize, localGridSize,
                                             gc.getPosition() * localGridSize);
 
-	pmacc::waitfordevice::setup();
-	pmacc::Scheduler::init( 4 );// std::thread::hardware_concurrency() );
+        pmacc::waitfordevice::setup();
+        pmacc::Scheduler::init( n_threads );
     }
 
     virtual ~Simulation()
