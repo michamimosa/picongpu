@@ -60,6 +60,8 @@ public:
             fastCopy(this->src->getPointer(), this->dst->getPointer(), hostCurrentSize.productOfComponents());
         else
 	    copy(hostCurrentSize);
+
+        TaskWaitForDevice::create( Scheduler::getInstance() );
     }
 
 protected:    
