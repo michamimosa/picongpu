@@ -17,7 +17,7 @@ struct MPISendLabel
 {
     void properties(Scheduler::Schedulable& s)
     {
-        s.proto_property< rmngr::GraphvizPolicy >().label = "MPI Send";
+        s.proto_property< GraphvizPolicy >().label = "MPI Send";
     }
 }
 
@@ -45,31 +45,31 @@ public:
     {
         if (exchange->hasDeviceDoubleBuffer())
 	{
-	    TaskCopyDeviceToDevice::create(
+           TaskCopyDeviceToDevice<T, T_Dim>::create(
 		exchange->getDeviceBuffer(),
                 exchange->getDeviceDoubleBuffer());
-	    TaskCopyDeviceToHost::create(
+           TaskCopyDeviceToHost<T, T_Dim>::create(
 		exchange->getDeviceDoubleBuffer(),
                 exchange->getHostBuffer());
 	}
 	else
         {
-	    TaskCopyDeviceToHost::create(
+           TaskCopyDeviceToHost<T, T_Dim>::create(
 	        exchange->getDeviceBuffer(),
                 exchange->getHostBuffer());
 	}
 
-	MPI_Request * request = Environment<T_DIM>::get()
-          .EnvironmentController()
-          .getCommunicator().startSend(
+	MPI_Request * request = Environment<T_Dim>::get()
+	  .EnvironmentController()
+	  .getCommunicator().startSend(
 	      exchange->getExchangeType(),
 	      (char*) exchange->getHostBuffer().getPointer(),
-	      exchange->getHostBuffer().getCurrentSize() * sizeof (TYPE),
+	      exchange->getHostBuffer().getCurrentSize() * sizeof (T),
 	      exchange->getCommunicationTag());
 
         TaskMPIWait::create( request );
     }
-}
+};
 
 } // namespace communication
 
