@@ -22,7 +22,6 @@
 #pragma once
 
 #include "pmacc/dimensions/GridLayout.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/mappings/simulation/EnvironmentController.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/memory/buffers/ExchangeIntern.hpp"
@@ -431,62 +430,31 @@ public:
      *
      * Asynchronously starts synchronization data from internal DeviceBuffer using added
      * Exchange buffers.
-     * This operation runs sequential to other code but intern asynchronous
      *
      */
-    EventTask communication()
+    void communication()
     {
-        EventTask ev = this->asyncCommunication(__getTransactionEvent());
-        __setTransactionEvent(ev);
-        return ev;
-    }
-
-    /**
-     * Starts sync data from own device buffer to neighbor device buffer.
-     *
-     * Asynchronously starts synchronization data from internal DeviceBuffer using added
-     * Exchange buffers.
-     *
-     */
-    EventTask asyncCommunication(EventTask serialEvent)
-    {
-        EventTask evR;
         for (uint32_t i = 0; i < maxExchange; ++i)
         {
-
-            evR += asyncReceive(serialEvent, i);
-
-            ExchangeType sendEx = Mask::getMirroredExchangeType(i);
-
-            evR += asyncSend(serialEvent, sendEx);
-
+            receive( i );
+            send( Mask::getMirroredExchangeType(i) );
         }
-        return evR;
     }
 
-    EventTask asyncSend(EventTask serialEvent, uint32_t sendEx)
+    void send(uint32_t sendEx)
     {
         if (hasSendExchange(sendEx))
         {
-            __startTransaction(serialEvent + sendEvents[sendEx]);
-            sendEvents[sendEx] = sendExchanges[sendEx]->startSend();
-            __endTransaction();
-            return sendEvents[sendEx];
+            sendExchanges[sendEx]->startSend();
         }
-        return EventTask();
     }
 
-    EventTask asyncReceive(EventTask serialEvent, uint32_t recvEx)
+    void receive(uint32_t recvEx)
     {
         if (hasReceiveExchange(recvEx))
         {
-            __startTransaction(serialEvent + receiveEvents[recvEx]);
-            receiveEvents[recvEx] = receiveExchanges[recvEx]->startReceive();
-
-            __endTransaction();
-            return receiveEvents[recvEx];
+            receiveExchanges[recvEx]->startReceive();
         }
-        return EventTask();
     }
 
     /**
@@ -509,10 +477,6 @@ private:
         {
             sendExchanges[i] = nullptr;
             receiveExchanges[i] = nullptr;
-            /* fill array with valid empty events to avoid side effects if
-             * array is accessed without calling hasExchange() before usage */
-            receiveEvents[i] = EventTask();
-            sendEvents[i] = EventTask();
         }
     }
 
@@ -527,8 +491,6 @@ protected:
 
     ExchangeIntern<BORDERTYPE, DIM>* sendExchanges[27];
     ExchangeIntern<BORDERTYPE, DIM>* receiveExchanges[27];
-    EventTask receiveEvents[27];
-    EventTask sendEvents[27];
 
     uint32_t maxExchange; //use max exchanges and run over the array is faster as use set from stl
 };
