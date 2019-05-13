@@ -236,12 +236,12 @@ namespace pmacc
 
         void startSend()
         {
-            NEW::TaskMPISend<TYPE, DIM>::create( Scheduler::getInstance(), *this );
+            communication::TaskMPISend<TYPE, DIM>::create( Scheduler::getInstance(), *this );
         }
 
         void startReceive()
         {
-            NEW::TaskMPIReceive<TYPE, DIM>::create( Scheduler::getInstance(), *this );
+            communication::TaskMPIReceive<TYPE, DIM>::create( Scheduler::getInstance(), *this );
         }
 
     protected:

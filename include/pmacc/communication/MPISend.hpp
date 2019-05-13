@@ -3,15 +3,17 @@
 #include <pmacc/communication/ICommunicator.hpp>
 #include <pmacc/communication/Tasks.hpp>
 #include <pmacc/communication/MPITask.hpp>
+#include <pmacc/communication/MPIWait.hpp>
 #include <pmacc/memory/buffers/Exchange.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
 
 #include <mpi.h>
 
-namespace pmacc {
-
-namespace NEW {
+namespace pmacc
+{
+namespace communication
+{
 
 struct MPISendLabel
 {
@@ -19,7 +21,7 @@ struct MPISendLabel
     {
         s.proto_property< GraphvizPolicy >().label = "MPI Send";
     }
-}
+};
 
 template <
     typename T,
@@ -27,9 +29,9 @@ template <
 >
 class TaskMPISend
   : public rmngr::Task<
-               TaskSendMPI,
+               TaskSendMPI<T, T_Dim>,
                boost::mpl::vector<
-	           SendTask,
+        	   SendTask<T, T_Dim>,
 		   MPITask,
 		   MPISendLabel
 	       >
@@ -43,31 +45,34 @@ public:
 
     void run()
     {
-        if (exchange->hasDeviceDoubleBuffer())
+        if (this->exchange->hasDeviceDoubleBuffer())
 	{
-           TaskCopyDeviceToDevice<T, T_Dim>::create(
-		exchange->getDeviceBuffer(),
-                exchange->getDeviceDoubleBuffer());
-           TaskCopyDeviceToHost<T, T_Dim>::create(
-		exchange->getDeviceDoubleBuffer(),
-                exchange->getHostBuffer());
+            memory::buffers::TaskCopyDeviceToDevice<T, T_Dim>::create(
+                Scheduler::getInstance(),
+		this->exchange->getDeviceBuffer(),
+                this->exchange->getDeviceDoubleBuffer());
+            memory::buffers::TaskCopyDeviceToHost<T, T_Dim>::create(
+                Scheduler::getInstance(),
+		this->exchange->getDeviceDoubleBuffer(),
+                this->exchange->getHostBuffer());
 	}
 	else
         {
-           TaskCopyDeviceToHost<T, T_Dim>::create(
-	        exchange->getDeviceBuffer(),
-                exchange->getHostBuffer());
+            memory::buffers::TaskCopyDeviceToHost<T, T_Dim>::create(
+                Scheduler::getInstance(),
+	        this->exchange->getDeviceBuffer(),
+                this->exchange->getHostBuffer());
 	}
 
 	MPI_Request * request = Environment<T_Dim>::get()
 	  .EnvironmentController()
 	  .getCommunicator().startSend(
-	      exchange->getExchangeType(),
-	      (char*) exchange->getHostBuffer().getPointer(),
-	      exchange->getHostBuffer().getCurrentSize() * sizeof (T),
-	      exchange->getCommunicationTag());
+	      this->exchange->getExchangeType(),
+	      (char*) this->exchange->getHostBuffer().getPointer(),
+	      this->exchange->getHostBuffer().getCurrentSize() * sizeof (T),
+	      this->exchange->getCommunicationTag());
 
-        TaskMPIWait::create( request );
+        TaskMPIWait::create( Scheduler::getInstance(), request );
     }
 };
 
