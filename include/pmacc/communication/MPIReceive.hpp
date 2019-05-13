@@ -1,5 +1,7 @@
 
-#include <pmacc/tasks/MPITask.hpp>
+#include <pmacc/communication/MPITask.hpp>
+#include <pmacc/communication/MPIWait.hpp>
+#include <pmacc/communication/Tasks.hpp>
 #include <pmacc/communication/manager_common.hpp>
 #include <pmacc/communication/ICommunicator.hpp>
 #include <pmacc/memory/buffers/Exchange.hpp>
@@ -8,9 +10,10 @@
 
 #include <mpi.h>
 
-namespace pmacc {
-
-namespace communication {
+namespace pmacc
+{
+namespace communication
+{
 
 struct MPIReceiveLabel
 {
@@ -18,7 +21,7 @@ struct MPIReceiveLabel
     {
         s.proto_property< GraphvizPolicy >().label = "MPI Send";
     }
-}
+};
 
 template <
     typename T,
@@ -26,16 +29,16 @@ template <
 >
 class TaskMPIReceive
   : public rmngr::Task<
-               TaskReceiveMPI,
+               TaskMPIReceive<T, T_Dim>,
                boost::mpl::vector<
-		   ReceiveTask,
+                   ReceiveTask<T, T_Dim>,
 		   MPITask,
 		   MPIReceiveLabel
 	       >
            >
 {
 public:
-    TaskReceiveMPI(Exchange<T, T_Dim> & exchange)
+    TaskMPIReceive(Exchange<T, T_Dim> & exchange)
     {
         this->exchange = &exchange;
     }
@@ -46,33 +49,37 @@ public:
 	    .EnvironmentController()
 	    .getCommunicator()
 	    .startReceive(
-	        exchange->getExchangeType(),
-		(char*) exchange->getHostBuffer().getBasePointer(),
-		exchange->getHostBuffer().getDataSpace().productOfComponents() * sizeof (T),
-		exchange->getCommunicationTag());
+	        this->exchange.getExchangeType(),
+		(char*) this->exchange->getHostBuffer().getBasePointer(),
+		this->exchange.getHostBuffer().getDataSpace().productOfComponents() * sizeof (T),
+		this->exchange->getCommunicationTag());
 
-	TaskMPIWait::create( request );
+	TaskMPIWait::create( Scheduler::getInstance(), request );
 
-	if (data != nullptr)
+	int recv_data_count;
+	MPI_Status status;
+        MPI_CHECK_NO_EXCEPT(MPI_Get_count(&status, MPI_CHAR, &recv_data_count));
+
+	size_t newBufferSize = recv_data_count / sizeof (T);
+	this->exchange->getHostBuffer().setCurrentSize(newBufferSize);
+
+	if (this->exchange->hasDeviceDoubleBuffer())
 	{
-	    EventDataReceive *rdata = static_cast<EventDataReceive*> (data);
-	    // std::cout<<" data rec "<<rdata->getReceivedCount()/sizeof(TYPE)<<std::endl;
-            size_t newBufferSize = rdata->getReceivedCount() / sizeof (T);
-            exchange->getHostBuffer().setCurrentSize(newBufferSize);
-	}
-
-	if (exchange->hasDeviceDoubleBuffer())
-	{
-            TaskCopyHostToDevice<T, T_Dim>::create(exchange->getHostBuffer(),
-				       exchange->getDeviceDoubleBuffer());
-            TaskCopyDeviceToDevice<T, T_Dim>::create(exchange->getDeviceDoubleBuffer(),
-					   exchange->getDeviceBuffer());
+            memory::buffers::TaskCopyHostToDevice<T, T_Dim>::create(
+                Scheduler::getInstance(),
+                this->exchange->getHostBuffer(),
+                this->exchange->getDeviceDoubleBuffer());
+            memory::buffers::TaskCopyDeviceToDevice<T, T_Dim>::create(
+                Scheduler::getInstance(),
+                this->exchange->getDeviceDoubleBuffer(),
+                this->exchange->getDeviceBuffer());
 	}
         else
         {
-            TaskCopyHostToDevice<T, T_Dim>::create(
-                exchange->getHostBuffer(),
-		exchange->getDeviceBuffer());
+            memory::buffers::TaskCopyHostToDevice<T, T_Dim>::create(
+                Scheduler::getInstance(),
+                this->exchange->getHostBuffer(),
+                this->exchange->getDeviceBuffer());
         }
     }
 };
@@ -80,3 +87,4 @@ public:
 } // namespace communication
 
 } // namespace pmacc
+

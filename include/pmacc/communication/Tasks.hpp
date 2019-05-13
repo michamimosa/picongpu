@@ -33,7 +33,7 @@ public:
             al.push_back( this->exchange->getDeviceDoubleBuffer().size_resource.write() );
 	}
     }
-}
+};
 
 template<
     typename T,
@@ -59,9 +59,8 @@ public:
 	    al.push_back( this->exchange->getDeviceDoubleBuffer().size_resource.write() );
         }
     }
-}
+};
 
-  
 } // namespace communication
 
 } // namespace pmacc

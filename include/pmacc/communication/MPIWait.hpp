@@ -11,8 +11,8 @@ namespace communication
 {
 
 class TaskMPITest
-    : rmngr::Task<
-        TaskWaitMPI,
+    : public rmngr::Task<
+        TaskMPITest,
         boost::mpl::vector<MPITask>,
         bool
     >
@@ -28,14 +28,15 @@ public:
     bool run()
     {
         int flag = 0;
-        MPI_CHECK(MPI_Test(this->request, &flag, &(this->status)));
+	MPI_Status status;
+        MPI_CHECK(MPI_Test(this->request, &flag, &status));
 	return bool(flag);
     }
-}
+};
 
 class TaskMPIWait
-    : rmngr::Task<
-        TaskWaitMPI,
+    : public rmngr::Task<
+        TaskMPIWait,
         boost::mpl::vector<MPITask>
     >
 {
@@ -52,10 +53,10 @@ public:
         bool finished = false;
         while( !finished )
 	{
-	    finished = TaskMPITest::create( this->request ).get();
+             finished = TaskMPITest::create( Scheduler::getInstance(), this->request ).get();
 	}
     }
-}
+};
 
 } // namespace communication
 
