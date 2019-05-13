@@ -28,14 +28,13 @@
 #include "pmacc/memory/buffers/DeviceBufferIntern.hpp"
 #include "pmacc/memory/buffers/HostBufferIntern.hpp"
 #include "pmacc/memory/MakeUnique.hpp"
+#include <pmacc/communication/MPISend.hpp>
+#include <pmacc/communication/MPIReceive.hpp>
 
-#include "pmacc/eventSystem/tasks/Factory.hpp"
-#include "pmacc/eventSystem/tasks/TaskReceive.hpp"
 #include "pmacc/assert.hpp"
 #include "pmacc/types.hpp"
 
 #include <memory>
-
 
 namespace pmacc
 {
@@ -235,14 +234,14 @@ namespace pmacc
             return *deviceDoubleBuffer;
         }
 
-        EventTask startSend()
+        void startSend()
         {
-            return Environment<>::get().Factory().createTaskSend(*this);
+            NEW::TaskMPISend<TYPE, DIM>::create( Scheduler::getInstance(), *this );
         }
 
-        EventTask startReceive()
+        void startReceive()
         {
-            return Environment<>::get().Factory().createTaskReceive(*this);
+            NEW::TaskMPIReceive<TYPE, DIM>::create( Scheduler::getInstance(), *this );
         }
 
     protected:

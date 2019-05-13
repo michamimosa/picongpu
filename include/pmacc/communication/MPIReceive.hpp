@@ -16,7 +16,7 @@ struct MPIReceiveLabel
 {
     void properties(Scheduler::Schedulable& s)
     {
-        s.proto_property< rmngr::GraphvizPolicy >().label = "MPI Send";
+        s.proto_property< GraphvizPolicy >().label = "MPI Send";
     }
 }
 
@@ -42,13 +42,13 @@ public:
 
     void run()
     {
-        MPI_Request * request = Environment<T_DIM>::get()
+        MPI_Request * request = Environment<T_Dim>::get()
 	    .EnvironmentController()
 	    .getCommunicator()
 	    .startReceive(
 	        exchange->getExchangeType(),
 		(char*) exchange->getHostBuffer().getBasePointer(),
-		exchange->getHostBuffer().getDataSpace().productOfComponents() * sizeof (TYPE),
+		exchange->getHostBuffer().getDataSpace().productOfComponents() * sizeof (T),
 		exchange->getCommunicationTag());
 
 	TaskMPIWait::create( request );
@@ -57,27 +57,25 @@ public:
 	{
 	    EventDataReceive *rdata = static_cast<EventDataReceive*> (data);
 	    // std::cout<<" data rec "<<rdata->getReceivedCount()/sizeof(TYPE)<<std::endl;
-	    newBufferSize = rdata->getReceivedCount() / sizeof (TYPE);
+            size_t newBufferSize = rdata->getReceivedCount() / sizeof (T);
+            exchange->getHostBuffer().setCurrentSize(newBufferSize);
 	}
 
-        exchange->getHostBuffer().setCurrentSize( newBufferSize );
-	if( exchange->hasDeviceDoubleBuffer() )
+	if (exchange->hasDeviceDoubleBuffer())
 	{
-	    TaskCopyHostToDevice::create(
-	        exchange->getHostBuffer(),
-		exchange->getDeviceDoubleBuffer() );
-	    TaskCopyDeviceToDevice::create(
-		exchange->getDeviceDoubleBuffer(),
-		exchange->getDeviceBuffer());
+            TaskCopyHostToDevice<T, T_Dim>::create(exchange->getHostBuffer(),
+				       exchange->getDeviceDoubleBuffer());
+            TaskCopyDeviceToDevice<T, T_Dim>::create(exchange->getDeviceDoubleBuffer(),
+					   exchange->getDeviceBuffer());
 	}
         else
         {
-            TaskCopyHostToDevice::create(
+            TaskCopyHostToDevice<T, T_Dim>::create(
                 exchange->getHostBuffer(),
 		exchange->getDeviceBuffer());
         }
     }
-}
+};
 
 } // namespace communication
 
