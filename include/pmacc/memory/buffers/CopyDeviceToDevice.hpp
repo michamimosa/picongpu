@@ -1,3 +1,5 @@
+#pragma once
+
 #include <pmacc/types.hpp>
 #include <pmacc/memory/buffers/CopyTask.hpp>
 #include <pmacc/tasks/StreamTask.hpp>
