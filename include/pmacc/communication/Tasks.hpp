@@ -27,11 +27,13 @@ public:
         al.push_back( this->exchange->getHostBuffer().write() );
 	al.push_back( this->exchange->getHostBuffer().size_resource.write() );
 
-        if( this->exchange.hasDeviceDoubleBuffer() )
+        if( this->exchange->hasDeviceDoubleBuffer() )
         {
             al.push_back( this->exchange->getDeviceDoubleBuffer().write() );
             al.push_back( this->exchange->getDeviceDoubleBuffer().size_resource.write() );
 	}
+
+	s.proto_property< GraphvizPolicy >().label = "Send";
     }
 };
 
@@ -58,6 +60,8 @@ public:
             al.push_back( this->exchange->getDeviceDoubleBuffer().write() );
 	    al.push_back( this->exchange->getDeviceDoubleBuffer().size_resource.write() );
         }
+
+	s.proto_property< GraphvizPolicy >().label = "Receive";
     }
 };
 

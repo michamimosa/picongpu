@@ -17,8 +17,8 @@ class MPITask
 public:
     void properties( Scheduler::Schedulable& s )
     {
-      //   s.proto_property< rmngr::DispatchPolicy<PMaccDispatch> >()
-      //    .main_thread = true;
+        s.proto_property< rmngr::DispatchPolicy<PMaccDispatch> >()
+	  .mpi_thread = true;
     }
 };
 
