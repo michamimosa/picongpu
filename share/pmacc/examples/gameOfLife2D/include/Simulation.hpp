@@ -32,7 +32,7 @@
 
 #include "Evolution.hpp"
 
-//#include "GatherSlice.hpp"
+#include "GatherSlice.hpp"
 #include <pmacc/traits/NumberOfExchanges.hpp>
 
 #include <string>
@@ -51,7 +51,7 @@ private:
     Space gridSize;
     /* holds rule mask derived from 23/3 input, \see Evolution.hpp */
     Evolutiontype evo;
-    //GatherSlice gather;
+    GatherSlice gather;
 
     /* for storing black (dead) and white (alive) data for gol */
     Buffer* buff1; /* Buffer(\see types.h) for swapping between old and new world */
@@ -103,7 +103,7 @@ public:
     void finalize()
     {
         std::cout << "finalize simulation..." << std::endl;
-        //gather.finalize();
+        gather.finalize();
         delete buff1;
         delete buff2;
 	std::cout << "wait until all tasks finished..." << std::endl;
@@ -165,7 +165,7 @@ public:
          * border cells of our neighbors to our guard cells, since we only read
          * from the guard cells but never write to it.
          * guardingCells holds the number of guard(super)cells in each dimension
-         *
+         */
         Space guardingCells(1, 1);
         for (uint32_t i = 1; i < traits::NumberOfExchanges<DIM2>::value; ++i)
         {
@@ -176,9 +176,9 @@ public:
              * std::cout << "Direction:" << i << " => Vec: (" << relVec[0]    *
              *           << "," << relVec[1] << ")\n";                        *
              * The result is: 1:right(1,0), 2:left(-1,0), 3:up(0,1),          *
-             *    4:up right(1,1), 5:(-1,1), 6:(0,-1), 7:(1,-1), 8:(-1,-1)    *
+             *    4:up right(1,1), 5:(-1,1), 6:(0,-1), 7:(1,-1), 8:(-1,-1)    */
 
-            /* types.hpp: enum CommunicationTags{ BUFF1 = 0u, BUFF2 = 1u };   *
+            /* types.hpp: enum CommunicationTags{ BUFF1 = 0u, BUFF2 = 1u };   */
             buff1->addExchange(GUARD, Mask(i), guardingCells, BUFF1);
             buff2->addExchange(GUARD, Mask(i), guardingCells, BUFF2);
 	 }
@@ -188,11 +188,9 @@ public:
           *  -Then do an Allgather for the gloabalRanks from GC, sort out     *
           *  -inactive processes (second/boolean ,argument in gather.init) and*
           *   save new MPI_COMMUNICATOR created from these into private var.  *
-          *  -return if rank == 0                                             *
+          *  -return if rank == 0                                             */
         MessageHeader header(gridSize, layout, subGrid.getLocalDomain().offset);
         isMaster = gather.init(header, true);
-
-	*/
 
         /* Calls kernel to initialize random generator. Game of Life is then  *
          * initialized using uniform random numbers. With 10% (second arg)    *
@@ -222,19 +220,30 @@ private:
         write.deviceToHost();
 
         /* gather::operator() gathers all the buffers and assembles those to  *
-         * a complete picture discarding the guards.                          *
-        auto picture = gather(write->getHostBuffer().getDataBox());
-        PngCreator png;
-        if (isMaster) png(currentStep, picture, gridSize);
-	*/
-
-	Scheduler::enqueue_functor(
-	    [this,currentStep, &write]()
+         * a complete picture discarding the guards.                          */
+        auto picture = Scheduler::enqueue_functor(
+            [&]()
 	    {
-	        PngCreator png;
-		png( currentStep, write.getHostBuffer().getDataBox().shift(write.getGridLayout().getGuard()), gridSize );
+	      return gather(write.getHostBuffer().getDataBox());
 	    },
-	    [&write]( Scheduler::Schedulable& s )
+	    [&]( Scheduler::Schedulable & s )
+	    {
+	      auto al = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
+	      al.push_back(write.getHostBuffer().write());
+	      al.push_back(write.getHostBuffer().size_resource.write());
+
+	      s.proto_property< GraphvizPolicy >().label = "gather";
+	    }
+	);
+
+        if (isMaster) {
+	Scheduler::enqueue_functor(
+	    [&]()
+	    {
+                PngCreator png;
+                png( currentStep, picture.get(), gridSize );
+	    },
+	    [&]( Scheduler::Schedulable& s )
 	    {
      	        s.proto_property< rmngr::ResourceUserPolicy >().access_list =
 		{
@@ -244,6 +253,7 @@ private:
 		s.proto_property< GraphvizPolicy >().label = "write png";
 	    }
 	);
+	}
     }
 }; // class Simulation
 
