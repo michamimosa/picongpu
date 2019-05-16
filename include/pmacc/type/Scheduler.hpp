@@ -29,24 +29,75 @@
 namespace pmacc
 {
 
-  template <
+template <
     typename Job
-  >
-  struct PMaccDispatch : rmngr::FIFO<Job>
-  {
+>
+struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
+{
+    struct Selector : rmngr::FIFO<Job>
+    {
+        PMaccDispatch * parent;
+
+        void update()
+        {
+            parent->update();
+        }
+    };
+    
+    Selector main_selector;
+    Selector mpi_selector;
+
+    PMaccDispatch()
+    {
+        main_selector.parent = this;
+        mpi_selector.parent = this;
+    }
 
     struct Property : rmngr::FIFO<Job>::Property
     {
-        Property() : dont_schedule_me(false) {}
+        Property()
+	    : dont_schedule_me(false)
+	    , mpi_thread(false)
+        {}
+
         bool dont_schedule_me;
+        bool mpi_thread;
     };
 
     void push( Job const & j, Property const & prop = Property() )
     {
         if(! prop.dont_schedule_me )
-            this->rmngr::FIFO<Job>::push( j, prop );
+        {
+            if(prop.mpi_thread)
+                mpi_selector.push(j, prop);
+            else
+                main_selector.push(j, prop);
+        }
     }
-  };
+
+    void notify()
+    {
+        main_selector.notify();
+        mpi_selector.notify();
+    }
+
+    bool empty()
+    {
+        return main_selector.empty() && mpi_selector.empty();
+    }
+
+    template <typename Pred>
+    Job getJob( Pred const & pred )
+    {
+        if( rmngr::thread::id == 0 )
+        {
+            std::cout << "run mpi task.." << std::endl;
+            return mpi_selector.getJob( pred );
+	}
+        else
+            return main_selector.getJob( pred );
+    }
+};
 
 using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch >::RuntimeProperty >;
 

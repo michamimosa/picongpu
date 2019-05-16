@@ -64,6 +64,11 @@ public:
                 this->exchange->getHostBuffer());
 	}
 
+	Scheduler::getInstance().update_property< rmngr::ResourceUserPolicy >(
+									     {
+	      this->exchange->getHostBuffer().write(),
+	      this->exchange->getHostBuffer().size_resource.write() });
+
 	MPI_Request * request = Environment<T_Dim>::get()
 	  .EnvironmentController()
 	  .getCommunicator().startSend(
