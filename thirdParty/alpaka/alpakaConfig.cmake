@@ -184,7 +184,7 @@ ENDIF()
 SET(ALPAKA_DEBUG "0" CACHE STRING "Debug level")
 SET_PROPERTY(CACHE ALPAKA_DEBUG PROPERTY STRINGS "0;1;2")
 
-SET(ALPAKA_CXX_STANDARD "11" CACHE STRING "C++ standard version")
+SET(ALPAKA_CXX_STANDARD "14" CACHE STRING "C++ standard version")
 SET_PROPERTY(CACHE ALPAKA_CXX_STANDARD PROPERTY STRINGS "11;14;17")
 
 #-------------------------------------------------------------------------------
