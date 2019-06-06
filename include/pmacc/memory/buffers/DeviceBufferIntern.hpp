@@ -54,7 +54,7 @@ public:
      *                      if true size on device is atomaticly set to false
      */
     DeviceBufferIntern(DataSpace<DIM> size, bool sizeOnDevice = false, bool useVectorAsBase = false) :
-    DeviceBuffer<TYPE, DIM>(size, size),
+        DeviceBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{}),
     sizeOnDevice(sizeOnDevice),
     useOtherMemory(false),
     offset(DataSpace<DIM>())
@@ -77,7 +77,7 @@ public:
     }
 
     DeviceBufferIntern(DeviceBuffer<TYPE, DIM>& source, DataSpace<DIM> size, DataSpace<DIM> offset, bool sizeOnDevice = false) :
-    DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize()),
+    DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
     sizeOnDevice(sizeOnDevice),
     offset(offset + source.getOffset()),
     data(source.getCudaPitched()),
