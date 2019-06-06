@@ -284,6 +284,8 @@ namespace kernel
 	      impl,
 	      [&writeBuffer](Scheduler::Schedulable& s)
 	      {
+                  NEW::StreamTask st;
+                  st.properties(s);
 		  s.proto_property<rmngr::ResourceUserPolicy>().access_list =
 		  {
   		      writeBuffer.getDeviceBuffer().write(),
@@ -328,6 +330,8 @@ namespace kernel
             auto prop =
                 [ &readBuffer, &writeBuffer ]( Scheduler::Schedulable& s )
                 {
+                    NEW::StreamTask st;
+                    st.properties(s);
 		    //auto gridLayout = mapping->getGridLayout();
                     //auto gridAccess = gridLayout.getAccess< T_Area >();
                     s.proto_property< rmngr::ResourceUserPolicy >().access_list =
