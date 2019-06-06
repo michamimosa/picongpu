@@ -28,10 +28,7 @@ namespace waitfordevice
     {
         char v;
         while( read(event_pipe[0], &v, 1) == 1 )
-        {
-            std::cout << "trigger update from device" << std::endl;
 	    Scheduler::getInstance().policy< rmngr::DispatchPolicy< PMaccDispatch > >().notify();
-	}
     }
  
     void segv_handler(int signal, siginfo_t* siginfo, void* uap)
@@ -59,11 +56,7 @@ namespace waitfordevice
     void setup()
     {
         PAGE_SIZE = sysconf(_SC_PAGESIZE);
-      /*
-        static sigsegv_dispatcher dispatcher;
-        sigsegv_init (&dispatcher);
-        sigsegv_install_handler (&handler);
-     */
+
         struct sigaction act;
 	memset(&act, 0, sizeof(act));
 	act.sa_sigaction = &segv_handler;
@@ -71,23 +64,18 @@ namespace waitfordevice
         sigaction(SIGSEGV, &act, &old_sigaction);
 
         pipe( event_pipe );
-	std::thread event_thread(event_loop);
-	event_thread.detach();
+        std::thread event_thread(event_loop);
+        event_thread.detach();
 
-	page1 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
-	page2 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
+        page1 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
+        page2 = aligned_alloc( PAGE_SIZE, PAGE_SIZE );
 
-	std::cout << "pages used for WaitForDevice: p1 = " << page1 << ", p2 = " << page2 << std::endl;
-	/*
-	sigsegv_register (&dispatcher, page1, PAGE_SIZE, &segv_handler, &page1 );
-	sigsegv_register (&dispatcher, page2, PAGE_SIZE, &segv_handler, &page2 );
-	*/
+        std::cout << "pages used for WaitForDevice: p1 = " << page1 << ", p2 = " << page2 << std::endl;
+
         mprotect( page1, PAGE_SIZE, PROT_READ );
-	mprotect( page2, PAGE_SIZE, PROT_WRITE );
+        mprotect( page2, PAGE_SIZE, PROT_WRITE );
     }
-
 }
-
 
 struct WaitForDeviceLabel
 {
@@ -134,7 +122,6 @@ private:
 public:
     void run()
     {
-      ///std::cout << "WAIT FOR DEVICE" << std::endl;
         static State * state_device_ptr = init_state();
 	State volatile * state_host_ptr;
 
@@ -179,7 +166,6 @@ public:
             cudaMemcpyDeviceToHost,
             this->getCudaStream()
 	));
-
     }
 };
 
