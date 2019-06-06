@@ -103,11 +103,11 @@ public:
     void finalize()
     {
         std::cout << "finalize simulation..." << std::endl;
-        gather.finalize();
         delete buff1;
         delete buff2;
 	std::cout << "wait until all tasks finished..." << std::endl;
 	pmacc::Scheduler::finish();
+	gather.finalize();
     }
 
     void init()
@@ -210,50 +210,43 @@ public:
     }
 
 private:
+    rmngr::IOResource gatherbuf;
 
-    void oneStep(uint32_t currentStep, Buffer const& read, Buffer& write)
+    void oneStep(uint32_t currentStep, Buffer& read, Buffer& write)
     {
-      std::cout << "Step " << currentStep << std::endl;
+        std::cout << "Step " << currentStep << std::endl;
+
+        read.communication();
+
         evo.run<CORE>( read, write );
         evo.run<BORDER>( read, write );
 
         write.deviceToHost();
 
-        /* gather::operator() gathers all the buffers and assembles those to  *
-         * a complete picture discarding the guards.                          */
-        auto picture = Scheduler::enqueue_functor(
-            [&]()
+        Scheduler::enqueue_functor(
+            [this, &write, currentStep]()
 	    {
-	      return gather(write.getHostBuffer().getDataBox());
-	    },
-	    [&]( Scheduler::Schedulable & s )
-	    {
-	      auto al = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
-	      al.push_back(write.getHostBuffer().write());
-	      al.push_back(write.getHostBuffer().size_resource.write());
+                /* gather::operator() gathers all the buffers and assembles those to  *
+                 * a complete picture discarding the guards.                          */
+                auto picture = gather(write.getHostBuffer().getDataBox());
 
-	      s.proto_property< GraphvizPolicy >().label = "gather";
+                if (isMaster)
+                {
+                    PngCreator png;
+                    png( currentStep, picture, gridSize );
+                }
+            },
+	    [this, &write]( Scheduler::Schedulable & s )
+	    {
+                auto & al = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
+                al.push_back(write.getHostBuffer().read());
+                al.push_back(write.getHostBuffer().size_resource.read());
+                if(isMaster)
+                    al.push_back(gatherbuf.write());
+
+                s.proto_property< GraphvizPolicy >().label = "gather";
 	    }
-	);
-
-        if (isMaster) {
-	Scheduler::enqueue_functor(
-	    [&]()
-	    {
-                PngCreator png;
-                png( currentStep, picture.get(), gridSize );
-	    },
-	    [&]( Scheduler::Schedulable& s )
-	    {
-     	        s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-		{
-		   write.getHostBuffer().read(),
-		};
-
-		s.proto_property< GraphvizPolicy >().label = "write png";
-	    }
-	);
-	}
+        );
     }
 }; // class Simulation
 
