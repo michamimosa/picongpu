@@ -29,10 +29,10 @@ template <
 >
 class TaskMPISend
   : public rmngr::Task<
-               TaskSendMPI<T, T_Dim>,
+               TaskMPISend<T, T_Dim>,
                boost::mpl::vector<
         	   SendTask<T, T_Dim>,
-		   MPITask,
+                   MPITask,
 		   MPISendLabel
 	       >
            >
@@ -43,39 +43,19 @@ public:
         this->exchange = &exchange;
     }
 
-    void run()
+    void
+    run()
     {
-        if (this->exchange->hasDeviceDoubleBuffer())
-	{
-            memory::buffers::TaskCopyDeviceToDevice<T, T_Dim>::create(
-                Scheduler::getInstance(),
-		this->exchange->getDeviceBuffer(),
-                this->exchange->getDeviceDoubleBuffer());
-            memory::buffers::TaskCopyDeviceToHost<T, T_Dim>::create(
-                Scheduler::getInstance(),
-		this->exchange->getDeviceDoubleBuffer(),
-                this->exchange->getHostBuffer());
-	}
-	else
-        {
-            memory::buffers::TaskCopyDeviceToHost<T, T_Dim>::create(
-                Scheduler::getInstance(),
-	        this->exchange->getDeviceBuffer(),
-                this->exchange->getHostBuffer());
-	}
-
-	Scheduler::getInstance().update_property< rmngr::ResourceUserPolicy >(
-									     {
-	      this->exchange->getHostBuffer().write(),
-	      this->exchange->getHostBuffer().size_resource.write() });
-
-	MPI_Request * request = Environment<T_Dim>::get()
-	  .EnvironmentController()
-	  .getCommunicator().startSend(
-	      this->exchange->getExchangeType(),
-	      (char*) this->exchange->getHostBuffer().getPointer(),
-	      this->exchange->getHostBuffer().getCurrentSize() * sizeof (T),
-	      this->exchange->getCommunicationTag());
+        MPI_Request * request =
+            Environment< T_Dim >::get()
+            .EnvironmentController()
+            .getCommunicator()
+            .startSend( this->exchange->getExchangeType(),
+                        ( char * )this->exchange->getHostBuffer()
+                        .getPointer(),
+                        this->exchange->getHostBuffer().getCurrentSize() *
+                        sizeof( T ),
+                        this->exchange->getCommunicationTag() );
 
         TaskMPIWait::create( Scheduler::getInstance(), request );
     }
