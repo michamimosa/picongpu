@@ -58,7 +58,6 @@ struct MessageHeader
 
 struct GatherSlice
 {
-
     GatherSlice() : mpiRank(-1), numRanks(0), filteredData(nullptr), fullData(nullptr), isMPICommInitialized(false)
     {
     }
@@ -95,50 +94,51 @@ struct GatherSlice
      */
     bool init(const MessageHeader mHeader, bool isActive)
     {
-        header = mHeader;
+        auto res = Scheduler::enqueue_functor(
+            [this, mHeader, isActive]()
+            {
+                header = mHeader;
 
-        int countRanks = Environment<DIM2>::get().GridController().getGpuNodes().productOfComponents();
-        std::vector<int> gatherRanks(countRanks);
-        std::vector<int> groupRanks(countRanks);
-        mpiRank = Environment<DIM2>::get().GridController().getGlobalRank();
-        if (!isActive)
-            mpiRank = -1;
+                int countRanks = Environment<DIM2>::get().GridController().getGpuNodes().productOfComponents();
+                std::vector<int> gatherRanks(countRanks);
+                std::vector<int> groupRanks(countRanks);
+                mpiRank = Environment<DIM2>::get().GridController().getGlobalRank();
+                if (!isActive)
+                    mpiRank = -1;
 
-        return Scheduler::enqueue_functor(
-       	    [&]()
-	    {
-	      MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
+                MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
 
-	      for (int i = 0; i < countRanks; ++i)
+                for (int i = 0; i < countRanks; ++i)
 		{
-		  if (gatherRanks[i] != -1)
+                    if (gatherRanks[i] != -1)
 		    {
-		      groupRanks[numRanks] = gatherRanks[i];
-		      numRanks++;
+                        groupRanks[numRanks] = gatherRanks[i];
+                        numRanks++;
 		    }
 		}
 
-	      MPI_Group group;
-	      MPI_Group newgroup;
-	      MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
-	      MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+                MPI_Group group;
+                MPI_Group newgroup;
+                MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
+                MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+                MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
 
-	      MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
-
-	      if (mpiRank != -1)
+                if (mpiRank != -1)
 		{
-		  MPI_Comm_rank(comm, &mpiRank);
-		  isMPICommInitialized = true;
+                    MPI_Comm_rank(comm, &mpiRank);
+                    isMPICommInitialized = true;
 		}
 
-	      return mpiRank == 0;
+                return mpiRank == 0;
 	    },
-            [&]( Scheduler::Schedulable & s )
+            []( Scheduler::Schedulable & s )
             {
-	      communication::MPITask mpiTask;
-	      mpiTask.properties(s);
+                communication::MPITask mpiTask;
+                mpiTask.properties(s);
             }
         ).get();
+
+	return res;
     }
 
     template< class Box >
@@ -162,22 +162,22 @@ struct GatherSlice
             fullData = (char*) new ValueType[header.nodeSize.productOfComponents() * numRanks];
 
 	Scheduler::enqueue_functor(
-	    [&]()
-	    {
-	      MPI_CHECK(MPI_Gather(fakeHeader, sizeof(MessageHeader), MPI_CHAR, recvHeader, sizeof(MessageHeader),
-				   MPI_CHAR, 0, comm));
+            [this, recvHeader, fakeHeader, data]()
+            {
+                MPI_CHECK(MPI_Gather(fakeHeader, sizeof(MessageHeader), MPI_CHAR, recvHeader, sizeof(MessageHeader),
+                                     MPI_CHAR, 0, comm));
 
-	      const size_t elementsCount = header.nodeSize.productOfComponents() * sizeof (ValueType);
+                const size_t elementsCount = header.nodeSize.productOfComponents() * sizeof (ValueType);
 
-	      MPI_CHECK(MPI_Gather(
-				   (char*) (data.getPointer()), elementsCount, MPI_CHAR,
-				   fullData, elementsCount, MPI_CHAR,
-				   0, comm));
+                MPI_CHECK(MPI_Gather(
+                                     (char*) (data.getPointer()), elementsCount, MPI_CHAR,
+                                     fullData, elementsCount, MPI_CHAR,
+                                     0, comm));
 	    },
-	    [&]( Scheduler::Schedulable & s )
+	    [this]( Scheduler::Schedulable & s )
 	    {
-	      communication::MPITask mpiTask;
-	      mpiTask.properties(s);
+                communication::MPITask mpiTask;
+                mpiTask.properties(s);
 	    }
         ).get();
 
@@ -193,7 +193,6 @@ struct GatherSlice
                                                        header.simSize,
                                                        header.simSize.x() * sizeof (ValueType)
                                                        ));
-
 
             for (int i = 0; i < numRanks; ++i)
             {
@@ -230,7 +229,6 @@ struct GatherSlice
     }
 
 private:
-
     char* filteredData;
     char* fullData;
     MPI_Comm comm;
