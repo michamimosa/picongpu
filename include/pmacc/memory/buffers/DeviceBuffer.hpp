@@ -63,8 +63,8 @@ namespace pmacc
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        DeviceBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize) :
-        Buffer<TYPE, DIM>(size, physicalMemorySize)
+        DeviceBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rmngr::FieldResource<DIM> resource) :
+            Buffer<TYPE, DIM>(size, physicalMemorySize, resource)
         {
 
         }

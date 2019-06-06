@@ -56,8 +56,12 @@ namespace pmacc
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        Buffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize) :
-        data_space(size), data1D(true), current_size(nullptr), m_physicalMemorySize(physicalMemorySize)
+        Buffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rmngr::FieldResource<DIM> resource)
+            : data_space(size)
+            , data1D(true)
+            , current_size(nullptr)
+            , m_physicalMemorySize(physicalMemorySize)
+            , rmngr::FieldResource<DIM>(resource)
         {
             Scheduler::enqueue_functor(
                 [this, size]()

@@ -46,7 +46,7 @@ public:
      * @param size extent for each dimension (in elements)
      */
     HostBufferIntern(DataSpace<DIM> size) :
-    HostBuffer<TYPE, DIM>(size, size),
+        HostBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{}),
     pointer(nullptr),ownPointer(true)
     {
         Scheduler::enqueue_functor(
@@ -66,7 +66,7 @@ public:
     }
 
     HostBufferIntern(HostBufferIntern& source, DataSpace<DIM> size, DataSpace<DIM> offset=DataSpace<DIM>()) :
-    HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize()),
+        HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
     pointer(nullptr),ownPointer(false)
     {
         pointer=&(source.getDataBox()(offset));/*fix me, this is a bad way*/
@@ -113,28 +113,8 @@ public:
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
-        Scheduler::enqueue_functor(
-            [this, &other]()
-            {
-                PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-                memory::buffers::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
-            },
-            [this, &other](Scheduler::Schedulable& s)
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                {
-                    other.size_resource.write(),
-                    other.read(),
-                    this->size_resource.write(),
-                    this->write()
-                };
-
-                NEW::StreamTask streamtask;
-                streamtask.properties( s );
-
-                s.proto_property< GraphvizPolicy >().label = "HostBuffer::copyFrom()";
-            }
-        );
+        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+        memory::buffers::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
     }
 
     void reset(bool preserveData = true)
