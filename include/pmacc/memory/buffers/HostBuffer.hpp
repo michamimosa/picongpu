@@ -122,8 +122,8 @@ namespace detail
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize) :
-        Buffer<TYPE, DIM>(size, physicalMemorySize)
+        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rmngr::FieldResource<DIM> resource) :
+            Buffer<TYPE, DIM>(size, physicalMemorySize, resource)
         {
 
         }
