@@ -236,12 +236,54 @@ namespace pmacc
 
         void startSend()
         {
+            // Device -> Host
+            if( this->hasDeviceDoubleBuffer() )
+            {
+                memory::buffers::TaskCopyDeviceToDevice< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getDeviceBuffer(),
+                    this->getDeviceDoubleBuffer() );
+                memory::buffers::TaskCopyDeviceToHost< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getDeviceDoubleBuffer(),
+                    this->getHostBuffer() );
+            }
+            else
+            {
+                memory::buffers::TaskCopyDeviceToHost< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getDeviceBuffer(),
+                    this->getHostBuffer() );
+            }
+
+            // communicate between host buffers
             communication::TaskMPISend<TYPE, DIM>::create( Scheduler::getInstance(), *this );
         }
 
         void startReceive()
         {
+            // communicate between host buffers
             communication::TaskMPIReceive<TYPE, DIM>::create( Scheduler::getInstance(), *this );
+
+            // Host -> Device
+            if( this->hasDeviceDoubleBuffer() )
+            {
+                memory::buffers::TaskCopyHostToDevice< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getHostBuffer(),
+                    this->getDeviceDoubleBuffer() );
+                memory::buffers::TaskCopyDeviceToDevice< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getDeviceDoubleBuffer(),
+                    this->getDeviceBuffer() );
+            }
+            else
+            {
+                memory::buffers::TaskCopyHostToDevice< TYPE, DIM >::create(
+                    Scheduler::getInstance(),
+                    this->getHostBuffer(),
+                    this->getDeviceBuffer() );
+            }
         }
 
     protected:

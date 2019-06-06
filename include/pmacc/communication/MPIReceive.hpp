@@ -19,7 +19,7 @@ struct MPIReceiveLabel
 {
     void properties(Scheduler::Schedulable& s)
     {
-        s.proto_property< GraphvizPolicy >().label = "MPI Send";
+        s.proto_property< GraphvizPolicy >().label = "MPI Receive";
     }
 };
 
@@ -32,7 +32,7 @@ class TaskMPIReceive
                TaskMPIReceive<T, T_Dim>,
                boost::mpl::vector<
                    ReceiveTask<T, T_Dim>,
-		   MPITask,
+                   MPITask,
 		   MPIReceiveLabel
 	       >
            >
@@ -43,44 +43,33 @@ public:
         this->exchange = &exchange;
     }
 
-    void run()
+    void
+    run()
     {
-        MPI_Request * request = Environment<T_Dim>::get()
-	    .EnvironmentController()
-	    .getCommunicator()
-	    .startReceive(
-	        this->exchange.getExchangeType(),
-		(char*) this->exchange->getHostBuffer().getBasePointer(),
-		this->exchange.getHostBuffer().getDataSpace().productOfComponents() * sizeof (T),
-		this->exchange->getCommunicationTag());
+        MPI_Request * request =
+            Environment< T_Dim >::get()
+            .EnvironmentController()
+            .getCommunicator()
+            .startReceive( this->exchange->getExchangeType(),
+                           ( char * )this->exchange->getHostBuffer()
+                           .getBasePointer(),
+                           this->exchange->getHostBuffer()
+                           .getDataSpace()
+                           .productOfComponents() *
+                           sizeof( T ),
+                           this->exchange->getCommunicationTag() );
 
-	TaskMPIWait::create( Scheduler::getInstance(), request );
+        MPI_Status status = TaskMPIWait::create( Scheduler::getInstance(), request ).get();
 
-	int recv_data_count;
-	MPI_Status status;
-        MPI_CHECK_NO_EXCEPT(MPI_Get_count(&status, MPI_CHAR, &recv_data_count));
+        int recv_data_count;
+        MPI_CHECK_NO_EXCEPT( MPI_Get_count( &status, MPI_CHAR, &recv_data_count ) );
 
-	size_t newBufferSize = recv_data_count / sizeof (T);
-	this->exchange->getHostBuffer().setCurrentSize(newBufferSize);
+        if( recv_data_count == MPI_UNDEFINED )
+            std::cerr << "undefined number of elements received" << std::endl;
 
-	if (this->exchange->hasDeviceDoubleBuffer())
-	{
-            memory::buffers::TaskCopyHostToDevice<T, T_Dim>::create(
-                Scheduler::getInstance(),
-                this->exchange->getHostBuffer(),
-                this->exchange->getDeviceDoubleBuffer());
-            memory::buffers::TaskCopyDeviceToDevice<T, T_Dim>::create(
-                Scheduler::getInstance(),
-                this->exchange->getDeviceDoubleBuffer(),
-                this->exchange->getDeviceBuffer());
-	}
-        else
-        {
-            memory::buffers::TaskCopyHostToDevice<T, T_Dim>::create(
-                Scheduler::getInstance(),
-                this->exchange->getHostBuffer(),
-                this->exchange->getDeviceBuffer());
-        }
+        size_t newBufferSize = recv_data_count / sizeof( T );
+        std::cout << "received " << newBufferSize << " elements" << std::endl;
+        this->exchange->getHostBuffer().setCurrentSize( newBufferSize );
     }
 };
 
