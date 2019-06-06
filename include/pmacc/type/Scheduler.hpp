@@ -90,10 +90,7 @@ struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
     Job getJob( Pred const & pred )
     {
         if( rmngr::thread::id == 0 )
-        {
-            std::cout << "run mpi task.." << std::endl;
             return mpi_selector.getJob( pred );
-	}
         else
             return main_selector.getJob( pred );
     }
@@ -101,8 +98,36 @@ struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
 
 using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch >::RuntimeProperty >;
 
+template <typename T>
+struct EnqueuePolicy
+{
+    static bool is_serial(T const & a, T const & b)
+    {
+        return rmngr::ResourceUser::is_serial(
+                   a->template proto_property< rmngr::ResourceUserPolicy >(),
+		   b->template proto_property< rmngr::ResourceUserPolicy >());
+    }
+    static void assert_superset(T const & super, T const & sub)
+    {
+        auto r_super = super->template proto_property< rmngr::ResourceUserPolicy >();
+        auto r_sub = sub->template proto_property< rmngr::ResourceUserPolicy >();
+        if(! rmngr::ResourceUser::is_superset( r_super, r_sub ))
+        {
+            std::stringstream stream;
+            stream << "Not allowed: " << std::endl
+	           << super->template proto_property< GraphvizPolicy >().label
+		   << r_super << std::endl
+		   << "is no superset of "
+		   << sub->template proto_property< GraphvizPolicy >().label << std::endl
+	           << r_sub << std::endl;
+            throw std::runtime_error(stream.str());
+        }
+    }
+};
+
+
 template <typename Graph>
-using RefinementGraph = rmngr::QueuedPrecedenceGraph< Graph, rmngr::ResourceEnqueuePolicy >;
+using RefinementGraph = rmngr::QueuedPrecedenceGraph< Graph, EnqueuePolicy >;
 
 using Scheduler = rmngr::SchedulerSingleton<
     boost::mpl::vector<
