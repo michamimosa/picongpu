@@ -19,17 +19,17 @@ class TaskMPITest
 {
 protected:
     MPI_Request * request;
+    MPI_Status * status;
 
 public:
-    TaskMPITest( MPI_Request * request )
-        : request(request)
+    TaskMPITest( MPI_Request * request, MPI_Status * status )
+        : request(request), status(status)
     {}
 
     bool run()
     {
         int flag = 0;
-	MPI_Status status;
-        MPI_CHECK(MPI_Test(this->request, &flag, &status));
+        MPI_CHECK(MPI_Test(this->request, &flag, this->status));
 	return bool(flag);
     }
 };
@@ -37,7 +37,8 @@ public:
 class TaskMPIWait
     : public rmngr::Task<
         TaskMPIWait,
-        boost::mpl::vector<MPITask>
+        boost::mpl::vector<MPITask>,
+        MPI_Status
     >
 {
 protected:
@@ -48,13 +49,13 @@ public:
         : request( request )
     {}
 
-    void run()
+    MPI_Status run()
     {
+        MPI_Status status;
         bool finished = false;
         while( !finished )
-	{
-             finished = TaskMPITest::create( Scheduler::getInstance(), this->request ).get();
-	}
+            finished = TaskMPITest::create( Scheduler::getInstance(), this->request, &status ).get();
+        return status;
     }
 };
 
