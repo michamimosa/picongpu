@@ -79,10 +79,21 @@ public:
     DeviceBufferIntern(DeviceBuffer<TYPE, DIM>& source, DataSpace<DIM> size, DataSpace<DIM> offset, bool sizeOnDevice = false) :
     DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
     sizeOnDevice(sizeOnDevice),
-    offset(offset + source.getOffset()),
-    data(source.getCudaPitched()),
     useOtherMemory(true)
     {
+        Scheduler::enqueue_functor(
+            [this, &source, offset]
+            {
+                this->offset = offset + source.getOffset();
+                this->data = source.getCudaPitched();
+            },
+            [this, &source](Scheduler::Schedulable & s)
+            {
+                s.proto_property<rmngr::ResourceUserPolicy>()
+                    .access_list = { this->read() };
+            }
+        );
+
         createSizeOnDevice(sizeOnDevice);
         this->data1D = false;
     }
@@ -329,6 +340,8 @@ private:
                     log<ggLog::MEMORY >("Create device 3D data: %1% MiB") % (this->getDataSpace().productOfComponents() * sizeof (TYPE) / 1024 / 1024);
                     CUDA_CHECK(cudaMalloc3D(&data, extent));
                 }
+
+                std::cout << "Device buffer init: PITCH = " << data.pitch << std::endl;
             },
             [this]( Scheduler::Schedulable& s )
             {
@@ -362,6 +375,8 @@ private:
                 {
                     data.ysize = this->getDataSpace()[1];
                 }
+
+                std::cout << "Device buffer fake init: PITCH = " << data.pitch << std::endl;
             },
             [this]( Scheduler::Schedulable& s )
             {
