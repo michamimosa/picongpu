@@ -210,7 +210,8 @@ namespace exec
                 gridExtent.toDim3(),
                 blockExtent.toDim3(),
                 m_sharedMemByte,
-                taskKernel->getCudaStream()
+		0
+                //taskKernel->getCudaStream()
             )(
                 args ...
             );
@@ -221,11 +222,6 @@ namespace exec
             CUDA_CHECK_KERNEL_MSG(
                 cuplaDeviceSynchronize( ),
                 std::string( "Crash after kernel launch " ) + kernelInfo
-            );
-            taskKernel->activateChecks( );
-            CUDA_CHECK_KERNEL_MSG(
-                cuplaDeviceSynchronize( ),
-                std::string(  "Crash after kernel activation" ) + kernelInfo
             );
         }
 
