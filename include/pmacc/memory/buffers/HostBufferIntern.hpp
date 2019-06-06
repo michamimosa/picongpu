@@ -69,7 +69,16 @@ public:
         HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
     pointer(nullptr),ownPointer(false)
     {
-        pointer=&(source.getDataBox()(offset));/*fix me, this is a bad way*/
+        Scheduler::enqueue_functor(
+            [this, &source, offset]
+            {
+                pointer=&(source.getDataBox()(offset));/*fix me, this is a bad way*/
+            },
+            [this, &source](Scheduler::Schedulable& s)
+            {
+                s.proto_property<rmngr::ResourceUserPolicy>().access_list = { source.read() };
+            }
+        );
         reset(true);
     }
 
