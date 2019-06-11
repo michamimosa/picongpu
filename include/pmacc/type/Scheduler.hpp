@@ -24,6 +24,7 @@
 #include <rmngr/scheduler/scheduler_singleton.hpp>
 #include <rmngr/scheduler/resource.hpp>
 #include <rmngr/scheduler/dispatch.hpp>
+#include <rmngr/scheduler/graphviz.hpp>
 #include <rmngr/scheduler/fifo.hpp>
 
 namespace pmacc
