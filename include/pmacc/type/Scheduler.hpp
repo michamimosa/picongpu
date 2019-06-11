@@ -30,6 +30,8 @@
 namespace pmacc
 {
 
+std::ostream& functor_backtrace(std::ostream& out);
+
 template <
     typename Job
 >
@@ -44,7 +46,7 @@ struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
             parent->update();
         }
     };
-    
+
     Selector main_selector;
     Selector mpi_selector;
 
@@ -121,6 +123,7 @@ struct EnqueuePolicy
 		   << "is no superset of "
 		   << sub->template proto_property< GraphvizPolicy >().label << std::endl
 	           << r_sub << std::endl;
+            functor_backtrace(stream);
             throw std::runtime_error(stream.str());
         }
     }
@@ -140,6 +143,20 @@ using Scheduler = rmngr::SchedulerSingleton<
     >,
     RefinementGraph
 >;
+
+std::ostream& functor_backtrace(std::ostream& out)
+{
+    if( std::experimental::optional<std::vector<Scheduler::Schedulable*>> bt = Scheduler::getInstance().backtrace() )
+    {
+        int i = 0;
+        for( auto s : *bt )
+        {
+            out << "functor backtrace [" << i << "] " << s->proto_property<GraphvizPolicy>().label << std::endl;
+            i++;
+        }
+    }
+    return out;
+}    
 
 } // namespace pmacc
 
