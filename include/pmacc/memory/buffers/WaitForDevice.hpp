@@ -48,8 +48,10 @@ namespace waitfordevice
 	}
 	else
 	{
-	  // A real SEGV
-	  sigaction(SIGSEGV, &old_sigaction, NULL);
+            functor_backtrace(std::cerr);
+
+            // A real SEGV
+            sigaction(SIGSEGV, &old_sigaction, NULL);
 	}
     }
 
