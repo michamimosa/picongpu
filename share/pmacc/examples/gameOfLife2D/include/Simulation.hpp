@@ -223,8 +223,16 @@ private:
 
         write.deviceToHost();
 
-        Scheduler::enqueue_functor(
-            [this, &write, currentStep]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += write.getHostBuffer().read();
+        prop.policy< rmngr::ResourceUserPolicy >() += write.getHostBuffer().size_resource.read();
+        if( isMaster )
+            prop.policy< rmngr::ResourceUserPolicy >() += gatherbuf.write();
+
+        prop.policy< GraphvizPolicy >().label = "gather";
+
+        Scheduler::emplace_task(
+            [this, &write, currentStep]
 	    {
                 /* gather::operator() gathers all the buffers and assembles those to  *
                  * a complete picture discarding the guards.                          */
@@ -236,16 +244,7 @@ private:
                     png( currentStep, picture, gridSize );
                 }
             },
-	    [this, &write]( Scheduler::Schedulable & s )
-	    {
-                auto & al = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
-                al.push_back(write.getHostBuffer().read());
-                al.push_back(write.getHostBuffer().size_resource.read());
-                if(isMaster)
-                    al.push_back(gatherbuf.write());
-
-                s.proto_property< GraphvizPolicy >().label = "gather";
-	    }
+            prop
         );
     }
 }; // class Simulation

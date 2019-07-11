@@ -1,5 +1,4 @@
-/* Copyright 2013-2019 Felix Schmitt, Rene Widera, Wolfgang Hoenig,
- *                     Benjamin Worpitz
+/* Copyright 2016-2019 Rene Widera
  *
  * This file is part of PMacc.
  *
@@ -22,35 +21,43 @@
 
 #pragma once
 
-#include "pmacc/eventSystem/events/EventNotify.hpp"
+
+#include "pmacc/types.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
+
 
 namespace pmacc
 {
-    // forward declaration
-    class EventNotify;
-
-    /**
-     * Base class for event data.
-     */
-    class IEventData
+namespace exec
+{
+    template< typename T_KernelFunctor >
+    template<
+        typename T_VectorGrid,
+        typename T_VectorBlock
+    >
+    HINLINE
+    auto
+    Kernel< T_KernelFunctor >::operator()(
+        T_VectorGrid const & gridExtent,
+        T_VectorBlock const & blockExtent,
+        size_t const sharedMemByte
+    ) const
+    -> KernelStarter<
+        Kernel,
+        T_VectorGrid,
+        T_VectorBlock
+    >
     {
-    public:
-
-        IEventData(EventNotify *task) :
-        task(task)
-        {}
-
-        virtual ~IEventData()
-        {}
-
-        EventNotify* getEventNotify()
-        {
-            return task;
-        }
-
-    protected:
-        EventNotify *task;
-
-    };
-
-} //namespace pmacc
+        return KernelStarter<
+            Kernel,
+            T_VectorGrid,
+            T_VectorBlock
+        >(
+            *this,
+            gridExtent,
+            blockExtent,
+            sharedMemByte
+        );
+    }
+} // namespace exec
+} // namespace pmacc

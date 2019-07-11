@@ -94,8 +94,10 @@ struct GatherSlice
      */
     bool init(const MessageHeader mHeader, bool isActive)
     {
-        auto res = Scheduler::enqueue_functor(
-            [this, mHeader, isActive]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
+        return Scheduler::emplace_task(
+            [this, mHeader, isActive]
             {
                 header = mHeader;
 
@@ -131,14 +133,8 @@ struct GatherSlice
 
                 return mpiRank == 0;
 	    },
-            []( Scheduler::Schedulable & s )
-            {
-                communication::MPITask mpiTask;
-                mpiTask.properties(s);
-            }
+            prop
         ).get();
-
-	return res;
     }
 
     template< class Box >
@@ -161,8 +157,10 @@ struct GatherSlice
         if (fullData == nullptr && mpiRank == 0)
             fullData = (char*) new ValueType[header.nodeSize.productOfComponents() * numRanks];
 
-	Scheduler::enqueue_functor(
-            [this, recvHeader, fakeHeader, data]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
+	Scheduler::emplace_task(
+            [this, recvHeader, fakeHeader, data]
             {
                 MPI_CHECK(MPI_Gather(fakeHeader, sizeof(MessageHeader), MPI_CHAR, recvHeader, sizeof(MessageHeader),
                                      MPI_CHAR, 0, comm));
@@ -174,11 +172,7 @@ struct GatherSlice
                                      fullData, elementsCount, MPI_CHAR,
                                      0, comm));
 	    },
-	    [this]( Scheduler::Schedulable & s )
-	    {
-                communication::MPITask mpiTask;
-                mpiTask.properties(s);
-	    }
+            prop
         ).get();
 
         if (mpiRank == 0)

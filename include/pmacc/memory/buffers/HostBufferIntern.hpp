@@ -34,7 +34,10 @@ namespace pmacc
 /**
  * Internal implementation of the HostBuffer interface.
  */
-template <class TYPE, unsigned DIM>
+template <
+    class TYPE,
+    std::size_t DIM
+>
 class HostBufferIntern : public HostBuffer<TYPE, DIM>
 {
 public:
@@ -45,41 +48,45 @@ public:
      *
      * @param size extent for each dimension (in elements)
      */
-    HostBufferIntern(DataSpace<DIM> size) :
-        HostBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{}),
-    pointer(nullptr),ownPointer(true)
+    HostBufferIntern(DataSpace<DIM> size)
+        : HostBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{})
+        , pointer(nullptr)
+        , ownPointer(true)
     {
-        Scheduler::enqueue_functor(
-            [this, size]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< GraphvizPolicy >().label = "HostBufferIntern::HostBufferIntern()";
+
+        Scheduler::emplace_task(
+            [this, size]
             {
                 CUDA_CHECK(cudaMallocHost((void**)&pointer, size.productOfComponents() * sizeof (TYPE)));
+                reset(false);
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-		{ this->write() };
-
-                s.proto_property< GraphvizPolicy >().label = "HostBuffer::HostBuffer()";
-            }
+            prop
         );
-        reset(false);
     }
 
-    HostBufferIntern(HostBufferIntern& source, DataSpace<DIM> size, DataSpace<DIM> offset=DataSpace<DIM>()) :
-        HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
-    pointer(nullptr),ownPointer(false)
+    HostBufferIntern(HostBufferIntern& source, DataSpace<DIM> size, DataSpace<DIM> offset=DataSpace<DIM>())
+        : HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source)
+        , pointer(nullptr)
+        , ownPointer(false)
     {
-        Scheduler::enqueue_functor(
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += source.read();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< GraphvizPolicy >().label = "HostBufferIntern::HostBufferIntern(source)";
+
+        Scheduler::emplace_task(
             [this, &source, offset]
             {
                 pointer=&(source.getDataBox()(offset));/*fix me, this is a bad way*/
+                reset(true);
             },
-            [this, &source](Scheduler::Schedulable& s)
-            {
-                s.proto_property<rmngr::ResourceUserPolicy>().access_list = { source.read() };
-            }
+            prop
         );
-        reset(true);
     }
 
     /**
@@ -87,7 +94,12 @@ public:
      */
     virtual ~HostBufferIntern()
     {
-        auto res = Scheduler::enqueue_functor(
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< GraphvizPolicy >().label = "HostBufferIntern::~HostBufferIntern()";
+
+        Scheduler::emplace_task(
             [this]()
             {
                 if (pointer && ownPointer)
@@ -95,16 +107,8 @@ public:
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(pointer));
                 }
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write(), this->size_resource.write() };
-
-                s.proto_property< GraphvizPolicy >().label = "HostBuffer::~HostBuffer()";
-            }
-        );
-
-        res.get();
+            prop
+        ).get();
     }
 
     /*! Get pointer of memory
@@ -120,16 +124,21 @@ public:
         return pointer;
     }
 
-    void copyFrom(DeviceBuffer<TYPE, DIM>& other)
+    void copyFrom(DeviceBuffer<TYPE, DIM> & other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        memory::buffers::TaskCopyDeviceToHost<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
+        memory::buffers::copy( *this, other );
     }
 
     void reset(bool preserveData = true)
     {
-        Scheduler::enqueue_functor(
-            [this, preserveData]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< GraphvizPolicy >().label = "HostBufferIntern::reset()";
+
+        Scheduler::emplace_task(
+            [this, preserveData]
             {
                 this->setCurrentSize(this->getDataSpace().productOfComponents());
                 if (!preserveData)
@@ -153,20 +162,19 @@ public:
                     }
                 }
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write(), this->size_resource.write() };
-
-                s.proto_property< GraphvizPolicy >().label = "HostBuffer::reset()";
-            }
+            prop
         );
     }
 
     void setValue(const TYPE& value)
     {
-        Scheduler::enqueue_functor(
-            [this, value]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
+        prop.policy< GraphvizPolicy >().label = "HostBufferIntern::setValue()";
+
+        Scheduler::emplace_task(
+            [this, value]
             {
                 int64_t current_size = static_cast< int64_t >(this->getCurrentSize());
                 DataBoxDim1Access< DataBoxType > d1Box(
@@ -180,13 +188,7 @@ public:
                     d1Box[i] = value;
                 }
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write(), this->size_resource.read() };
-
-                s.proto_property< GraphvizPolicy >().label = "HostBuffer::setValue()";
-            }
+            prop
         );
     }
 

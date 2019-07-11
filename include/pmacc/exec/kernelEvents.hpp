@@ -25,8 +25,6 @@
 #include "pmacc/types.hpp"
 #include "pmacc/dimensions/DataSpace.hpp"
 #include "pmacc/traits/GetNComponents.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/Environment.hpp"
 #include "pmacc/nvidia/gpuEntryFunction.hpp"
 
 #include <string>
@@ -179,6 +177,7 @@ namespace exec
             T_Args const & ... args
         ) const
         {
+            cudaStream_t cuda_stream = 0;
 
             std::string const kernelName = typeid( m_kernel.m_kernelFunctor ).name();
             std::string const kernelInfo = kernelName +
@@ -189,11 +188,11 @@ namespace exec
                 cudaDeviceSynchronize( ),
                 std::string( "Crash before kernel call " ) + kernelInfo
             );
-
+            /*
             pmacc::TaskKernel* taskKernel = pmacc::Environment<>::get().Factory().createTaskKernel(
                 typeid( kernelName ).name()
             );
-
+            */
             DataSpace<
                 traits::GetNComponents<
                     T_VectorGrid
@@ -210,8 +209,7 @@ namespace exec
                 gridExtent,
                 blockExtent,
                 m_sharedMemByte,
-		0
-                //taskKernel->getCudaStream()
+		cuda_stream
             )(
                 args ...
             );
@@ -275,4 +273,4 @@ namespace exec
 #define PMACC_KERNEL( ... ) ::pmacc::exec::kernel( __VA_ARGS__, __FILE__,  static_cast< size_t >( __LINE__ ) )
 
 
-#include "pmacc/eventSystem/events/kernelEvents.tpp"
+#include "pmacc/exec/kernelEvents.tpp"

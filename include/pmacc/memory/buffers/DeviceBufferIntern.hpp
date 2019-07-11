@@ -27,12 +27,14 @@
 #include "pmacc/memory/boxes/DataBox.hpp"
 #include "pmacc/assert.hpp"
 
-#include <pmacc/tasks/StreamTask.hpp>
 #include <pmacc/memory/buffers/WaitForDevice.hpp>
 #include <pmacc/memory/buffers/SetValueOnDevice.hpp>
 
 #include <pmacc/memory/buffers/CopyHostToDevice.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
+
+#include <pmacc/exec/kernelEvents.hpp>
+#include "pmacc/nvidia/gpuEntryFunction.hpp"
 
 namespace pmacc
 {
@@ -40,7 +42,7 @@ namespace pmacc
 /**
  * Internal device buffer implementation.
  */
-template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
 class DeviceBufferIntern : public DeviceBuffer<TYPE, DIM>
 {
 public:
@@ -53,55 +55,73 @@ public:
      * @param useVectorAsBase use a vector as base of the array (is not lined pitched)
      *                      if true size on device is atomaticly set to false
      */
-    DeviceBufferIntern(DataSpace<DIM> size, bool sizeOnDevice = false, bool useVectorAsBase = false) :
-        DeviceBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{}),
-    sizeOnDevice(sizeOnDevice),
-    useOtherMemory(false),
-    offset(DataSpace<DIM>())
+    DeviceBufferIntern(DataSpace<DIM> size, bool sizeOnDevice = false, bool useVectorAsBase = false)
+        : DeviceBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{})
+        , sizeOnDevice(sizeOnDevice)
+        , useOtherMemory(false)
+        , offset(DataSpace<DIM>())
     {
-        //create size on device before any use of setCurrentSize
-        if (useVectorAsBase)
-        {
-            this->sizeOnDevice = false;
-            createSizeOnDevice(this->sizeOnDevice);
-            createFakeData();
-            this->data1D = true;
-        }
-        else
-        {
-            createSizeOnDevice(this->sizeOnDevice);
-            createData();
-            this->data1D = false;
-        }
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DevieBufferIntern::DeviceBufferIntern()";
 
+        Scheduler::emplace_task(
+            [this, size, useVectorAsBase]
+            {
+                //create size on device before any use of setCurrentSize
+                if (useVectorAsBase)
+                {
+                    this->sizeOnDevice = false;
+                    this->createSizeOnDevice(this->sizeOnDevice);
+                    this->createFakeData();
+                    this->data1D = true;
+                }
+                else
+                {
+                    this->createSizeOnDevice(this->sizeOnDevice);
+                    this->createData();
+                    this->data1D = false;
+                }
+            },
+            prop
+        );
     }
 
-    DeviceBufferIntern(DeviceBuffer<TYPE, DIM>& source, DataSpace<DIM> size, DataSpace<DIM> offset, bool sizeOnDevice = false) :
-    DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source),
-    sizeOnDevice(sizeOnDevice),
-    useOtherMemory(true)
+    DeviceBufferIntern(DeviceBuffer<TYPE, DIM>& source, DataSpace<DIM> size, DataSpace<DIM> offset, bool sizeOnDevice = false)
+        : DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source)
+        , sizeOnDevice(sizeOnDevice)
+        , useOtherMemory(true)
     {
-        Scheduler::enqueue_functor(
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DevieBufferIntern::DeviceBufferIntern(source)";
+
+        Scheduler::emplace_task(
             [this, &source, offset]
             {
                 this->offset = offset + source.getOffset();
                 this->data = source.getCudaPitched();
-            },
-            [this, &source](Scheduler::Schedulable & s)
-            {
-                s.proto_property<rmngr::ResourceUserPolicy>()
-                    .access_list = { this->read() };
-            }
-        );
 
-        createSizeOnDevice(sizeOnDevice);
-        this->data1D = false;
+                this->createSizeOnDevice(this->sizeOnDevice);
+                this->data1D = false;
+            },
+            prop
+        );
     }
 
     virtual ~DeviceBufferIntern()
     {
-        auto res = Scheduler::enqueue_functor(
-            [this]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::~DeviceBufferIntern()";
+
+        Scheduler::emplace_task(
+            [this]
             {
                 if (sizeOnDevice)
                 {
@@ -112,23 +132,23 @@ public:
                     CUDA_CHECK_NO_EXCEPT(cudaFree(data.ptr));
                 }
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property<rmngr::ResourceUserPolicy>().access_list =
-                { this->size_resource.read(), this->write() };
-                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::~DeviceBuffer()";
-            }
-        );
-
-        res.get();
+            prop
+        ).get();
     }
 
     void reset(bool preserveData = true)
     {
-        Scheduler::enqueue_functor(
-            [this, preserveData]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::reset()";
+
+        Scheduler::emplace_task(
+            [this, preserveData]
             {
                 this->setCurrentSize(Buffer<TYPE, DIM>::getDataSpace().productOfComponents());
+
                 if (!preserveData)
                 {
                     TYPE value;
@@ -142,16 +162,7 @@ public:
                     setValue(value);
                 }
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write(), this->size_resource.write() };
-
-                NEW::StreamTask streamtask;
-                streamtask.properties( s );
-
-                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::reset()";
-            }
+            prop
         );
     }
 
@@ -214,78 +225,90 @@ public:
      */
     virtual size_t getCurrentSize()
     {
-        if (sizeOnDevice)
-        {
-            NEW::StreamTask stream_task;
-            Scheduler::enqueue_functor(
-                [this, stream_task]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::getCurrentSize()";
+
+        Scheduler::emplace_task(
+            [this]
+            {
+                if (sizeOnDevice)
                 {
+                    cudaStream_t cuda_stream = 0;
+
                     CUDA_CHECK(cudaMemcpyAsync((void*) this->getCurrentSizeHostSidePointer(),
                                                this->getCurrentSizeOnDevicePointer(),
                                                sizeof (size_t),
                                                cudaMemcpyDeviceToHost,
-                                               stream_task.getCudaStream()));
+                                               cuda_stream));
 
-		    TaskWaitForDevice::create( Scheduler::getInstance() );
-                },
-                [this, stream_task]( Scheduler::Schedulable& s )
-                {
-                    stream_task.properties( s );
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
-                        this->size_resource.write()
-                    );
-                    s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::getCurrentSize()";
+                    task_synchronize_stream(0);
                 }
-            );
-        }
 
-        return DeviceBuffer<TYPE, DIM>::getCurrentSize();
+                Scheduler::PropertiesPatch patch;
+                patch.policy< rmngr::ResourceUserPolicy >() -= this->size_resource.write();
+                Scheduler::update_properties( patch );
+
+                return DeviceBuffer<TYPE, DIM>::getCurrentSize();
+            },
+            prop
+        ).get();
     }
 
-    virtual void setCurrentSize(const size_t size)
+    struct KernelSetValueOnDeviceMemory
     {
-        Buffer<TYPE, DIM>::setCurrentSize(size);
-        if (sizeOnDevice)
+        template< typename T_Acc >
+        DINLINE void operator()(T_Acc const &, size_t* pointer, size_t const size) const
         {
-            NEW::StreamTask stream_task;
-            Scheduler::enqueue_functor(
-                [this, stream_task, size]()
+            *pointer = size;
+        }
+    };
+
+    virtual void setCurrentSize(size_t const size)
+    {
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::setCurrentSize()";
+
+        Scheduler::emplace_task(
+            [this, size]
+            {
+                Buffer<TYPE, DIM>::setCurrentSize(size);
+                if (sizeOnDevice)
                 {
+                    cudaStream_t cuda_stream = 0;
+
                     CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
                         1,
                         1,
                         0,
-                        stream_task.getCudaStream()
+                        cuda_stream
                     )(
                         this->getCurrentSizeOnDevicePointer(),
                         size
                     );
-                },
-                [this, stream_task, size](Scheduler::Schedulable& s)
-                {
-                    stream_task.properties( s );
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list.push_back(
-                        this->size_resource.write()
-                    );
-                    s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::setCurrentSize()";
                 }
-            );
-        }
+            },
+            prop
+        );
     }
 
     void copyFrom(HostBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-	memory::buffers::TaskCopyHostToDevice<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
+        memory::buffers::copy( *this, other );
     }
 
     void copyFrom(DeviceBuffer<TYPE, DIM>& other)
     {
         PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-	memory::buffers::TaskCopyDeviceToDevice<TYPE, DIM>::create( Scheduler::getInstance(), other, *this );
+        memory::buffers::copy( *this, other );
     }
 
-    const cudaPitchedPtr getCudaPitched() const
+    cudaPitchedPtr const getCudaPitched() const
     {
         return data;
     }
@@ -302,8 +325,11 @@ public:
             isSmall = (sizeof (TYPE) <= 128)
         }; //if we use const variable the compiler create warnings
 
-        NEW::TaskSetValue<TYPE, DIM, isSmall>::create( Scheduler::getInstance(), *this, value );
-    };
+        if( isSmall )
+            memory::buffers::device_set_value_small( *this, value );
+        else
+            memory::buffers::device_set_value_big( *this, value );
+    }
 
 private:
 
@@ -311,8 +337,14 @@ private:
      */
     void createData()
     {
-        Scheduler::enqueue_functor(
-            [this]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::createData()";
+
+        Scheduler::emplace_task(
+            [this]
             {
                 data.ptr = nullptr;
                 data.pitch = 1;
@@ -341,24 +373,24 @@ private:
                     CUDA_CHECK(cudaMalloc3D(&data, extent));
                 }
 
-                std::cout << "Device buffer init: PITCH = " << data.pitch << std::endl;
+                reset(false);
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                  { this->write(), this->size_resource.write() };
-                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createData()";
-            }
+            prop
         );
-        reset(false);
     }
 
     /*!create 1D, 2D, 3D Array which use only a vector as base
      */
     void createFakeData()
     {
-        Scheduler::enqueue_functor(
-            [this]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::createFakeData()";
+
+        Scheduler::emplace_task(
+            [this]
             {
                 data.ptr = nullptr;
                 data.pitch = 1;
@@ -376,23 +408,21 @@ private:
                     data.ysize = this->getDataSpace()[1];
                 }
 
-                std::cout << "Device buffer fake init: PITCH = " << data.pitch << std::endl;
+                reset(false);
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->write(), this->size_resource.read() };
-                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createFakeData()";
-            }
+            prop
         );
-
-        reset(false);
     }
 
     void createSizeOnDevice(bool sizeOnDevice)
     {
-        Scheduler::enqueue_functor(
-            [this, sizeOnDevice]()
+        Scheduler::Properties prop;
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+        prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::createSizeOnDevice()";
+
+        Scheduler::emplace_task(
+            [this, sizeOnDevice]
             {
                 this->sizeOnDevicePtr = nullptr;
 
@@ -400,17 +430,11 @@ private:
                 {
                     CUDA_CHECK(cudaMalloc((void**)&this->sizeOnDevicePtr, sizeof (size_t)));
                 }
+
+                setCurrentSize(this->getDataSpace().productOfComponents());
             },
-            [this]( Scheduler::Schedulable& s )
-            {
-                s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                { this->size_resource.write() };
-
-                s.proto_property< GraphvizPolicy >().label = "DeviceBuffer::createSizeOnDevice()";
-            }
+            prop
         );
-
-        setCurrentSize(this->getDataSpace().productOfComponents());
     }
 
 private:

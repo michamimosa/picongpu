@@ -42,7 +42,7 @@ namespace pmacc
      * @tparam TYPE data type stored in the buffer
      * @tparam DIM dimension of the buffer (1-3)
      */
-    template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
     class Buffer
         : public rmngr::FieldResource< DIM >
     {
@@ -63,19 +63,17 @@ namespace pmacc
             , m_physicalMemorySize(physicalMemorySize)
             , rmngr::FieldResource<DIM>(resource)
         {
-            Scheduler::enqueue_functor(
-                [this, size]()
+            Scheduler::Properties prop;
+            prop.policy<rmngr::ResourceUserPolicy>() += this->size_resource.write();
+            prop.policy<GraphvizPolicy>().label = "Buffer::Buffer()";
+
+            Scheduler::emplace_task(
+                [this, size]
                 {
                     CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof (size_t)));
                     *current_size = size.productOfComponents();
                 },
-                [this]( Scheduler::Schedulable& s )
-                {
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->size_resource.write() };
-
-                    s.proto_property< GraphvizPolicy >().label = "Buffer::Buffer()";
-                }
+                prop
             );
         }
 
@@ -84,21 +82,18 @@ namespace pmacc
          */
         ~Buffer()
         {
-            auto res = Scheduler::enqueue_functor(
-                [this]()
+            Scheduler::Properties prop;
+            prop.policy< rmngr::ResourceUserPolicy >() += this->write();
+            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+            prop.policy< GraphvizPolicy >().label = "Buffer::~Buffer()";
+
+            Scheduler::emplace_task(
+                [this]
                 {
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
                 },
-                [this]( Scheduler::Schedulable& s )
-                {
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->write(), this->size_resource.write() };
-
-                    s.proto_property< GraphvizPolicy >().label = "Buffer::~Buffer()";
-                }
-            );
-
-            res.get();
+                prop
+            ).get();
         }
 
         /*! Get base pointer to memory
@@ -189,18 +184,17 @@ namespace pmacc
          */
         virtual size_t getCurrentSize()
         {
-            auto res = Scheduler::enqueue_functor(
-                [this](){ return *(this->current_size); },
-                [this]( Scheduler::Schedulable& s )
+            Scheduler::Properties prop;
+            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
+            prop.policy< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
+
+            return Scheduler::emplace_task(
+                [this]
                 {
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->size_resource.read() };
-
-                    s.proto_property< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
-                }
-            );
-
-            return res.get();
+                    return *(this->current_size);
+                },
+                prop
+            ).get();
         }
 
         /*! sets the current size (count of elements)
@@ -208,19 +202,17 @@ namespace pmacc
          */
         virtual void setCurrentSize(const size_t newsize)
         {
-            Scheduler::enqueue_functor(
-                [this, newsize]()
+            Scheduler::Properties prop;
+            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
+            prop.policy< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
+
+            Scheduler::emplace_task(
+                [this, newsize]
                 {
                     PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
                     *(this->current_size) = newsize;
                 },
-                [this]( Scheduler::Schedulable& s )
-                {
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    { this->size_resource.write() };
-
-                    s.proto_property< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
-                }
+                prop
             );
         }
 

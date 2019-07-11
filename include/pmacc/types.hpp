@@ -71,7 +71,6 @@
 #include "pmacc/attribute/FunctionSpecifier.hpp"
 #include "pmacc/attribute/Constexpr.hpp"
 #include "pmacc/attribute/Fallthrough.hpp"
-#include "pmacc/eventSystem/EventType.hpp"
 #include "pmacc/cuplaHelper/ValidateCall.hpp"
 #include "pmacc/memory/Align.hpp"
 #include "pmacc/memory/Delete.hpp"

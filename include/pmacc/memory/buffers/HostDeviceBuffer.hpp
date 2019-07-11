@@ -32,7 +32,7 @@
 namespace pmacc{
 
     /** Buffer that contains a host and device buffer and allows synchronizing those 2 */
-    template<typename T_Type, unsigned T_dim>
+    template<typename T_Type, std::size_t T_dim>
     class HostDeviceBuffer
     {
         typedef HostBufferIntern<T_Type, T_dim> HostBufferType;

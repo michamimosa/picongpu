@@ -37,12 +37,10 @@
 
 namespace pmacc
 {
-    class EventTask;
-
-    template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
     class HostBuffer;
 
-    template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
     class Buffer;
 
     /**
@@ -51,7 +49,7 @@ namespace pmacc
      * @tparam TYPE datatype of the buffer
      * @tparam DIM dimension of the buffer
      */
-    template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
     class DeviceBuffer : public Buffer<TYPE, DIM>
     {
     protected:
