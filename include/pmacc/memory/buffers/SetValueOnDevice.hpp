@@ -7,8 +7,6 @@
 #include "pmacc/mappings/threads/IdxConfig.hpp"
 #include "pmacc/memory/buffers/DeviceBuffer.hpp"
 #include "pmacc/memory/boxes/DataBox.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/eventSystem/tasks/StreamTask.hpp"
 #include "pmacc/nvidia/gpuEntryFunction.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 
@@ -16,16 +14,18 @@
 #include <boost/type_traits.hpp>
 
 #include <pmacc/types.hpp>
-#include <pmacc/tasks/StreamTask.hpp>
-#include <rmngr/task.hpp>
 
 namespace pmacc
 {
 
-  template <class TYPE, unsigned DIM>
+    template <class TYPE, std::size_t DIM>
   class DeviceBuffer;
 
-namespace NEW{
+namespace memory
+{
+namespace buffers
+{
+
 namespace taskSetValueHelper
 {
 
@@ -138,208 +138,158 @@ struct KernelSetValue
     }
 };
 
-/** Set all cells of a GridBuffer on the device to a given value
- *
- * T_ValueType  = data type (e.g. float, float2)
- * T_dim   = dimension of the GridBuffer
- * T_isSmallValue = true if T_ValueType can be send via kernel parameter (on cuda T_ValueType must be smaller than 256 byte)
- */
-template <class T_ValueType, size_t T_dim, bool T_isSmallValue>
-class TaskSetValue;
-
-template < typename T, size_t T_Dim >
-struct SetValueTask
-{
-    void properties( Scheduler::Schedulable& s )
-    {
-        auto & l = s.proto_property< rmngr::ResourceUserPolicy >().access_list;
-        l.push_back( this->destination->write() );
-        l.push_back( this->destination->size_resource.write() );
-
-        s.proto_property< GraphvizPolicy >().label = "SetValueOnDevice";
-    }
-
-    DeviceBuffer<T, T_Dim> * destination;
-};
-
 template <
-    typename Impl,
     typename T,
-    size_t T_Dim
+    std::size_t T_Dim
 >
-class TaskSetValueBase
-    : public rmngr::Task<
-          Impl,
-          boost::mpl::vector<
-              StreamTask,
-              SetValueTask< T, T_Dim >
-          >
-      >
+void
+device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
 {
-public:
-    TaskSetValueBase(DeviceBuffer<T, T_Dim> & dst, T const & value)
-      : value(value)
-    {
-        this->destination = &dst;
-    }
+    Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+    prop.policy< GraphvizPolicy >().label = "device_set_value_small()";
 
-    virtual void run() = 0;
-
-protected:
-    T value;
-};
-
-/** implementation for small values (<= 256byte)
- */
-template <typename T_ValueType, size_t T_Dim>
-class TaskSetValue<T_ValueType, T_Dim, true>
-    : public TaskSetValueBase<
-          TaskSetValue<T_ValueType, T_Dim, true>,
-          T_ValueType,
-          T_Dim
-      >
-{
-public:
-    typedef T_ValueType ValueType;
-    static constexpr uint32_t dim = T_Dim;
-
-    TaskSetValue(DeviceBuffer<ValueType, dim>& dst, const ValueType& value)
-      : TaskSetValueBase<TaskSetValue<T_ValueType, T_Dim, true>, ValueType, dim>(dst, value)
-    {}
-
-    void run()
-    {
-        // n-dimensional size of destination
-        DataSpace< dim > const area_size( this->destination->getCurrentDataSpace() );
-
-        if( area_size.productOfComponents() != 0 )
+    Scheduler::emplace_task(
+        [&dst, value]
         {
-            auto gridSize = area_size;
+            cudaStream_t cuda_stream = 0;
 
-            /* number of elements in x direction used to chunk the destination buffer
-             * for block parallel processing
-             */
-            constexpr uint32_t xChunkSize = 256;
-            constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                xChunkSize
-            >::value;
+            // n-dimensional size of destination
+            DataSpace< T_Dim > const area_size( dst.getCurrentDataSpace() );
 
-            // number of blocks in x direction
-            gridSize.x() = ceil(
-                static_cast< double >( gridSize.x( ) ) /
-                static_cast< double >( xChunkSize )
-            );
+            if( area_size.productOfComponents() != 0 )
+            {
+                auto gridSize = area_size;
 
-            auto destBox = this->destination->getDataBox( );
-
-            CUPLA_KERNEL(
-                KernelSetValue<
-                    numWorkers,
+                /* number of elements in x direction used to chunk the destination buffer
+                 * for block parallel processing
+                 */
+                constexpr uint32_t xChunkSize = 256;
+                constexpr uint32_t numWorkers = traits::GetNumWorkers<
                     xChunkSize
-                >
-            )(
-                gridSize,
-                numWorkers,
-                0,
-                this->getCudaStream( )
-            )(
-                destBox,
-                this->value,
-                area_size
-            );
-        }
-    }
-};
+                    >::value;
+
+                // number of blocks in x direction
+                gridSize.x() = ceil(
+                                    static_cast< double >( gridSize.x( ) ) /
+                                    static_cast< double >( xChunkSize )
+                                    );
+
+                auto destBox = dst.getDataBox( );
+
+                CUPLA_KERNEL(
+                    KernelSetValue<
+                        numWorkers,
+                        xChunkSize
+                    >
+                )(
+                    gridSize,
+                    numWorkers,
+                    0,
+                    cuda_stream
+                )(
+                    destBox,
+                    value,
+                    area_size
+                );
+            }
+        },
+        prop
+    );
+}
 
 /** implementation for big values (>256 byte)
  *
  * This class uses CUDA memcopy to copy an instance of T_ValueType to the GPU
  * and runs a kernel which assigns this value to all cells.
  */
-template <class T_ValueType, size_t T_Dim>
-class TaskSetValue<T_ValueType, T_Dim, false>
-    : public TaskSetValueBase<
-          TaskSetValue<T_ValueType, T_Dim, false>,
-          T_ValueType,
-          T_Dim
-      >
+template <
+    typename T,
+    std::size_t T_Dim
+>
+void
+device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
 {
-public:
-    typedef T_ValueType ValueType;
-    static constexpr uint32_t dim = T_Dim;
+    Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+    prop.policy< GraphvizPolicy >().label = "device_set_value_big()";
 
-    TaskSetValue(DeviceBuffer<ValueType, dim>& dst, const ValueType& value)
-        : TaskSetValueBase<TaskSetValue<T_ValueType, T_Dim, false>, ValueType, T_Dim>(dst, value)
-        , valuePointer_host(nullptr)
-    {}
-
-    void run()
-    {
-        size_t current_size = this->destination->getCurrentSize();
-        const DataSpace<dim> area_size(this->destination->getCurrentDataSpace(current_size));
-        if(area_size.productOfComponents() != 0)
+    Scheduler::emplace_task(
+        [&dst, value]
         {
-            auto gridSize = area_size;
+            cudaStream_t cuda_stream = 0;
 
-            /* number of elements in x direction used to chunk the destination buffer
-             * for block parallel processing
-             */
-            constexpr int xChunkSize = 256;
-            constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                xChunkSize
-            >::value;
-
-            // number of blocks in x direction
-            gridSize.x() = ceil(
-                static_cast< double >( gridSize.x( ) ) /
-                static_cast< double >( xChunkSize )
-            );
-
-            ValueType* devicePtr = this->destination->getPointer();
-
-            CUDA_CHECK( cudaMallocHost(
-                (void**)&valuePointer_host,
-                sizeof( ValueType )
-            ));
-            *valuePointer_host = this->value; //copy value to new place
-
-            CUDA_CHECK( cudaMemcpyAsync(
-                devicePtr,
-                valuePointer_host,
-                sizeof( ValueType ),
-                cudaMemcpyHostToDevice,
-                this->getCudaStream( )
-            ));
-
-            auto destBox = this->destination->getDataBox( );
-            CUPLA_KERNEL(
-                KernelSetValue<
-                    numWorkers,
-                    xChunkSize
-                >
-            )(
-                gridSize,
-                numWorkers,
-                0,
-                this->getCudaStream()
-            )(
-                destBox,
-                devicePtr,
-                area_size
-            );
-
-            if (valuePointer_host != nullptr)
+            size_t current_size = dst.getCurrentSize();
+            const DataSpace< T_Dim > area_size(dst.getCurrentDataSpace(current_size));
+            if(area_size.productOfComponents() != 0)
             {
-                CUDA_CHECK_NO_EXCEPT(cudaFreeHost(valuePointer_host));
-                valuePointer_host = nullptr;
+                auto gridSize = area_size;
+
+                /* number of elements in x direction used to chunk the destination buffer
+                 * for block parallel processing
+                 */
+                constexpr int xChunkSize = 256;
+                constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                    xChunkSize
+                    >::value;
+
+                // number of blocks in x direction
+                gridSize.x() = ceil(
+                                    static_cast< double >( gridSize.x( ) ) /
+                                    static_cast< double >( xChunkSize )
+                                    );
+
+                T* devicePtr = dst.getPointer();
+                T* valuePointer_host;
+                CUDA_CHECK( cudaMallocHost(
+                                           (void**)&valuePointer_host,
+                                           sizeof(T)
+                                           ));
+                *valuePointer_host = value; //copy value to new place
+
+                CUDA_CHECK( cudaMemcpyAsync(
+                                            devicePtr,
+                                            valuePointer_host,
+                                            sizeof(T),
+                                            cudaMemcpyHostToDevice,
+                                            cuda_stream
+                                            ));
+
+                auto destBox = dst.getDataBox( );
+                CUPLA_KERNEL(
+                    KernelSetValue<
+                        numWorkers,
+                        xChunkSize
+                    >
+                )(
+                    gridSize,
+                    numWorkers,
+                    0,
+                    cuda_stream
+                )(
+                    destBox,
+                    devicePtr,
+                    area_size
+                );
+
+                if (valuePointer_host != nullptr)
+                {
+                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(valuePointer_host));
+                    valuePointer_host = nullptr;
+                }
             }
-        }
-    }
-
-private:
-    ValueType *valuePointer_host;
-};
-
+        },
+        prop
+    );
 }
-} //namespace pmacc
+
+} // namespace buffers
+
+} // namespace memory
+
+} // namespace pmacc
 

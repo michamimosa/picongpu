@@ -1,4 +1,4 @@
-/* Copyright 2015-2020 Alexander Grund
+/* Copyright 2016-2020 Rene Widera
  *
  * This file is part of PMacc.
  *
@@ -19,20 +19,45 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #pragma once
 
-#include "pmacc/eventSystem/tasks/TaskKernel.hpp"
-#include "pmacc/Environment.hpp"
 
-namespace pmacc{
+#include "pmacc/types.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
 
-    void TaskKernel::activateChecks()
+
+namespace pmacc
+{
+namespace exec
+{
+    template< typename T_KernelFunctor >
+    template<
+        typename T_VectorGrid,
+        typename T_VectorBlock
+    >
+    HINLINE
+    auto
+    Kernel< T_KernelFunctor >::operator()(
+        T_VectorGrid const & gridExtent,
+        T_VectorBlock const & blockExtent,
+        size_t const sharedMemByte
+    ) const
+    -> KernelStarter<
+        Kernel,
+        T_VectorGrid,
+        T_VectorBlock
+    >
     {
-        canBeChecked = true;
-        this->activate();
-
-        Environment<>::get().Manager().addTask(this);
-        __setTransactionEvent(EventTask(this->getId()));
+        return KernelStarter<
+            Kernel,
+            T_VectorGrid,
+            T_VectorBlock
+        >(
+            *this,
+            gridExtent,
+            blockExtent,
+            sharedMemByte
+        );
     }
-} //namespace pmacc
+} // namespace exec
+} // namespace pmacc

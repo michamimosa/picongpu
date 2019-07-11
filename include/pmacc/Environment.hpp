@@ -22,19 +22,15 @@
 
 #pragma once
 
-#include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/particles/tasks/ParticleFactory.hpp"
-
+//#include "pmacc/particles/tasks/ParticleFactory.hpp"
 #include "pmacc/mappings/simulation/GridController.hpp"
 #include "pmacc/mappings/simulation/SubGrid.hpp"
 #include "pmacc/mappings/simulation/EnvironmentController.hpp"
-#include "pmacc/eventSystem/streams/StreamController.hpp"
 #include "pmacc/dataManagement/DataConnector.hpp"
 #include "pmacc/pluginSystem/PluginConnector.hpp"
 #include "pmacc/nvidia/memory/MemoryInfo.hpp"
 #include "pmacc/simulationControl/SimulationDescription.hpp"
 #include "pmacc/mappings/simulation/Filesystem.hpp"
-#include "pmacc/eventSystem/events/EventPool.hpp"
 #include "pmacc/Environment.def"
 #include "pmacc/communication/manager_common.hpp"
 #include "pmacc/assert.hpp"
@@ -168,6 +164,7 @@ namespace detail
          *
          * @return instance of StreamController
          */
+        /*
         pmacc::StreamController& StreamController()
         {
             PMACC_ASSERT_MSG(
@@ -176,20 +173,23 @@ namespace detail
             );
             return StreamController::getInstance();
         }
-
+        */
         /** get the singleton Manager
          *
          * @return instance of Manager
          */
+        /*
         pmacc::Manager& Manager()
         {
             return Manager::getInstance();
         }
+        */
 
         /** get the singleton TransactionManager
          *
          * @return instance of TransactionManager
          */
+        /*
         pmacc::TransactionManager& TransactionManager() const
         {
             PMACC_ASSERT_MSG(
@@ -198,6 +198,7 @@ namespace detail
             );
             return TransactionManager::getInstance();
         }
+        */
 
         /** get the singleton EnvironmentController
          *
@@ -216,6 +217,7 @@ namespace detail
          *
          * @return instance of Factory
          */
+        /*
         pmacc::Factory& Factory()
         {
             PMACC_ASSERT_MSG(
@@ -225,11 +227,13 @@ namespace detail
             );
             return Factory::getInstance();
         }
+        */
 
         /** get the singleton EventPool
          *
          * @return instance of EventPool
          */
+        /*
         pmacc::EventPool& EventPool()
         {
             PMACC_ASSERT_MSG(
@@ -238,15 +242,18 @@ namespace detail
             );
             return EventPool::getInstance();
         }
+        */
 
         /** get the singleton ParticleFactory
          *
          * @return instance of ParticleFactory
          */
+        /*
         pmacc::ParticleFactory& ParticleFactory()
         {
             return ParticleFactory::getInstance();
         }
+        */
 
         /** get the singleton DataConnector
          *
@@ -379,11 +386,11 @@ public:
             static_cast<int>( GridController().getHostRank() )
         );
 
-        StreamController().activate();
+        //StreamController().activate();
 
         MemoryInfo();
 
-        TransactionManager();
+        //TransactionManager();
 
         SimulationDescription();
 
@@ -452,7 +459,7 @@ namespace detail
     {
         if( m_isMpiInitialized )
         {
-            pmacc::Environment<>::get().Manager().waitForAllTasks();
+            //pmacc::Environment<>::get().Manager().waitForAllTasks();
             // Required by scorep for flushing the buffers
             cuplaDeviceSynchronize();
             m_isMpiInitialized = false;
@@ -571,38 +578,5 @@ namespace detail
 } // namespace detail
 } // namespace pmacc
 
-/* No namespace for macro defines */
+//#include "pmacc/particles/tasks/ParticleFactory.tpp"
 
-/** start a dependency chain */
-#define __startTransaction(...) (pmacc::Environment<>::get().TransactionManager().startTransaction(__VA_ARGS__))
-
-/** end a opened dependency chain */
-#define __endTransaction() (pmacc::Environment<>::get().TransactionManager().endTransaction())
-
-/** mark the begin of an operation
- *
- * depended on the opType this method is blocking
- *
- * @param opType place were the operation is running
- *               possible places are: `ITask::TASK_DEVICE`, `ITask::TASK_MPI`, `ITask::TASK_HOST`
- */
-#define __startOperation(opType) (pmacc::Environment<>::get().TransactionManager().startOperation(opType))
-
-/** get a `EventStream` that must be used for cuda calls
- *
- * depended on the opType this method is blocking
- *
- * @param opType place were the operation is running
- *               possible places are: `ITask::TASK_DEVICE`, `ITask::TASK_MPI`, `ITask::TASK_HOST`
- */
-#define __getEventStream(opType) (pmacc::Environment<>::get().TransactionManager().getEventStream(opType))
-
-/** get the event of the current transaction */
-#define __getTransactionEvent() (pmacc::Environment<>::get().TransactionManager().getTransactionEvent())
-
-/** set a event to the current transaction */
-#define __setTransactionEvent(event) (pmacc::Environment<>::get().TransactionManager().setTransactionEvent((event)))
-
-#include "pmacc/eventSystem/EventSystem.tpp"
-#include "pmacc/particles/tasks/ParticleFactory.tpp"
-#include "pmacc/eventSystem/events/CudaEvent.hpp"

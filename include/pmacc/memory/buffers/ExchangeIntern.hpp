@@ -28,8 +28,13 @@
 #include "pmacc/memory/buffers/DeviceBufferIntern.hpp"
 #include "pmacc/memory/buffers/HostBufferIntern.hpp"
 #include "pmacc/memory/MakeUnique.hpp"
+
 #include <pmacc/communication/MPISend.hpp>
 #include <pmacc/communication/MPIReceive.hpp>
+
+#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
+#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
+#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
 
 #include "pmacc/assert.hpp"
 #include "pmacc/types.hpp"
@@ -249,50 +254,58 @@ namespace pmacc
             // Device -> Host
             if( this->hasDeviceDoubleBuffer() )
             {
-                memory::buffers::TaskCopyDeviceToDevice< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
-                    this->getDeviceBuffer(),
-                    this->getDeviceDoubleBuffer() );
-                memory::buffers::TaskCopyDeviceToHost< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
+                memory::buffers::copy(
                     this->getDeviceDoubleBuffer(),
-                    this->getHostBuffer() );
+                    this->getDeviceBuffer()
+                );
+                memory::buffers::copy(
+                    this->getHostBuffer(),
+                    this->getDeviceDoubleBuffer()
+                );
             }
             else
             {
-                memory::buffers::TaskCopyDeviceToHost< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
-                    this->getDeviceBuffer(),
-                    this->getHostBuffer() );
+                memory::buffers::copy(
+                    this->getHostBuffer(),
+                    this->getDeviceBuffer()
+                );
             }
 
             // communicate between host buffers
-            communication::TaskMPISend<TYPE, DIM>::create( Scheduler::getInstance(), *this );
+            communication::task_mpi_send(
+                this->getHostBuffer(),
+                this->getExchangeType(),
+                this->getCommunicationTag()
+            );
         }
 
         void startReceive()
         {
             // communicate between host buffers
-            communication::TaskMPIReceive<TYPE, DIM>::create( Scheduler::getInstance(), *this );
+            communication::task_mpi_receive(
+                this->getHostBuffer(),
+                this->getExchangeType(),
+                this->getCommunicationTag()
+            );
 
             // Host -> Device
             if( this->hasDeviceDoubleBuffer() )
             {
-                memory::buffers::TaskCopyHostToDevice< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
-                    this->getHostBuffer(),
-                    this->getDeviceDoubleBuffer() );
-                memory::buffers::TaskCopyDeviceToDevice< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
+                memory::buffers::copy(
                     this->getDeviceDoubleBuffer(),
-                    this->getDeviceBuffer() );
+                    this->getHostBuffer()
+                );
+                memory::buffers::copy(
+                    this->getDeviceBuffer(),
+                    this->getDeviceDoubleBuffer()
+                );
             }
             else
             {
-                memory::buffers::TaskCopyHostToDevice< TYPE, DIM >::create(
-                    Scheduler::getInstance(),
-                    this->getHostBuffer(),
-                    this->getDeviceBuffer() );
+                memory::buffers::copy(
+                    this->getDeviceBuffer(),
+                    this->getHostBuffer()
+                );
             }
         }
 

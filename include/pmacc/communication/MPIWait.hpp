@@ -1,8 +1,7 @@
 
 #pragma once
 
-#include <rmngr/task.hpp>
-#include <pmacc/communication/MPITask.hpp>
+#include <pmacc/type/Scheduler.hpp>
 #include <mpi.h>
 
 namespace pmacc
@@ -10,54 +9,38 @@ namespace pmacc
 namespace communication
 {
 
-class TaskMPITest
-    : public rmngr::Task<
-        TaskMPITest,
-        boost::mpl::vector<MPITask>,
-        bool
-    >
+auto task_mpi_test( MPI_Request * request, MPI_Status * status )
 {
-protected:
-    MPI_Request * request;
-    MPI_Status * status;
+    Scheduler::Properties prop;
+    prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
+    prop.policy< GraphvizPolicy >().label = "task_mpi_test()";
 
-public:
-    TaskMPITest( MPI_Request * request, MPI_Status * status )
-        : request(request), status(status)
-    {}
+    return Scheduler::emplace_task(
+        [request, status]
+        {
+            int flag = 0;
+            MPI_CHECK(MPI_Test(request, &flag, status));
+            return bool(flag);
+        },
+        prop
+    );
+}
 
-    bool run()
-    {
-        int flag = 0;
-        MPI_CHECK(MPI_Test(this->request, &flag, this->status));
-	return bool(flag);
-    }
-};
-
-class TaskMPIWait
-    : public rmngr::Task<
-        TaskMPIWait,
-        boost::mpl::vector<MPITask>,
-        MPI_Status
-    >
+auto task_mpi_wait( MPI_Request * request )
 {
-protected:
-    MPI_Request * request;
+    Scheduler::Properties prop;
+    prop.policy< GraphvizPolicy >().label = "task_mpi_wait()";
 
-public:
-    TaskMPIWait( MPI_Request * request )
-        : request( request )
-    {}
-
-    MPI_Status run()
-    {
-        MPI_Status status;
-        bool finished = false;
-        while( !finished )
-            finished = TaskMPITest::create( Scheduler::getInstance(), this->request, &status ).get();
-        return status;
-    }
-};
+    return Scheduler::emplace_task(
+        [request]
+        {
+            MPI_Status status;
+            while( ! (task_mpi_test(request, &status).get()) );
+            return status;
+        },
+        prop
+    );
+}
 
 } // namespace communication
 

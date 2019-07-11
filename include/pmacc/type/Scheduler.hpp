@@ -26,9 +26,15 @@
 #include <rmngr/scheduler/dispatch.hpp>
 #include <rmngr/scheduler/graphviz.hpp>
 #include <rmngr/scheduler/fifo.hpp>
+#include <rmngr/resource/ioresource.hpp>
 
 namespace pmacc
 {
+
+namespace cuda_resources
+{
+rmngr::IOResource streams[1];
+}
 
 std::ostream& functor_backtrace(std::ostream& out);
 
@@ -99,7 +105,7 @@ struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
     }
 };
 
-using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch >::RuntimeProperty >;
+using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch > >;
 
 template <typename T>
 struct EnqueuePolicy
@@ -107,21 +113,21 @@ struct EnqueuePolicy
     static bool is_serial(T const & a, T const & b)
     {
         return rmngr::ResourceUser::is_serial(
-                   a->template proto_property< rmngr::ResourceUserPolicy >(),
-		   b->template proto_property< rmngr::ResourceUserPolicy >());
+                   a->template property< rmngr::ResourceUserPolicy >(),
+		   b->template property< rmngr::ResourceUserPolicy >());
     }
     static void assert_superset(T const & super, T const & sub)
     {
-        auto r_super = super->template proto_property< rmngr::ResourceUserPolicy >();
-        auto r_sub = sub->template proto_property< rmngr::ResourceUserPolicy >();
+        auto r_super = super->template property< rmngr::ResourceUserPolicy >();
+        auto r_sub = sub->template property< rmngr::ResourceUserPolicy >();
         if(! rmngr::ResourceUser::is_superset( r_super, r_sub ))
         {
             std::stringstream stream;
             stream << "Not allowed: " << std::endl
-	           << super->template proto_property< GraphvizPolicy >().label
+	           << super->template property< GraphvizPolicy >().label
 		   << r_super << std::endl
 		   << "is no superset of "
-		   << sub->template proto_property< GraphvizPolicy >().label << std::endl
+		   << sub->template property< GraphvizPolicy >().label << std::endl
 	           << r_sub << std::endl;
             functor_backtrace(stream);
             throw std::runtime_error(stream.str());
@@ -146,12 +152,12 @@ using Scheduler = rmngr::SchedulerSingleton<
 
 std::ostream& functor_backtrace(std::ostream& out)
 {
-    if( std::experimental::optional<std::vector<Scheduler::Schedulable*>> bt = Scheduler::getInstance().backtrace() )
+    if( std::experimental::optional<std::vector<Scheduler::Task*>> bt = Scheduler::getInstance().backtrace() )
     {
         int i = 0;
-        for( auto s : *bt )
+        for( auto task : *bt )
         {
-            out << "functor backtrace [" << i << "] " << s->proto_property<GraphvizPolicy>().label << std::endl;
+            out << "functor backtrace [" << i << "] " << task->property<GraphvizPolicy>().label << std::endl;
             i++;
         }
     }
