@@ -38,8 +38,7 @@
 #include <boost/preprocessor/repetition/repeat_from_to.hpp>
 #include <boost/integer/common_factor_rt.hpp>
 
-#include "pmacc/eventSystem/tasks/TaskKernel.hpp"
-#include "pmacc/eventSystem/events/kernelEvents.hpp"
+#include <pmacc/exec/kernelEvents.hpp>
 #include "pmacc/traits/GetNumWorkers.hpp"
 #include "pmacc/Environment.hpp"
 

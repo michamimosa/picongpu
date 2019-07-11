@@ -256,7 +256,14 @@ namespace kernel
             float const fraction
         )
         {
-	  auto impl = [this, &writeBuffer, fraction]()
+            Scheduler::Properties prop;
+            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().write();
+            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().size_resource.write();
+            prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+            prop.policy< GraphvizPolicy >().label = "Evolution::initEvolution()";
+
+            Scheduler::emplace_task(
+	    [this, &writeBuffer, fraction]
 	    {
             AreaMapping <
                 CORE + BORDER,
@@ -278,23 +285,8 @@ namespace kernel
                 fraction,
                 mapper
             );
-	    };
-
-            Scheduler::enqueue_functor(
-	      impl,
-	      [&writeBuffer](Scheduler::Schedulable& s)
-	      {
-                  NEW::StreamTask st;
-                  st.properties(s);
-		  s.proto_property<rmngr::ResourceUserPolicy>().access_list =
-		  {
-  		      writeBuffer.getDeviceBuffer().write(),
-		      writeBuffer.getDeviceBuffer().size_resource.write()
-		  };
-
-		  s.proto_property<GraphvizPolicy>().label = "Evolution::initEvolution()";
-	      }
-	    );
+	    },
+            prop);
         }
 
         template <
@@ -305,8 +297,20 @@ namespace kernel
             Buffer & writeBuffer
         )
         {
-            auto impl =
-     	        [this, &readBuffer, &writeBuffer ]()
+            Scheduler::Properties prop;
+            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().write();
+            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().size_resource.write();
+            prop.policy< rmngr::ResourceUserPolicy >() += readBuffer.getDeviceBuffer().read();
+            prop.policy< rmngr::ResourceUserPolicy >() += readBuffer.getDeviceBuffer().size_resource.read();
+            prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+
+            if( T_Area == CORE )
+                prop.policy< GraphvizPolicy >().label = "run<CORE>";
+            if( T_Area == BORDER )
+                prop.policy< GraphvizPolicy >().label = "run<BORDER>";
+
+            Scheduler::emplace_task(
+     	        [this, &readBuffer, &writeBuffer ]
                 {
                     AreaMapping <
                         T_Area,
@@ -325,30 +329,9 @@ namespace kernel
                         rule,
                         mapper
                     );
-                };
-
-            auto prop =
-                [ &readBuffer, &writeBuffer ]( Scheduler::Schedulable& s )
-                {
-                    NEW::StreamTask st;
-                    st.properties(s);
-		    //auto gridLayout = mapping->getGridLayout();
-                    //auto gridAccess = gridLayout.getAccess< T_Area >();
-                    s.proto_property< rmngr::ResourceUserPolicy >().access_list =
-                    {
-		     //writeBuffer.write( gridAccess ),
-		     // readBuffer.read( rmngr::Stencil< GridAccess >( gridAccess ) ),
-     		         writeBuffer.getDeviceBuffer().write(),
-			 readBuffer.getDeviceBuffer().read()
-                    };
-
-		    if( T_Area == CORE )
-		      s.proto_property< GraphvizPolicy >().label = "run<CORE>";
-		    if( T_Area == BORDER )
-		      s.proto_property< GraphvizPolicy >().label = "run<BORDER>";
-                };
-
-            Scheduler::enqueue_functor( impl, prop );
+                },
+                prop
+            );
         }
     };
 

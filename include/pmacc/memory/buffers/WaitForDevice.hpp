@@ -3,9 +3,6 @@
 
 #include <pmacc/types.hpp>
 
-#include <rmngr/task.hpp>
-#include <pmacc/tasks/StreamTask.hpp>
-
 #include <memory> // std::addressof()
 #include <csignal>
 #include <sys/mman.h>
@@ -77,30 +74,8 @@ namespace waitfordevice
         mprotect( page1, PAGE_SIZE, PROT_READ );
         mprotect( page2, PAGE_SIZE, PROT_WRITE );
     }
-}
 
-struct WaitForDeviceLabel
-{
-    void properties( Scheduler::Schedulable& s )
-    {
-        s.proto_property< GraphvizPolicy >().label = "WaitForDevice";
-    }
-};
-
-class TaskWaitForDevice
-    : public rmngr::Task<
-        TaskWaitForDevice,
-            boost::mpl::vector<
-                NEW::StreamTask,
-                WaitForDeviceLabel
-            >
-        >
-{
-public:
-    TaskWaitForDevice() {}
-
-private:
-    using State = rmngr::DispatchPolicy<PMaccDispatch>::RuntimeProperty::State;
+    using State = rmngr::DispatchPolicy<PMaccDispatch>::Property::State;
 
     State* init_state()
     {
@@ -120,56 +95,60 @@ private:
         CUDA_CHECK(cudaMemset( device_ptr, 1, sizeof(int) ));
         return device_ptr;
     }
+} // namespace waitfordevice
 
-public:
-    void run()
-    {
-        static State * state_device_ptr = init_state();
-	State volatile * state_host_ptr;
+auto task_synchronize_stream( cudaStream_t cuda_stream )
+{
+    Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+    prop.policy< GraphvizPolicy >().label = "task_synchronize_stream()";
 
-        static int * some_device_ptr = init_something();
+    return Scheduler::emplace_task(
+        [cuda_stream]
+        {
+            static waitfordevice::State * state_device_ptr = waitfordevice::init_state();
+            waitfordevice::State volatile * state_host_ptr;
 
-        // create empty task
-        auto res = Scheduler::enqueue_functor(
-            [](){},
-            [&state_host_ptr](Scheduler::Schedulable& s)
-            {
-                s.proto_property<
-                    rmngr::DispatchPolicy<PMaccDispatch>
-                >().dont_schedule_me = true;
-                s.proto_property< GraphvizPolicy >().label = "on device";
+            static int * some_device_ptr = waitfordevice::init_something();
 
-                state_host_ptr = std::addressof( s.runtime_property<rmngr::DispatchPolicy<PMaccDispatch>>().state );
-            }
-        );
+            // create empty task
+            Scheduler::Properties prop;
+            prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.dont_schedule_me = true;
+            prop.policy< GraphvizPolicy >().label = "on device";
 
-        // set state of dummy task to done
-        CUDA_CHECK(cudaMemcpyAsync(
-            const_cast<State*>(state_host_ptr),
-            state_device_ptr,
-            sizeof(State),
-            cudaMemcpyDeviceToHost,
-            this->getCudaStream()
-        ));
+            state_host_ptr = std::addressof( prop.policy<rmngr::DispatchPolicy<PMaccDispatch>>().state );
 
-	// trigger sigsegv
-	CUDA_CHECK(cudaMemcpyAsync(
-	    waitfordevice::page1,
-            some_device_ptr,
-            sizeof(int),
-            cudaMemcpyDeviceToHost,
-            this->getCudaStream()
-        ));
+            Scheduler::emplace_task( []{}, prop );
 
-	CUDA_CHECK(cudaMemcpyAsync(
-	    waitfordevice::page2,
-            some_device_ptr,
-            sizeof(int),
-            cudaMemcpyDeviceToHost,
-            this->getCudaStream()
-	));
-    }
-};
+            // set state of dummy task to done
+            CUDA_CHECK(cudaMemcpyAsync(
+                const_cast<waitfordevice::State*>(state_host_ptr),
+                state_device_ptr,
+                sizeof(waitfordevice::State),
+                cudaMemcpyDeviceToHost,
+                cuda_stream
+            ));
 
+            // trigger sigsegv
+            CUDA_CHECK(cudaMemcpyAsync(
+                waitfordevice::page1,
+                some_device_ptr,
+                sizeof(int),
+                cudaMemcpyDeviceToHost,
+                cuda_stream
+            ));
+
+            CUDA_CHECK(cudaMemcpyAsync(
+	        waitfordevice::page2,
+                some_device_ptr,
+                sizeof(int),
+                cudaMemcpyDeviceToHost,
+                cuda_stream
+	    ));
+        },
+        prop
+    );
 }
+
+} // namespace pmacc
 

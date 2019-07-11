@@ -1,19 +1,12 @@
 #pragma once
 
 #include <pmacc/types.hpp>
-#include <pmacc/memory/buffers/CopyTask.hpp>
-#include <pmacc/tasks/StreamTask.hpp>
-#include <rmngr/task.hpp>
-
-#include "WaitForDevice.hpp"
+#include <pmacc/memory/buffers/WaitForDevice.hpp>
 
 namespace pmacc
 {
 
-template < typename T, unsigned T_Dim >
-class HostBuffer;
-
-template < typename T, unsigned T_Dim >
+template < typename T, std::size_t T_Dim >
 class DeviceBuffer;
 
 namespace memory
@@ -21,161 +14,122 @@ namespace memory
 namespace buffers
 {
 
-struct LabelDeviceToDevice
+namespace device2device_detail
 {
-    void properties(Scheduler::Schedulable& s)
-    {
-        s.proto_property< GraphvizPolicy >().label = "CopyDeviceToDevice()";
-    }
-};
+
+template < typename T >
+void fast_copy(
+    T * src,
+    T * dst,
+    size_t size
+)
+{
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpyAsync(dst,
+                               src,
+                               size * sizeof (T),
+                               cudaMemcpyDeviceToDevice,
+                               cuda_stream));
+}
+
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM1> & dst,
+    DeviceBuffer<T, DIM1> & src,
+    DataSpace<DIM1> & size
+)
+{
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpyAsync(dst.getPointer(),
+                               src.getPointer(),
+                               size[0] * sizeof (T),
+                               cudaMemcpyDeviceToDevice,
+                               cuda_stream));
+}
+
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM2> & dst,
+    DeviceBuffer<T, DIM2> & src,
+    DataSpace<DIM2> & size
+)
+{
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpy2DAsync(dst.getPointer(),
+                                 dst.getPitch(),
+                                 src.getPointer(),
+                                 src.getPitch(),
+                                 size[0] * sizeof (T),
+                                 size[1],
+                                 cudaMemcpyDeviceToDevice,
+                                 cuda_stream));
+
+}
+
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM3> & dst,
+    DeviceBuffer<T, DIM3> & src,
+    DataSpace<DIM3> & size
+)
+{
+    cudaStream_t cuda_stream = 0;
+
+    cudaMemcpy3DParms params;
+    params.srcArray = nullptr;
+    params.srcPos = make_cudaPos(src.getOffset()[0] * sizeof (T),
+                                 src.getOffset()[1],
+                                 src.getOffset()[2]);
+    params.srcPtr = src.getCudaPitched();
+
+    params.dstArray = nullptr;
+    params.dstPos = make_cudaPos(dst.getOffset()[0] * sizeof (T),
+                                 dst.getOffset()[1],
+                                 dst.getOffset()[2]);
+    params.dstPtr = dst.getCudaPitched();
+
+    params.extent = make_cudaExtent(size[0] * sizeof (T),
+                                    size[1],
+                                    size[2]);
+
+    params.kind = cudaMemcpyDeviceToDevice;
+    CUDA_CHECK(cudaMemcpy3DAsync(&params, cuda_stream));
+}
+
+} // namespace device2device_detail
 
 template <
-    typename Impl,
     typename T,
-    size_t T_Dim
+    std::size_t T_Dim
 >
-class TaskCopyDeviceToDeviceBase
-    : public rmngr::Task<
-          Impl,
-          boost::mpl::vector<
-	    NEW::StreamTask,
-              CopyTask<
-                  DeviceBuffer<T, T_Dim>,
-                  DeviceBuffer<T, T_Dim>
-              >,
-              LabelDeviceToDevice
-          >
-      >
+void
+copy(
+    DeviceBuffer<T, T_Dim> & dst,
+    DeviceBuffer<T, T_Dim> & src
+)
 {
-public:
-    TaskCopyDeviceToDeviceBase(
-        DeviceBuffer<T, T_Dim> & src,
-        DeviceBuffer<T, T_Dim> & dst
-    )
-    {
-        this->src = &src;
-        this->dst = &dst;
-    }
+    Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += src.read();
+    prop.policy< rmngr::ResourceUserPolicy >() += src.size_resource.write();
+    prop.policy< GraphvizPolicy >().label = "copyDeviceToDevice";
 
-    void run()
-    {
-        size_t current_size = this->src->getCurrentSize();
-	this->dst->setCurrentSize(current_size);
-	DataSpace<T_Dim> devCurrentSize = this->src->getCurrentDataSpace(current_size);
-	if (this->src->is1D() && this->dst->is1D())
-	    fastCopy(this->src->getPointer(), this->dst->getPointer(), devCurrentSize.productOfComponents());
-	else
-	    copy(devCurrentSize);
-    }
+    Scheduler::emplace_task(
+        [&dst, &src]
+        {
+            size_t current_size = src.getCurrentSize();
+            dst.setCurrentSize(current_size);
 
-protected:    
-    virtual void copy(DataSpace<T_Dim> &devCurrentSize) = 0;
-
-    void fastCopy(T* src, T* dst, size_t size)
-    {
-        CUDA_CHECK(cudaMemcpyAsync(dst,
-				   src,
-				   size * sizeof (T),
-				   cudaMemcpyDeviceToDevice,
-				   this->getCudaStream()));
-    }
-};
-
-template <class T, unsigned T_DIM>
-class TaskCopyDeviceToDevice;
-
-template <class T>
-class TaskCopyDeviceToDevice<T, DIM1>
-    : public TaskCopyDeviceToDeviceBase<
-          TaskCopyDeviceToDevice<T, DIM1>,
-          T,
-          DIM1
-      >
-{
-public:
-    TaskCopyDeviceToDevice(DeviceBuffer<T, DIM1>& src, DeviceBuffer<T, DIM1>& dst)
-        : TaskCopyDeviceToDeviceBase<TaskCopyDeviceToDevice<T, DIM1>, T, DIM1>(src, dst)
-    {}
-
-private:
-    void copy(DataSpace<DIM1> &devCurrentSize)
-    {
-        CUDA_CHECK(cudaMemcpyAsync(this->dst->getPointer(),
-				   this->src->getPointer(),
-				   devCurrentSize[0] * sizeof (T),
-				   cudaMemcpyDeviceToDevice,
-				   this->getCudaStream()));
-    }
-};
-
-template <class T>
-class TaskCopyDeviceToDevice<T, DIM2>
-    : public TaskCopyDeviceToDeviceBase<
-          TaskCopyDeviceToDevice<T, DIM2>,
-          T,
-          DIM2
-      >
-{
-public:
-    TaskCopyDeviceToDevice( DeviceBuffer<T, DIM2>& src, DeviceBuffer<T, DIM2>& dst )
-        : TaskCopyDeviceToDeviceBase<TaskCopyDeviceToDevice<T, DIM2>, T, DIM2>(src, dst)
-    {}
-
-private:
-    void copy(DataSpace<DIM2> & devCurrentSize)
-    {
-        CUDA_CHECK(cudaMemcpy2DAsync(this->dst->getPointer(),
-				     this->dst->getPitch(),
-				     this->src->getPointer(),
-				     this->src->getPitch(),
-				     devCurrentSize[0] * sizeof (T),
-				     devCurrentSize[1],
-				     cudaMemcpyDeviceToDevice,
-				     this->getCudaStream()));
-
-    }
-};
-
-template <class T>
-class TaskCopyDeviceToDevice<T, DIM3>
-    : public TaskCopyDeviceToDeviceBase<
-          TaskCopyDeviceToDevice<T, DIM3>,
-          T,
-          DIM3
-      >
-{
-public:
-    TaskCopyDeviceToDevice( DeviceBuffer<T, DIM3> & src, DeviceBuffer<T, DIM3> & dst )
-      : TaskCopyDeviceToDeviceBase<TaskCopyDeviceToDevice<T, DIM3>, T , DIM3>(src, dst)
-    {}
-
-private:
-    void copy(DataSpace<DIM3> & devCurrentSize)
-    {
-        cudaMemcpy3DParms params;
-	params.srcArray = nullptr;
-	params.srcPos = make_cudaPos(
-		            this->src->getOffset()[0] * sizeof (T),
-			    this->src->getOffset()[1],
-			    this->src->getOffset()[2]);
-	params.srcPtr = this->src->getCudaPitched();
-
-	params.dstArray = nullptr;
-	params.dstPos = make_cudaPos(
-			    this->dst->getOffset()[0] * sizeof (T),
-			    this->dst->getOffset()[1],
-			    this->dst->getOffset()[2]);
-	params.dstPtr = this->dst->getCudaPitched();
-
-	params.extent = make_cudaExtent(
-		            devCurrentSize[0] * sizeof (T),
-			    devCurrentSize[1],
-			    devCurrentSize[2]);
-
-	params.kind = cudaMemcpyDeviceToDevice;
-	CUDA_CHECK(cudaMemcpy3DAsync(&params, this->getCudaStream()));
-    }
-};
+            DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
+            if (src.is1D() && dst.is1D())
+                device2device_detail::fast_copy(src.getPointer(), dst.getPointer(), devCurrentSize.productOfComponents());
+            else
+                device2device_detail::copy(dst, src, devCurrentSize);
+        },
+        prop
+    );
+}
 
 } // namespace buffers
 

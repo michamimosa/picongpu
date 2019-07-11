@@ -35,7 +35,7 @@
 #include <boost/preprocessor/repetition/repeat.hpp>
 #include <boost/preprocessor/repetition/repeat_from_to.hpp>
 
-#include "pmacc/eventSystem/events/kernelEvents.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
 
 namespace pmacc
 {

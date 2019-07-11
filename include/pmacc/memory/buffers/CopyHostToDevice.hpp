@@ -2,18 +2,14 @@
 #pragma once
 
 #include <pmacc/types.hpp>
-#include <pmacc/memory/buffers/CopyTask.hpp>
-#include <pmacc/tasks/StreamTask.hpp>
-#include <rmngr/task.hpp>
-
-#include "WaitForDevice.hpp"
 
 namespace pmacc
 {
 
-template <class T, unsigned T_DIM>
+template <class T, std::size_t T_Dim>
 class HostBuffer;
-template <class T, unsigned T_DIM>
+
+template <class T, std::size_t T_Dim>
 class DeviceBuffer;
 
 namespace memory
@@ -21,157 +17,134 @@ namespace memory
 namespace buffers
 {
 
-struct LabelHostToDevice
+namespace host2device_detail
 {
-    void properties(Scheduler::Schedulable& s)
-    {
-        s.proto_property< GraphvizPolicy >().label = "CopyHostToDevice()";
-    }
-};
-
-template <typename Impl, typename T, unsigned T_DIM>
-class TaskCopyHostToDeviceBase
-    : public rmngr::Task<
-          Impl,
-          boost::mpl::vector<
-	      NEW::StreamTask,
-	      CopyTask<
-	          HostBuffer<T, T_DIM>,
-	          DeviceBuffer<T, T_DIM>
-              >,
-              LabelHostToDevice
-          >
-      >
+    
+template < typename T >
+void fast_copy(
+    T * dst,
+    T * src,
+    size_t size
+)
 {
-public:
-    TaskCopyHostToDeviceBase(HostBuffer<T, T_DIM>& src, DeviceBuffer<T, T_DIM>& dst)
-    {
-        this->src =  &src;
-	this->dst =  &dst;
-    }
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpyAsync(dst,
+                               src,
+                               size * sizeof (T),
+                               cudaMemcpyHostToDevice,
+                               cuda_stream));
+}
 
-    void run()
-    {
-        size_t current_size = this->src->getCurrentSize();
-	DataSpace<T_DIM> hostCurrentSize = this->src->getCurrentDataSpace(current_size);
-
-        this->dst->setCurrentSize(current_size);
-        if (this->src->is1D() && this->dst->is1D())
-            fastCopy(this->src->getPointer(), this->dst->getPointer(), hostCurrentSize.productOfComponents());
-        else
-	    copy(hostCurrentSize);
-
-        TaskWaitForDevice::create( Scheduler::getInstance() );
-    }
-
-protected:    
-    virtual void copy(DataSpace<T_DIM> &hostCurrentSize) = 0;
-
-    void fastCopy(T* src, T* dst, size_t size)
-    {
-        CUDA_CHECK(cudaMemcpyAsync(dst,
-				   src,
-				   size * sizeof (T),
-				   cudaMemcpyHostToDevice,
-				   this->getCudaStream()));
-    }
-};
-
-template <class T, unsigned T_DIM>
-class TaskCopyHostToDevice;
-
-template <class T>
-class TaskCopyHostToDevice<T, DIM1>
-    : public TaskCopyHostToDeviceBase<
-          TaskCopyHostToDevice<T, DIM1>,
-          T,
-          DIM1
-      >
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM1> & dst,
+    HostBuffer<T, DIM1> & src,
+    DataSpace<DIM1> & size
+)
 {
-public:
-    TaskCopyHostToDevice(HostBuffer<T, DIM1>& src, DeviceBuffer<T, DIM1>& dst)
-        : TaskCopyHostToDeviceBase<TaskCopyHostToDevice<T, DIM1>, T, DIM1>(src, dst)
-    {}
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpyAsync(dst.getPointer(), /*pointer include X offset*/
+                               src.getBasePointer(),
+                               size[0] * sizeof (T),
+                               cudaMemcpyHostToDevice,
+                               cuda_stream));
+}
 
-private:
-    void copy(DataSpace<DIM1> & hostCurrentSize)
-    {
-        CUDA_CHECK(cudaMemcpyAsync(this->dst->getPointer(), /*pointer include X offset*/
-				   this->src->getBasePointer(),
-				   hostCurrentSize[0] * sizeof (T), cudaMemcpyHostToDevice,
-				   this->getCudaStream()));
-    }
-};
-
-template <class T>
-class TaskCopyHostToDevice<T, DIM2>
-    : public TaskCopyHostToDeviceBase<
-          TaskCopyHostToDevice<T, DIM2>,
-          T,
-          DIM2
-      >
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM2> & dst,
+    HostBuffer<T, DIM2> & src,
+    DataSpace<DIM2> & size
+)
 {
-public:
-    TaskCopyHostToDevice( HostBuffer<T, DIM2>& src, DeviceBuffer<T, DIM2>& dst)
-      : TaskCopyHostToDeviceBase<TaskCopyHostToDevice<T, DIM2>, T, DIM2>(src, dst)
-    {}
+    cudaStream_t cuda_stream = 0;
+    CUDA_CHECK(cudaMemcpy2DAsync(dst.getPointer(),
+                                 dst.getPitch(), /*this is pitch*/
+                                 src.getBasePointer(),
+                                 src.getDataSpace()[0] * sizeof (T), /*this is pitch*/
+                                 size[0] * sizeof (T),
+                                 size[1],
+                                 cudaMemcpyHostToDevice,
+                                 cuda_stream));
 
-private:
-    void copy(DataSpace<DIM2> &hostCurrentSize)
-    {
-        CUDA_CHECK(cudaMemcpy2DAsync(this->dst->getPointer(),
-				     this->dst->getPitch(), /*this is pitch*/
-				     this->src->getBasePointer(),
-				     this->src->getDataSpace()[0] * sizeof (T), /*this is pitch*/
-				     hostCurrentSize[0] * sizeof (T),
-				     hostCurrentSize[1],
-				     cudaMemcpyHostToDevice,
-				     this->getCudaStream()));
-    }
-};
+}
 
-template <class T>
-class TaskCopyHostToDevice<T, DIM3>
-    : public TaskCopyHostToDeviceBase<
-          TaskCopyHostToDevice<T, DIM3>,
-          T,
-          DIM3
-      >
+template < typename T >
+void copy(
+    DeviceBuffer<T, DIM3> & dst,
+    HostBuffer<T, DIM3> & src,
+    DataSpace<DIM3> & size
+)
 {
-public:
-    TaskCopyHostToDevice( HostBuffer<T, DIM3>& src, DeviceBuffer<T, DIM3>& dst)
-        : TaskCopyHostToDeviceBase<TaskCopyHostToDevice<T, DIM3>, T, DIM3>(src, dst)
-    {}
+    cudaStream_t cuda_stream = 0;
 
-private:
-    void copy(DataSpace<DIM3> &hostCurrentSize)
-    {
-        cudaPitchedPtr hostPtr;
-	hostPtr.pitch = this->src->getDataSpace()[0] * sizeof (T);
-	hostPtr.ptr = this->src->getBasePointer();
-	hostPtr.xsize = this->src->getDataSpace()[0] * sizeof (T);
-	hostPtr.ysize = this->src->getDataSpace()[1];
+    cudaPitchedPtr hostPtr;
+    hostPtr.pitch = src.getDataSpace()[0] * sizeof (T);
+    hostPtr.ptr = src.getBasePointer();
+    hostPtr.xsize = src.getDataSpace()[0] * sizeof (T);
+    hostPtr.ysize = src.getDataSpace()[1];
 
-	cudaMemcpy3DParms params;
-	params.dstArray = nullptr;
-	params.dstPos = make_cudaPos(this->dst->getOffset()[0] * sizeof (T),
-				     this->dst->getOffset()[1],
-				     this->dst->getOffset()[2]);
-	params.dstPtr = this->dst->getCudaPitched();
+    cudaMemcpy3DParms params;
+    params.dstArray = nullptr;
+    params.dstPos = make_cudaPos(dst.getOffset()[0] * sizeof (T),
+                                 dst.getOffset()[1],
+                                 dst.getOffset()[2]);
+    params.dstPtr = dst.getCudaPitched();
 
-	params.srcArray = nullptr;
-	params.srcPos = make_cudaPos(0, 0, 0);
-	params.srcPtr = hostPtr;
+    params.srcArray = nullptr;
+    params.srcPos = make_cudaPos(0, 0, 0);
+    params.srcPtr = hostPtr;
 
-	params.extent = make_cudaExtent(
-		            hostCurrentSize[0] * sizeof (T),
-			    hostCurrentSize[1],
-			    hostCurrentSize[2]);
-	params.kind = cudaMemcpyHostToDevice;
+    params.extent = make_cudaExtent(
+                                    size[0] * sizeof (T),
+                                    size[1],
+                                    size[2]);
+    params.kind = cudaMemcpyHostToDevice;
 
-	CUDA_CHECK(cudaMemcpy3DAsync(&params, this->getCudaStream()));
-    }
-};
+    CUDA_CHECK(cudaMemcpy3DAsync(&params, cuda_stream));
+}
+
+} // namespace host2device_detail
+
+
+
+template <
+    typename T,
+    std::size_t T_Dim
+>
+void
+copy(
+    DeviceBuffer<T, T_Dim> & dst,
+    HostBuffer<T, T_Dim> & src
+)
+{
+    Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
+    prop.policy< rmngr::ResourceUserPolicy >() += src.read();
+    prop.policy< rmngr::ResourceUserPolicy >() += src.size_resource.write();
+    prop.policy< GraphvizPolicy >().label = "copyDeviceToHost";
+
+    Scheduler::emplace_task(
+        [&dst, &src]
+        {
+            size_t current_size = src.getCurrentSize();
+
+            dst.setCurrentSize(current_size);
+            DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
+
+            if (src.is1D() && dst.is1D())
+                host2device_detail::fast_copy(dst.getPointer(),
+                                              src.getPointer(),
+                                              devCurrentSize.productOfComponents());
+            else
+                host2device_detail::copy(dst, src, devCurrentSize);
+
+            task_synchronize_stream(0);
+        },
+        prop
+    );
+}
 
 } // namespace buffers
 
