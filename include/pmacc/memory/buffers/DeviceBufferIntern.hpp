@@ -98,7 +98,7 @@ public:
         prop.policy< rmngr::ResourceUserPolicy >() += this->write();
         prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
         prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-        prop.policy< GraphvizPolicy >().label = "DevieBufferIntern::DeviceBufferIntern(source)";
+        prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::DeviceBufferIntern(source)";
 
         Scheduler::emplace_task(
             [this, &source, offset]
@@ -117,7 +117,7 @@ public:
     {
         Scheduler::Properties prop;
         prop.policy< rmngr::ResourceUserPolicy >() += this->write();
-        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
+        prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
         prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::~DeviceBufferIntern()";
 
         Scheduler::emplace_task(
@@ -231,7 +231,7 @@ public:
         prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
         prop.policy< GraphvizPolicy >().label = "DeviceBufferIntern::getCurrentSize()";
 
-        Scheduler::emplace_task(
+        return Scheduler::emplace_task(
             [this]
             {
                 if (sizeOnDevice)
