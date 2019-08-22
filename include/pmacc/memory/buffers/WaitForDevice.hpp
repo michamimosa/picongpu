@@ -25,7 +25,9 @@ namespace waitfordevice
     {
         char v;
         while( read(event_pipe[0], &v, 1) == 1 )
-	    Scheduler::getInstance().policy< rmngr::DispatchPolicy< PMaccDispatch > >().notify();
+        {
+            Scheduler::getInstance().uptodate.clear();
+        }
     }
  
     void segv_handler(int signal, siginfo_t* siginfo, void* uap)
@@ -116,9 +118,10 @@ auto task_synchronize_stream( cudaStream_t cuda_stream )
             prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.dont_schedule_me = true;
             prop.policy< GraphvizPolicy >().label = "on device";
 
-            state_host_ptr = std::addressof( prop.policy<rmngr::DispatchPolicy<PMaccDispatch>>().state );
+            auto task = new Scheduler::FunctorTask<std::function<void(void)>>( Scheduler::getInstance(), []{}, prop );
+            state_host_ptr = std::addressof( task->property<rmngr::DispatchPolicy<PMaccDispatch>>().state );
 
-            Scheduler::emplace_task( []{}, prop );
+            Scheduler::getInstance().push( task );
 
             // set state of dummy task to done
             CUDA_CHECK(cudaMemcpyAsync(
