@@ -109,6 +109,7 @@ copy(
 )
 {
     Scheduler::Properties prop;
+    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
     prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
     prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
     prop.policy< rmngr::ResourceUserPolicy >() += src.read();
