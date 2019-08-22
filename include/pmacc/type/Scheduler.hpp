@@ -47,6 +47,10 @@ struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
     {
         PMaccDispatch * parent;
 
+        std::unique_lock<rmngr::debug_graph_mutex> graph_lock(){
+            return parent->graph_lock();
+        }
+
         void update()
         {
             parent->update();
