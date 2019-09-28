@@ -21,12 +21,17 @@ namespace waitfordevice
     int event_pipe[2];
     struct sigaction old_sigaction;
 
+    using EventID = typename rmngr::SchedulingGraph<pmacc::TaskProperties>::EventID;
+
     void event_loop()
     {
-        char v;
-        while( read(event_pipe[0], &v, 1) == 1 )
+        EventID id;
+        while( read(event_pipe[0], &id, sizeof(EventID)) == sizeof(EventID) )
         {
-            Scheduler::getInstance().uptodate.clear();
+            Environment<>::get()
+                .ResourceManager()
+                .getScheduler()
+                .graph.finish_event( id );
         }
     }
  
@@ -42,12 +47,13 @@ namespace waitfordevice
 	    mprotect(page1, PAGE_SIZE, PROT_READ);
 	    mprotect(page2, PAGE_SIZE, PROT_WRITE);
 
-	    char v = 1;
-	    write(event_pipe[1], &v, 1);
+	    EventID id = *((EventID*)page1);
+	    write(event_pipe[1], &id, sizeof(EventID));
 	}
 	else
 	{
-            functor_backtrace(std::cerr);
+            functor_backtrace( std::cerr );
+            throw std::runtime_error("Segmentation Fault !");
 
             // A real SEGV
             sigaction(SIGSEGV, &old_sigaction, NULL);
@@ -77,15 +83,10 @@ namespace waitfordevice
         mprotect( page2, PAGE_SIZE, PROT_WRITE );
     }
 
-    using State = rmngr::DispatchPolicy<PMaccDispatch>::Property::State;
-
-    State* init_state()
+    EventID* init_event_id()
     {
-        State * device_ptr;
-        State value = State::done;
-        CUDA_CHECK(cudaMalloc( (void**) &device_ptr, sizeof(State) ));
-        CUDA_CHECK(cudaMemset( device_ptr, 0, sizeof(State) ));
-        CUDA_CHECK(cudaMemset( device_ptr, value, 1 ));
+        EventID * device_ptr;
+        CUDA_CHECK(cudaMalloc( (void**) &device_ptr, sizeof(EventID) ));
         return device_ptr;
     }
 
@@ -101,42 +102,34 @@ namespace waitfordevice
 
 auto task_synchronize_stream( cudaStream_t cuda_stream )
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-    prop.policy< GraphvizPolicy >().label = "task_synchronize_stream()";
-
-    return Scheduler::emplace_task(
+    return Environment<>::get().ResourceManager().emplace_task(
         [cuda_stream]
         {
-            static waitfordevice::State * state_device_ptr = waitfordevice::init_state();
-            waitfordevice::State volatile * state_host_ptr;
-
+            static waitfordevice::EventID * event_id_device_ptr = waitfordevice::init_event_id();
             static int * some_device_ptr = waitfordevice::init_something();
 
-            // create empty task
-            Scheduler::Properties prop;
-            prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.dont_schedule_me = true;
-            prop.policy< GraphvizPolicy >().label = "on device";
+            auto task_id = *Environment<>::get().ResourceManager().getScheduler().graph.get_current_task();
+            auto event_id = Environment<>::get().ResourceManager().getScheduler().graph.add_post_dependency( task_id );
 
-            auto task = new Scheduler::FunctorTask<std::function<void(void)>>( Scheduler::getInstance(), []{}, prop );
-            state_host_ptr = std::addressof( task->property<rmngr::DispatchPolicy<PMaccDispatch>>().state );
+            // Write EventID to device memory
 
-            Scheduler::getInstance().push( task );
+            // clear
+            CUDA_CHECK(cudaMemsetAsync( event_id_device_ptr, 0, sizeof(waitfordevice::EventID), cuda_stream ));
 
-            // set state of dummy task to done
-            CUDA_CHECK(cudaMemcpyAsync(
-                const_cast<waitfordevice::State*>(state_host_ptr),
-                state_device_ptr,
-                sizeof(waitfordevice::State),
-                cudaMemcpyDeviceToHost,
-                cuda_stream
-            ));
+            // set value bytewise
+            uint64_t v = (uint64_t) event_id;
+            for( int i = 0; i < sizeof(waitfordevice::EventID); i++ )
+            {
+                uint8_t * ptr = ((uint8_t*)event_id_device_ptr) + i;
+                uint8_t byte = (v >> (8*i)) & 0xff;
+                CUDA_CHECK(cudaMemsetAsync( ptr, byte, 1, cuda_stream ));
+            }
 
-            // trigger sigsegv
+            // trigger sigsegv and write taskid to host
             CUDA_CHECK(cudaMemcpyAsync(
                 waitfordevice::page1,
-                some_device_ptr,
-                sizeof(int),
+                event_id_device_ptr,
+                sizeof(waitfordevice::EventID),
                 cudaMemcpyDeviceToHost,
                 cuda_stream
             ));
@@ -149,7 +142,11 @@ auto task_synchronize_stream( cudaStream_t cuda_stream )
                 cuda_stream
 	    ));
         },
-        prop
+        TaskProperties::Builder()
+            .label("task_synchronize_stream(" + std::to_string(0) + ")")
+            .resources({
+                cuda_resources::streams[0].write()
+            })
     );
 }
 

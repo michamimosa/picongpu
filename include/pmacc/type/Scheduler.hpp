@@ -21,12 +21,13 @@
 
 #pragma once
 
-#include <rmngr/scheduler/scheduler_singleton.hpp>
-#include <rmngr/scheduler/resource.hpp>
-#include <rmngr/scheduler/dispatch.hpp>
-#include <rmngr/scheduler/graphviz.hpp>
-#include <rmngr/scheduler/fifo.hpp>
+#include <rmngr/scheduler/states.hpp>
 #include <rmngr/resource/ioresource.hpp>
+#include <rmngr/property/inherit.hpp>
+#include <rmngr/property/resource.hpp>
+#include <rmngr/property/label.hpp>
+
+#include <rmngr/thread/thread_dispatcher.hpp>
 
 namespace pmacc
 {
@@ -36,137 +37,167 @@ namespace cuda_resources
 rmngr::IOResource streams[1];
 }
 
-std::ostream& functor_backtrace(std::ostream& out);
-
-template <
-    typename Job
->
-struct PMaccDispatch : rmngr::DefaultJobSelector<Job>
+struct PMaccProperties
 {
-    struct Selector : rmngr::FIFO<Job>
+    bool mpi_task;
+
+    PMaccProperties()
+        : mpi_task( false )
+    {}
+
+    template < typename PropertiesBuilder >
+    struct Builder
     {
-        PMaccDispatch * parent;
+        PropertiesBuilder & builder;
 
-        std::unique_lock<rmngr::debug_graph_mutex> graph_lock(){
-            return parent->graph_lock();
-        }
-
-        void update()
-        {
-            parent->update();
-        }
-    };
-
-    Selector main_selector;
-    Selector mpi_selector;
-
-    PMaccDispatch()
-    {
-        main_selector.parent = this;
-        mpi_selector.parent = this;
-    }
-
-    struct Property : rmngr::FIFO<Job>::Property
-    {
-        Property()
-	    : dont_schedule_me(false)
-	    , mpi_thread(false)
+        Builder( PropertiesBuilder & b )
+            : builder(b)
         {}
 
-        bool dont_schedule_me;
-        bool mpi_thread;
+        PropertiesBuilder mpi_task()
+        {
+            builder.prop.mpi_task = true;
+            return builder;
+        }
     };
 
-    void push( Job const & j, Property const & prop = Property() )
+    struct Patch
     {
-        if(! prop.dont_schedule_me )
+        template <typename PatchBuilder>
+        struct Builder
         {
-            if(prop.mpi_thread)
-                mpi_selector.push(j, prop);
-            else
-                main_selector.push(j, prop);
-        }
-    }
+            Builder( PatchBuilder & ) {}
+        };
+    };
 
-    void notify()
-    {
-        main_selector.notify();
-        mpi_selector.notify();
-    }
-
-    bool empty()
-    {
-        return main_selector.empty() && mpi_selector.empty();
-    }
-
-    template <typename Pred>
-    Job getJob( Pred const & pred )
-    {
-        if( rmngr::thread::id == 0 )
-            return mpi_selector.getJob( pred );
-        else
-            return main_selector.getJob( pred );
-    }
+    void apply_patch( Patch const & ) {};
 };
 
-using GraphvizPolicy = rmngr::GraphvizWriter< rmngr::DispatchPolicy< PMaccDispatch > >;
+using TaskProperties = rmngr::TaskProperties<
+    rmngr::ResourceProperty,
+    rmngr::LabelProperty,
+    PMaccProperties
+>;
 
-template <typename T>
+std::ostream& functor_backtrace(std::ostream& out);
+
 struct EnqueuePolicy
 {
-    static bool is_serial(T const & a, T const & b)
+    static bool is_serial(TaskProperties const & a, TaskProperties const & b)
     {
-        return rmngr::ResourceUser::is_serial(
-                   a->template property< rmngr::ResourceUserPolicy >(),
-		   b->template property< rmngr::ResourceUserPolicy >());
+        return rmngr::ResourceUser::is_serial( a, b );
     }
-    static void assert_superset(T const & super, T const & sub)
+
+    static void assert_superset(TaskProperties const & super, TaskProperties const & sub)
     {
-        auto r_super = super->template property< rmngr::ResourceUserPolicy >();
-        auto r_sub = sub->template property< rmngr::ResourceUserPolicy >();
-        if(! rmngr::ResourceUser::is_superset( r_super, r_sub ))
+        if(! rmngr::ResourceUser::is_superset( super, sub ))
         {
             std::stringstream stream;
-            stream << "Not allowed: " << std::endl
-	           << super->template property< GraphvizPolicy >().label
-		   << r_super << std::endl
-		   << "is no superset of "
-		   << sub->template property< GraphvizPolicy >().label << std::endl
-	           << r_sub << std::endl;
+            stream << "Not allowed: " << super.label << "is no superset of " << sub.label << std::endl
+                   << super.label << " has access: " << std::endl
+                   << (rmngr::ResourceUser)super << std::endl << std::endl
+                   << sub.label << " has access: " << std::endl
+	           << (rmngr::ResourceUser)sub << std::endl;
             functor_backtrace(stream);
             throw std::runtime_error(stream.str());
         }
     }
 };
 
-
-template <typename Graph>
-using RefinementGraph = rmngr::QueuedPrecedenceGraph< Graph, EnqueuePolicy >;
-
-using Scheduler = rmngr::SchedulerSingleton<
-    boost::mpl::vector<
-        rmngr::ResourceUserPolicy,
-        GraphvizPolicy,
-
-        // dispatcher should always be the last policy
-        rmngr::DispatchPolicy< PMaccDispatch >
-    >,
-    RefinementGraph
->;
-
-std::ostream& functor_backtrace(std::ostream& out)
+template < typename SchedulingGraph >
+struct Scheduler
+    : rmngr::StateScheduler< TaskProperties, SchedulingGraph >
 {
-    if( std::experimental::optional<std::vector<Scheduler::Task*>> bt = Scheduler::getInstance().backtrace() )
+    using TaskID = typename rmngr::TaskContainer<TaskProperties>::TaskID;
+    using Job = typename SchedulingGraph::Job;
+
+    std::mutex queue_mutex;
+    std::queue< Job > main_queue;
+    std::queue< Job > mpi_queue;
+
+    bool write_graph;
+
+    Scheduler( rmngr::TaskContainer< TaskProperties > & tasks, SchedulingGraph & graph )
+        : rmngr::StateScheduler< TaskProperties, SchedulingGraph >( tasks, graph )
+        , write_graph( false )
     {
-        int i = 0;
-        for( auto task : *bt )
+        for( size_t i = 0; i < this->graph.schedule.size(); i++ )
         {
-            out << "functor backtrace [" << i << "] " << task->property<GraphvizPolicy>().label << std::endl;
-            i++;
+            auto & t = this->graph.schedule[i];
+            if( i == 0 && this->graph.schedule.size() > 1 )
+                t.set_request_hook( [this, &t]{ get_job(t, mpi_queue); });
+            else
+                t.set_request_hook( [this,&t]{ get_job(t, main_queue); });
         }
     }
-    return out;
-}    
+
+private:
+    void update_queues()
+    {
+        bool u1 = this->uptodate.test_and_set();
+        bool u2 = this->graph.precedence_graph.test_and_set();
+        if( !u1 || !u2 )
+        {
+            auto ready_tasks = this->update_graph();
+            for( TaskID t : ready_tasks )
+            {
+                auto prop = this->tasks.task_properties( t );
+
+                if( prop.mpi_task && this->graph.schedule.size() > 1 )
+                    mpi_queue.push( Job{ this->tasks, t } );
+                else
+                    main_queue.push( Job{ this->tasks, t } );
+            }
+        }
+
+        if( write_graph )
+        {
+            static int step=0;
+            std::cout << "write step_" << step << ".dot" << std::endl;
+            std::ofstream out( "step_" + std::to_string(step++) + ".dot" );
+            this->graph.precedence_graph.write_dot(
+                out,
+                [this]( TaskID id )
+                {
+                    return this->tasks.task_properties(id).label;
+                },
+                [this]( TaskID id )
+                {
+                    switch( this->get_task_state(id) )
+                    {
+                    case rmngr::TaskState::uninitialized:
+                    case rmngr::TaskState::pending:
+                        return "brown";
+                    case rmngr::TaskState::ready:
+                        return "green";
+                    case rmngr::TaskState::running:
+                        return "gray";
+                    case rmngr::TaskState::done:
+                        return "black";
+                    }
+                    return "blue";
+                });
+        }
+    }
+
+    void get_job( typename SchedulingGraph::ThreadSchedule & thread, std::queue<Job> & queue )
+    {
+        std::lock_guard< std::mutex > lock( queue_mutex );
+
+        if( queue.empty() )
+            update_queues();
+
+        if( ! queue.empty() )
+        {
+            auto job = queue.front();
+            queue.pop();
+
+            //std::cout << "thread["<<rmngr::thread::id<<"] RUN task \""<< this->tasks.task_properties(job.task_id).label <<"\""<<std::endl;
+            thread.push( job );
+        }
+    }
+
+};
 
 } // namespace pmacc
 
