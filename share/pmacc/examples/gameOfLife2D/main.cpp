@@ -128,6 +128,8 @@ int main( int argc, char **argv )
     }
     std::cout << "newborn if=" << newBornIf << " stay alive if=" << stayAliveIf << " mask=" << ruleMask << std::endl;
 
+    try
+    {
     /* start game of life simulation */
     gol::Simulation sim( ruleMask, steps, grid, gpus, endless, n_threads );
     sim.init( );
@@ -136,6 +138,13 @@ int main( int argc, char **argv )
 
     /* finalize the pmacc context */
     pmacc::Environment<>::get().finalize();
+
+    }
+    catch( std::exception const & e )
+    {
+        std::cerr << "RUNTIME ERROR: " << e.what() << std::endl;
+        pmacc::functor_backtrace(std::cerr);
+    }
 
     return 0;
 }

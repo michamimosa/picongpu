@@ -118,15 +118,7 @@ copy(
     HostBuffer<T, T_Dim> & src
 )
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += src.read();
-    prop.policy< rmngr::ResourceUserPolicy >() += src.size_resource.write();
-    prop.policy< GraphvizPolicy >().label = "copyHostToDevice";
-
-    Scheduler::emplace_task(
+    Environment<>::get().ResourceManager().emplace_task(
         [&dst, &src]
         {
             size_t current_size = src.getCurrentSize();
@@ -143,7 +135,15 @@ copy(
 
             task_synchronize_stream(0);
         },
-        prop
+        TaskProperties::Builder()
+            .label("copyHostToDevice")
+            .resources({
+                dst.write(),
+                dst.size_resource.write(),
+                src.read(),
+                src.size_resource.write(),
+                cuda_resources::streams[0].write()
+            })
     );
 }
 

@@ -18,8 +18,8 @@
 namespace pmacc
 {
 
-    template <class TYPE, std::size_t DIM>
-  class DeviceBuffer;
+template <class TYPE, std::size_t DIM>
+class DeviceBuffer;
 
 namespace memory
 {
@@ -145,13 +145,7 @@ template <
 void
 device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-    prop.policy< GraphvizPolicy >().label = "device_set_value_small()";
-
-    Scheduler::emplace_task(
+    Environment<>::get().ResourceManager().emplace_task(
         [&dst, value]
         {
             cudaStream_t cuda_stream = 0;
@@ -196,7 +190,13 @@ device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
                 );
             }
         },
-        prop
+        TaskProperties::Builder()
+           .label("device_set_value_small(" + std::to_string(value) + ")")
+           .resources({
+                dst.write(),
+                dst.size_resource.write(),
+                cuda_resources::streams[0].write()
+            })
     );
 }
 
@@ -212,13 +212,7 @@ template <
 void
 device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-    prop.policy< GraphvizPolicy >().label = "device_set_value_big()";
-
-    Scheduler::emplace_task(
+    Environment<>::get().ResourceManager().emplace_task(
         [&dst, value]
         {
             cudaStream_t cuda_stream = 0;
@@ -276,6 +270,8 @@ device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
                     area_size
                 );
 
+                cudaDeviceSynchronize();
+
                 if (valuePointer_host != nullptr)
                 {
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(valuePointer_host));
@@ -283,7 +279,13 @@ device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
                 }
             }
         },
-        prop
+        TaskProperties::Builder()
+            .label("device_set_value_big(" + std::to_string(value) + ")")
+            .resources({
+                dst.write(),
+                dst.size_resource.write(),
+                cuda_resources::streams[0].write()
+            })
     );
 }
 

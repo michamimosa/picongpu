@@ -108,15 +108,7 @@ copy(
     DeviceBuffer<T, T_Dim> & src
 )
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += dst.size_resource.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += src.read();
-    prop.policy< rmngr::ResourceUserPolicy >() += src.size_resource.write();
-    prop.policy< GraphvizPolicy >().label = "copyDeviceToDevice";
-
-    Scheduler::emplace_task(
+    Environment<>::get().ResourceManager().emplace_task(
         [&dst, &src]
         {
             size_t current_size = src.getCurrentSize();
@@ -128,7 +120,15 @@ copy(
             else
                 device2device_detail::copy(dst, src, devCurrentSize);
         },
-        prop
+        TaskProperties::Builder()
+            .label("copyDeviceToDevice")
+            .resources({
+                dst.write(),
+                dst.size_resource.write(),
+                src.write(),
+                src.size_resource.write(),
+                cuda_resources::streams[0].write()
+            })
     );
 }
 
