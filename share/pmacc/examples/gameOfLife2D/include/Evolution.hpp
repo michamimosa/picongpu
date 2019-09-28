@@ -34,6 +34,7 @@
 #include <pmacc/traits/GetNumWorkers.hpp>
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
+#include <pmacc/Environment.hpp>
 
 #include <memory>
 
@@ -253,37 +254,39 @@ namespace kernel
             float const fraction
         )
         {
-            Scheduler::Properties prop;
-            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().write();
-            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().size_resource.write();
-            prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
-            prop.policy< GraphvizPolicy >().label = "Evolution::initEvolution()";
+            Environment<>::get().ResourceManager().emplace_task(
+                [this, &writeBuffer, fraction]
+                {
+                    AreaMapping <
+                        CORE + BORDER,
+                        T_MappingDesc
+                    > mapper( *mapping );
 
-            Scheduler::emplace_task(
-	    [this, &writeBuffer, fraction]
-	    {
-            AreaMapping <
-                CORE + BORDER,
-                T_MappingDesc
-            > mapper( *mapping );
-            constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                math::CT::volume< typename T_MappingDesc::SuperCellSize >::type::value
-            >::value;
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume< typename T_MappingDesc::SuperCellSize >::type::value
+                    >::value;
 
-            GridController< DIM2 >& gc = Environment< DIM2 >::get( ).GridController( );
-            uint32_t seed = gc.getGlobalSize( ) + gc.getGlobalRank( );
+                    GridController< DIM2 >& gc = Environment< DIM2 >::get( ).GridController( );
+                    uint32_t seed = gc.getGlobalSize( ) + gc.getGlobalRank( );
 
-            PMACC_KERNEL( kernel::RandomInit< numWorkers >{ } )(
-                mapper.getGridDim( ),
-                numWorkers
-            )(
-                writeBuffer.getDeviceBuffer().getDataBox(),
-                seed,
-                fraction,
-                mapper
+                    PMACC_KERNEL( kernel::RandomInit< numWorkers >{ } )(
+                        mapper.getGridDim( ),
+                        numWorkers
+                    )(
+                        writeBuffer.getDeviceBuffer().getDataBox(),
+                        seed,
+                        fraction,
+                        mapper
+                    );
+                },
+                TaskProperties::Builder()
+                    .label("Evolution::initEvolution()")
+                    .resources({
+                        writeBuffer.getDeviceBuffer().write(),
+                        writeBuffer.getDeviceBuffer().size_resource.write(),
+                        cuda_resources::streams[0].write()
+                    })
             );
-	    },
-            prop);
         }
 
         template <
@@ -294,19 +297,18 @@ namespace kernel
             Buffer & writeBuffer
         )
         {
-            Scheduler::Properties prop;
-            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().write();
-            prop.policy< rmngr::ResourceUserPolicy >() += writeBuffer.getDeviceBuffer().size_resource.write();
-            prop.policy< rmngr::ResourceUserPolicy >() += readBuffer.getDeviceBuffer().read();
-            prop.policy< rmngr::ResourceUserPolicy >() += readBuffer.getDeviceBuffer().size_resource.read();
-            prop.policy< rmngr::ResourceUserPolicy >() += cuda_resources::streams[0].write();
+            std::string l("run ()");
+            switch( T_Area )
+            {
+            case BORDER:
+                l = std::string("run&lt;BORDER&gt;()");
+                break;
+            case CORE:
+                l = std::string("run&lt;CORE&gt;()");
+                break;
+            }
 
-            if( T_Area == CORE )
-                prop.policy< GraphvizPolicy >().label = "run<CORE>";
-            if( T_Area == BORDER )
-                prop.policy< GraphvizPolicy >().label = "run<BORDER>";
-
-            Scheduler::emplace_task(
+            Environment<>::get().ResourceManager().emplace_task(
      	        [this, &readBuffer, &writeBuffer ]
                 {
                     AreaMapping <
@@ -327,7 +329,15 @@ namespace kernel
                         mapper
                     );
                 },
-                prop
+                TaskProperties::Builder()
+                .label( std::move(l) )
+                    .resources({
+                        writeBuffer.getDeviceBuffer().write(),
+                        writeBuffer.getDeviceBuffer().size_resource.write(),
+                        readBuffer.getDeviceBuffer().read(),
+                        readBuffer.getDeviceBuffer().size_resource.read(),
+                        cuda_resources::streams[0].write(),
+                    })
             );
         }
     };

@@ -35,6 +35,9 @@
 #include "pmacc/communication/manager_common.hpp"
 #include "pmacc/assert.hpp"
 
+#include <pmacc/type/Scheduler.hpp>
+#include <rmngr/manager.hpp>
+
 #include <mpi.h>
 
 namespace pmacc
@@ -138,10 +141,31 @@ namespace detail
         {
         }
 
+        auto & ResourceManager_ptr()
+        {
+            static rmngr::Manager<
+                TaskProperties,
+                EnqueuePolicy,
+                Scheduler
+            > * mgr_ptr;
+            return mgr_ptr;
+        }
+
         /** cleanup the environment */
         void finalize()
         {
+            delete ResourceManager_ptr();
             EnvironmentContext::getInstance().finalize();
+        }
+
+        void initScheduler( int n_threads )
+        {
+            ResourceManager_ptr() = new rmngr::Manager< TaskProperties, EnqueuePolicy, Scheduler >( n_threads );
+        }
+
+        auto & ResourceManager()
+        {
+            return *ResourceManager_ptr();
         }
 
         /** get the singleton StreamController
@@ -532,6 +556,24 @@ namespace detail
     }
 
 } // namespace detail
+
+    
+std::ostream& functor_backtrace(std::ostream& out)
+{
+    if( std::experimental::optional<std::vector<rmngr::TaskContainer<TaskProperties>::TaskID>> bt = Environment<>::get().ResourceManager().backtrace() )
+    {
+        int i = 0;
+        out << "Task Backtrace:" << std::endl;
+        for( auto task : *bt )
+        {
+            out << "[" << i << "] Task[" << task << "] " << Environment<>::get().ResourceManager().task_properties(task).label << std::endl;
+            i++;
+        }
+    }
+    return out;
+}
+
+
 } // namespace pmacc
 
 //#include "pmacc/particles/tasks/ParticleFactory.tpp"

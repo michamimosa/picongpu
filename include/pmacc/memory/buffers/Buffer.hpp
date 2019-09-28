@@ -63,17 +63,17 @@ namespace pmacc
             , m_physicalMemorySize(physicalMemorySize)
             , rmngr::FieldResource<DIM>(resource)
         {
-            Scheduler::Properties prop;
-            prop.policy<rmngr::ResourceUserPolicy>() += this->size_resource.write();
-            prop.policy<GraphvizPolicy>().label = "Buffer::Buffer()";
-
-            Scheduler::emplace_task(
+            Environment<>::get().ResourceManager().emplace_task(
                 [this, size]
                 {
                     CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof (size_t)));
                     *current_size = size.productOfComponents();
                 },
-                prop
+                TaskProperties::Builder()
+                    .label("Buffer::Buffer()")
+                    .resources({
+                        this->size_resource.write()
+                    })
             );
         }
 
@@ -82,17 +82,17 @@ namespace pmacc
          */
         ~Buffer()
         {
-            Scheduler::Properties prop;
-            prop.policy< rmngr::ResourceUserPolicy >() += this->write();
-            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
-            prop.policy< GraphvizPolicy >().label = "Buffer::~Buffer()";
-
-            Scheduler::emplace_task(
+            Environment<>::get().ResourceManager().emplace_task(
                 [this]
                 {
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
                 },
-                prop
+                TaskProperties::Builder()
+                    .label("Buffer::~Buffer()")
+                    .resources({
+                        this->write(),
+                        this->size_resource.write()
+                    })
             ).get();
         }
 
@@ -184,16 +184,16 @@ namespace pmacc
          */
         virtual size_t getCurrentSize()
         {
-            Scheduler::Properties prop;
-            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.read();
-            prop.policy< GraphvizPolicy >().label = "Buffer::getCurrentSize()";
-
-            return Scheduler::emplace_task(
+            return Environment<>::get().ResourceManager().emplace_task(
                 [this]
                 {
                     return *(this->current_size);
                 },
-                prop
+                TaskProperties::Builder()
+                    .label("Buffer::getCurrentSize()")
+                    .resources({
+                        this->size_resource.read()
+                    })
             ).get();
         }
 
@@ -202,17 +202,17 @@ namespace pmacc
          */
         virtual void setCurrentSize(const size_t newsize)
         {
-            Scheduler::Properties prop;
-            prop.policy< rmngr::ResourceUserPolicy >() += this->size_resource.write();
-            prop.policy< GraphvizPolicy >().label = "Buffer::setCurrentSize()";
-
-            Scheduler::emplace_task(
+            Environment<>::get().ResourceManager().emplace_task(
                 [this, newsize]
                 {
                     PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
                     *(this->current_size) = newsize;
                 },
-                prop
+                TaskProperties::Builder()
+                    .label("Buffer::setCurrentSize()")
+                    .resources({
+                        this->size_resource.write()
+                    })
             );
         }
 

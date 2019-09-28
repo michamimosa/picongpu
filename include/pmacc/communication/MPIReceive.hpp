@@ -5,6 +5,7 @@
 #include <pmacc/memory/buffers/Exchange.hpp>
 #include <pmacc/memory/buffers/CopyHostToDevice.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
+#include <pmacc/Environment.hpp>
 
 #include <mpi.h>
 
@@ -24,13 +25,7 @@ task_mpi_receive(
     uint32_t communication_tag
 )
 {
-    Scheduler::Properties prop;
-    prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
-    prop.policy< rmngr::ResourceUserPolicy >() += host_buffer.write();
-    prop.policy< rmngr::ResourceUserPolicy >() += host_buffer.size_resource.write();
-    prop.policy< GraphvizPolicy >().label = "task_mpi_receive()";
-
-    return Scheduler::emplace_task(
+    return Environment<>::get().ResourceManager().emplace_task(
         [&host_buffer, exchange_type, communication_tag]
         {
             MPI_Request * request =
@@ -57,7 +52,13 @@ task_mpi_receive(
 
             host_buffer.setCurrentSize( newBufferSize );
         },
-        prop
+        TaskProperties::Builder()
+            .label("mpi_receive(exchange_type = " + std::to_string(exchange_type) + ", communication_tag = " + std::to_string(communication_tag) + ")")
+            .mpi_task()
+            .resources({
+                host_buffer.write(),
+                host_buffer.size_resource.write()
+            })
     );
 }
 

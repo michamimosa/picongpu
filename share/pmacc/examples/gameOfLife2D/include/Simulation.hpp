@@ -65,6 +65,9 @@ public:
     Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic, size_t n_threads) :
     evo(rule), steps(steps), gridSize(gridSize), isMaster(false), buff1(nullptr), buff2(nullptr)
     {
+        // initialize Resource Manager
+        pmacc::Environment<>::get().initScheduler( n_threads );
+
         /* -First this initializes the GridController with number of 'devices'*
          *  and 'periodic'ity. The init-routine will then create and manage   *
          *  the MPI processes and communication group and topology.           *
@@ -93,7 +96,6 @@ public:
                                             gc.getPosition() * localGridSize);
 
         pmacc::waitfordevice::setup();
-        pmacc::Scheduler::init( n_threads );
     }
 
     virtual ~Simulation()
@@ -105,8 +107,6 @@ public:
         std::cout << "finalize simulation..." << std::endl;
         delete buff1;
         delete buff2;
-	std::cout << "wait until all tasks finished..." << std::endl;
-	pmacc::Scheduler::finish();
 	gather.finalize();
     }
 
@@ -214,38 +214,44 @@ private:
 
     void oneStep(uint32_t currentStep, Buffer& read, Buffer& write)
     {
-        std::cout << "Step " << currentStep << std::endl;
-
-        read.communication();
+        //read.communication();
 
         evo.run<CORE>( read, write );
         evo.run<BORDER>( read, write );
 
         write.deviceToHost();
 
-        Scheduler::Properties prop;
-        prop.policy< rmngr::ResourceUserPolicy >() += write.getHostBuffer().read();
-        prop.policy< rmngr::ResourceUserPolicy >() += write.getHostBuffer().size_resource.read();
-        if( isMaster )
-            prop.policy< rmngr::ResourceUserPolicy >() += gatherbuf.write();
-
-        prop.policy< GraphvizPolicy >().label = "gather";
-
-        Scheduler::emplace_task(
-            [this, &write, currentStep]
+        auto picture = Environment<>::get().ResourceManager().emplace_task(
+            [this, &write]
 	    {
                 /* gather::operator() gathers all the buffers and assembles those to  *
                  * a complete picture discarding the guards.                          */
-                auto picture = gather(write.getHostBuffer().getDataBox());
-
-                if (isMaster)
-                {
-                    PngCreator png;
-                    png( currentStep, picture, gridSize );
-                }
+                return gather(write.getHostBuffer().getDataBox());
             },
-            prop
+            pmacc::TaskProperties::Builder()
+                .label("Gather")
+                .resources({
+                    write.getHostBuffer().read(),
+                    write.getHostBuffer().size_resource.read(),
+                    gatherbuf.write()
+                })
         );
+
+        if( isMaster )
+        {
+            Environment<>::get().ResourceManager().emplace_task(
+                [this, picture{std::move(picture)}, currentStep] () mutable
+                {
+                    std::cout << "Step " << currentStep << std::endl;
+
+                    PngCreator png;
+                    png( currentStep, picture.get(), gridSize );
+                },
+                TaskProperties::Builder()
+                .resources({write.getHostBuffer().read(), gatherbuf.read()})
+                .label("Write PNG")
+            );
+        }
     }
 }; // class Simulation
 

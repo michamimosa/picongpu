@@ -25,6 +25,7 @@
 #include <pmacc/memory/boxes/PitchedBox.hpp>
 #include <pmacc/dimensions/DataSpace.hpp>
 #include <pmacc/types.hpp>                                  // DIM*
+#include <pmacc/Environment.hpp>
 
 #include <mpi.h>
 
@@ -94,9 +95,7 @@ struct GatherSlice
      */
     bool init(const MessageHeader mHeader, bool isActive)
     {
-        Scheduler::Properties prop;
-        prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
-        return Scheduler::emplace_task(
+        return Environment<>::get().ResourceManager().emplace_task(
             [this, mHeader, isActive]
             {
                 header = mHeader;
@@ -133,7 +132,9 @@ struct GatherSlice
 
                 return mpiRank == 0;
 	    },
-            prop
+            TaskProperties::Builder()
+               .label("Gather init")
+               .mpi_task()
         ).get();
     }
 
@@ -157,9 +158,7 @@ struct GatherSlice
         if (fullData == nullptr && mpiRank == 0)
             fullData = (char*) new ValueType[header.nodeSize.productOfComponents() * numRanks];
 
-        Scheduler::Properties prop;
-        prop.policy< rmngr::DispatchPolicy<PMaccDispatch> >().job_selector_prop.mpi_thread = true;
-	Scheduler::emplace_task(
+	Environment<>::get().ResourceManager().emplace_task(
             [this, recvHeader, fakeHeader, data]
             {
                 MPI_CHECK(MPI_Gather(fakeHeader, sizeof(MessageHeader), MPI_CHAR, recvHeader, sizeof(MessageHeader),
@@ -172,7 +171,9 @@ struct GatherSlice
                                      fullData, elementsCount, MPI_CHAR,
                                      0, comm));
 	    },
-            prop
+            TaskProperties::Builder()
+                .label("MPI_Gather()")
+                .mpi_task()
         ).get();
 
         if (mpiRank == 0)
