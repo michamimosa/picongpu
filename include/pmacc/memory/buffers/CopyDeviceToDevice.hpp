@@ -19,8 +19,8 @@ namespace device2device_detail
 
 template < typename T >
 void fast_copy(
-    T * src,
     T * dst,
+    T * src,
     size_t size
 )
 {
@@ -116,7 +116,7 @@ copy(
 
             DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
             if (src.is1D() && dst.is1D())
-                device2device_detail::fast_copy(src.getPointer(), dst.getPointer(), devCurrentSize.productOfComponents());
+                device2device_detail::fast_copy(dst.getPointer(), src.getPointer(), devCurrentSize.productOfComponents());
             else
                 device2device_detail::copy(dst, src, devCurrentSize);
         },

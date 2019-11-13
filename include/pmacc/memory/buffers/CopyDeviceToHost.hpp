@@ -46,8 +46,8 @@ namespace device2host_detail
 
 template < typename T >
 void fast_copy(
-    T * src,
     T * dst,
+    T * src,
     size_t size
 )
 {
