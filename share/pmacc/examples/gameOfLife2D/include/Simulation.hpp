@@ -38,6 +38,8 @@
 #include <string>
 #include "PngCreator.hpp"
 
+#include <pmacc/communication/MPIWait.hpp>
+
 namespace gol
 {
 
@@ -96,6 +98,19 @@ public:
                                             gc.getPosition() * localGridSize);
 
         pmacc::waitfordevice::setup();
+
+        std::thread polling_thread(
+            []
+            {
+                rmngr::thread::id = -1;
+                while(1)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    pmacc::communication::MPIRequestPool::get().poll();
+                    pmacc::Environment<>::get().ResourceManager().getScheduler().notify();
+                }
+            });
+        polling_thread.detach();
     }
 
     virtual ~Simulation()
@@ -214,7 +229,7 @@ private:
 
     void oneStep(uint32_t currentStep, Buffer& read, Buffer& write)
     {
-        //read.communication();
+        read.communication();
 
         evo.run<CORE>( read, write );
         evo.run<BORDER>( read, write );
