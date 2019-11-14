@@ -435,10 +435,10 @@ public:
     void communication()
     {
         for (uint32_t i = 0; i < maxExchange; ++i)
+        {
             send( Mask::getMirroredExchangeType(i) );
-
-        for (uint32_t i = 0; i < maxExchange; ++i)
             receive( i );
+        }
     }
 
     void send(uint32_t sendEx)
