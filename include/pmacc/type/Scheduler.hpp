@@ -134,6 +134,7 @@ struct Scheduler
 private:
     void update_queues()
     {
+        //std::cout << "thread["<<rmngr::thread::id<<"] Scheduler: queue empty"<<std::endl;
         bool u1 = this->uptodate.test_and_set();
         bool u2 = this->graph.precedence_graph.test_and_set();
         if( !u1 || !u2 )
@@ -159,21 +160,22 @@ private:
                 out,
                 [this]( TaskID id )
                 {
-                    return this->tasks.task_properties(id).label;
+                    return "[" + std::to_string(id) + "] " + this->tasks.task_properties(id).label;
                 },
                 [this]( TaskID id )
                 {
                     switch( this->get_task_state(id) )
                     {
                     case rmngr::TaskState::uninitialized:
+                        return "purple";
                     case rmngr::TaskState::pending:
                         return "brown";
                     case rmngr::TaskState::ready:
                         return "green";
                     case rmngr::TaskState::running:
-                        return "gray";
+                        return "yellow";
                     case rmngr::TaskState::done:
-                        return "black";
+                        return "gray";
                     }
                     return "blue";
                 });
@@ -192,7 +194,6 @@ private:
             auto job = queue.front();
             queue.pop();
 
-            //std::cout << "thread["<<rmngr::thread::id<<"] RUN task \""<< this->tasks.task_properties(job.task_id).label <<"\""<<std::endl;
             thread.push( job );
         }
     }

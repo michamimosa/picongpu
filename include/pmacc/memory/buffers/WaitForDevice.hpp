@@ -32,6 +32,7 @@ namespace waitfordevice
                 .ResourceManager()
                 .getScheduler()
                 .graph.finish_event( id );
+            Environment<>::get().ResourceManager().getScheduler().notify();
         }
     }
  

@@ -29,32 +29,66 @@ task_mpi_receive(
         [&host_buffer, exchange_type, communication_tag]
         {
             MPI_Request * request =
-                Environment< T_Dim >::get()
-                .EnvironmentController()
-                .getCommunicator()
-                .startReceive(
-                    exchange_type,
-                    ( char * ) host_buffer.getBasePointer(),
-                    host_buffer.getDataSpace().productOfComponents() * sizeof( T ),
-                    communication_tag
-                );
+                Environment<>::get().ResourceManager().emplace_task(
+                    [&host_buffer, exchange_type, communication_tag]
+                    {
+                        return Environment< T_Dim >::get()
+                                  .EnvironmentController()
+                                  .getCommunicator()
+                                  .startReceive(
+                                      exchange_type,
+                                      ( char * ) host_buffer.getBasePointer(),
+                                      host_buffer.getDataSpace().productOfComponents() * sizeof( T ),
+                                      communication_tag
+                                  );
+                    },
+                    TaskProperties::Builder()
+                        .label("MPI request")
+                        .mpi_task()
+                        .resources({
+                            host_buffer.write(),
+                            host_buffer.size_resource.read()
+                        })
+                ).get();
 
-            MPI_Status status = task_mpi_wait( request ).get();
+            auto s = task_mpi_wait(request);
+            rmngr::IOResource status_resource = s.first;
+            std::shared_ptr<MPI_Status> status = s.second;
 
-            int recv_data_count;
-            MPI_CHECK_NO_EXCEPT( MPI_Get_count( &status, MPI_CHAR, &recv_data_count ) );
+            Environment<>::get().ResourceManager().emplace_task(
+                [status, communication_tag, request, &host_buffer]
+                {
+                    int recv_data_count = Environment<>::get().ResourceManager().emplace_task(
+                         [status]
+                         {
+                             int recv_data_count;
+                             MPI_CHECK_NO_EXCEPT( MPI_Get_count( status.get(), MPI_CHAR, &recv_data_count ) );
+                             return recv_data_count;
+                         },
+                         TaskProperties::Builder()
+                            .label("MPI_Get_count()")
+                            .mpi_task()
+                    ).get();
 
-            if( recv_data_count == MPI_UNDEFINED )
-                std::cerr << "undefined number of elements received" << std::endl;
+                    if( recv_data_count == MPI_UNDEFINED )
+                        std::cerr << "undefined number of elements received" << std::endl;
 
-            size_t newBufferSize = recv_data_count / sizeof( T );
-            //std::cout << "received " << newBufferSize << " elements" << std::endl;
+                    size_t newBufferSize = recv_data_count / sizeof( T );
+                    //std::cout << "received " << newBufferSize << " elements" << std::endl;
 
-            host_buffer.setCurrentSize( newBufferSize );
+                    host_buffer.setCurrentSize( newBufferSize );
+                },
+                TaskProperties::Builder()
+                    .label("update size")
+                    .resources({
+                        status_resource.read(),
+                        host_buffer.write(),
+                        host_buffer.size_resource.write()
+                    })
+            );
         },
         TaskProperties::Builder()
             .label("mpi_receive(exchange_type = " + std::to_string(exchange_type) + ", communication_tag = " + std::to_string(communication_tag) + ")")
-            .mpi_task()
             .resources({
                 host_buffer.write(),
                 host_buffer.size_resource.write()
