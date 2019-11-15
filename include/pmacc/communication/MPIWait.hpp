@@ -45,23 +45,29 @@ struct MPIRequestPool
 
     void poll()
     {
-        std::lock_guard<std::recursive_mutex> lock(mutex);
-        std::vector<MPI_Request*> keys;
-        for( auto it = requests.begin(); it != requests.end(); ++it )
-            keys.push_back(it->first);
-
-        for( auto request : keys )
+        std::vector<std::tuple<MPI_Request*, EventID, std::shared_ptr<MPI_Status>>> r;
         {
-            std::future<bool> res = task_mpi_test(request, requests[request].second.get());
+            std::lock_guard<std::recursive_mutex> lock(mutex);
+            r.reserve(requests.size());
+            for( auto it = requests.begin(); it != requests.end(); ++it )
+                r.emplace_back(it->first, it->second.first, it->second.second);
+        }
+
+        for( auto request : r )
+        {
+            std::future<bool> res = task_mpi_test(std::get<0>(request), std::get<2>(request).get());
             if( res.get() )
             {
-                auto event = requests[request].first;
-                requests.erase( request );
+                {
+                    std::lock_guard<std::recursive_mutex> lock(mutex);
+                    requests.erase( std::get<0>(request) );
+                }
 
                 Environment<>::get()
                     .ResourceManager()
                     .getScheduler()
-                    .graph.finish_event( event );
+                    .graph.finish_event( std::get<1>(request) );
+                Environment<>::get().ResourceManager().getScheduler().notify();
             }
         }
     }
