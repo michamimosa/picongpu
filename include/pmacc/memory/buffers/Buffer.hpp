@@ -28,8 +28,8 @@
 #include "pmacc/assert.hpp"
 #include "pmacc/types.hpp"
 
-#include <rmngr/resource/fieldresource.hpp>
-#include <rmngr/resource/ioresource.hpp>
+#include <redGrapes/resource/fieldresource.hpp>
+#include <redGrapes/resource/ioresource.hpp>
 
 #include <limits>
 
@@ -44,7 +44,7 @@ namespace pmacc
      */
     template <class TYPE, std::size_t DIM>
     class Buffer
-        : public rmngr::FieldResource< DIM >
+        : public redGrapes::FieldResource< DIM >
     {
     public:
         typedef DataBox<PitchedBox<TYPE, DIM> > DataBoxType;
@@ -56,12 +56,12 @@ namespace pmacc
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        Buffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rmngr::FieldResource<DIM> resource)
+        Buffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, redGrapes::FieldResource<DIM> resource)
             : data_space(size)
             , data1D(true)
             , current_size(nullptr)
             , m_physicalMemorySize(physicalMemorySize)
-            , rmngr::FieldResource<DIM>(resource)
+            , redGrapes::FieldResource<DIM>(resource)
         {
             Environment<>::get().ResourceManager().emplace_task(
                 [this, size]
@@ -227,7 +227,7 @@ namespace pmacc
             return data1D;
         }
 
-      rmngr::IOResource size_resource;
+      redGrapes::IOResource size_resource;
 
     protected:
 

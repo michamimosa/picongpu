@@ -52,7 +52,7 @@ task_mpi_receive(
                 ).get();
 
             auto s = task_mpi_wait(request);
-            rmngr::IOResource status_resource = s.first;
+            redGrapes::IOResource status_resource = s.first;
             std::shared_ptr<MPI_Status> status = s.second;
 
             Environment<>::get().ResourceManager().emplace_task(

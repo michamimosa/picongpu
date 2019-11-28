@@ -50,7 +50,7 @@ public:
      * @param size extent for each dimension (in elements)
      */
     HostBufferIntern(DataSpace<DIM> size)
-        : HostBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{})
+        : HostBuffer<TYPE, DIM>(size, size, redGrapes::FieldResource<DIM>{})
         , pointer(nullptr)
         , ownPointer(true)
     {

@@ -36,7 +36,7 @@
 #include "pmacc/assert.hpp"
 
 #include <pmacc/type/Scheduler.hpp>
-#include <rmngr/manager.hpp>
+#include <redGrapes/manager.hpp>
 
 #include <mpi.h>
 
@@ -143,7 +143,7 @@ namespace detail
 
         auto & ResourceManager_ptr()
         {
-            static rmngr::Manager<
+            static redGrapes::Manager<
                 TaskProperties,
                 EnqueuePolicy,
                 Scheduler
@@ -160,7 +160,7 @@ namespace detail
 
         void initScheduler( int n_threads )
         {
-            ResourceManager_ptr() = new rmngr::Manager< TaskProperties, EnqueuePolicy, Scheduler >( n_threads );
+            ResourceManager_ptr() = new redGrapes::Manager< TaskProperties, EnqueuePolicy, Scheduler >( n_threads );
         }
 
         auto & ResourceManager()
@@ -560,7 +560,7 @@ namespace detail
     
 std::ostream& functor_backtrace(std::ostream& out)
 {
-    if( std::experimental::optional<std::vector<rmngr::TaskContainer<TaskProperties>::TaskID>> bt = Environment<>::get().ResourceManager().backtrace() )
+    if( std::experimental::optional<std::vector<redGrapes::TaskContainer<TaskProperties>::TaskID>> bt = Environment<>::get().ResourceManager().backtrace() )
     {
         int i = 0;
         out << "Task Backtrace:" << std::endl;

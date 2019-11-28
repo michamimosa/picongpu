@@ -173,9 +173,9 @@ if((NOT ALPAKA_ACC_GPU_CUDA_ENABLE) AND ALPAKA_ACC_GPU_CUDA_ONLY_MODE)
     message(WARNING "ALPAKA_ACC_GPU_CUDA_ONLY_MODE is set to OFF because cuda backend is not activated")
 endif()
 
-# Resource Manager
-find_package(rmngr REQUIRED CONFIG PATHS "${PMacc_DIR}/../../thirdParty/resource_manager")
-set(PMacc_INCLUDE_DIRS ${PMacc_INCLUDE_DIRS} ${rmngr_INCLUDE_DIRS})
+# RedGrapes
+find_package(redGrapes REQUIRED CONFIG PATHS "${PMacc_DIR}/../../thirdParty/redGrapes")
+set(PMacc_INCLUDE_DIRS ${PMacc_INCLUDE_DIRS} ${redGrapes_INCLUDE_DIRS})
 
 # add possible indirect/transient library dependencies from alpaka backends
 # note: includes and definitions are already added in the cupla_add_executable
