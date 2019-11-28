@@ -65,7 +65,7 @@ struct CopyFromTest {
                 },
                 [&](::pmacc::Scheduler::Schedulable& s)
                 {
-                    s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                    s.proto_property<redGrapes::ResourceUserPolicy>().access_list =
                     {
                         hostBufferIntern->write(),
                         hostBufferIntern->size_resource.read()
@@ -87,7 +87,7 @@ struct CopyFromTest {
                 },
                 [&](::pmacc::Scheduler::Schedulable& s)
                 {
-                    s.proto_property<rmngr::ResourceUserPolicy>().access_list =
+                    s.proto_property<redGrapes::ResourceUserPolicy>().access_list =
                     { hostBufferIntern->read() };
                 }
             );

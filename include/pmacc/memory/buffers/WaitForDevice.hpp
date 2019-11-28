@@ -21,7 +21,7 @@ namespace waitfordevice
     int event_pipe[2];
     struct sigaction old_sigaction;
 
-    using EventID = typename rmngr::SchedulingGraph<pmacc::TaskProperties>::EventID;
+    using EventID = typename redGrapes::SchedulingGraph<pmacc::TaskProperties>::EventID;
 
     void event_loop()
     {

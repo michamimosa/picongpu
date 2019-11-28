@@ -122,7 +122,7 @@ namespace detail
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rmngr::FieldResource<DIM> resource) :
+        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, redGrapes::FieldResource<DIM> resource) :
             Buffer<TYPE, DIM>(size, physicalMemorySize, resource)
         {
 

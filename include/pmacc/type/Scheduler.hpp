@@ -21,20 +21,20 @@
 
 #pragma once
 
-#include <rmngr/scheduler/states.hpp>
-#include <rmngr/resource/ioresource.hpp>
-#include <rmngr/property/inherit.hpp>
-#include <rmngr/property/resource.hpp>
-#include <rmngr/property/label.hpp>
+#include <redGrapes/scheduler/states.hpp>
+#include <redGrapes/resource/ioresource.hpp>
+#include <redGrapes/property/inherit.hpp>
+#include <redGrapes/property/resource.hpp>
+#include <redGrapes/property/label.hpp>
 
-#include <rmngr/thread/thread_dispatcher.hpp>
+#include <redGrapes/thread/thread_dispatcher.hpp>
 
 namespace pmacc
 {
 
 namespace cuda_resources
 {
-rmngr::IOResource streams[1];
+redGrapes::IOResource streams[1];
 }
 
 struct PMaccProperties
@@ -73,9 +73,9 @@ struct PMaccProperties
     void apply_patch( Patch const & ) {};
 };
 
-using TaskProperties = rmngr::TaskProperties<
-    rmngr::ResourceProperty,
-    rmngr::LabelProperty,
+using TaskProperties = redGrapes::TaskProperties<
+    redGrapes::ResourceProperty,
+    redGrapes::LabelProperty,
     PMaccProperties
 >;
 
@@ -85,19 +85,19 @@ struct EnqueuePolicy
 {
     static bool is_serial(TaskProperties const & a, TaskProperties const & b)
     {
-        return rmngr::ResourceUser::is_serial( a, b );
+        return redGrapes::ResourceUser::is_serial( a, b );
     }
 
     static void assert_superset(TaskProperties const & super, TaskProperties const & sub)
     {
-        if(! rmngr::ResourceUser::is_superset( super, sub ))
+        if(! redGrapes::ResourceUser::is_superset( super, sub ))
         {
             std::stringstream stream;
             stream << "Not allowed: " << super.label << "is no superset of " << sub.label << std::endl
                    << super.label << " has access: " << std::endl
-                   << (rmngr::ResourceUser)super << std::endl << std::endl
+                   << (redGrapes::ResourceUser)super << std::endl << std::endl
                    << sub.label << " has access: " << std::endl
-	           << (rmngr::ResourceUser)sub << std::endl;
+	           << (redGrapes::ResourceUser)sub << std::endl;
             functor_backtrace(stream);
             throw std::runtime_error(stream.str());
         }
@@ -106,9 +106,9 @@ struct EnqueuePolicy
 
 template < typename SchedulingGraph >
 struct Scheduler
-    : rmngr::StateScheduler< TaskProperties, SchedulingGraph >
+    : redGrapes::StateScheduler< TaskProperties, SchedulingGraph >
 {
-    using TaskID = typename rmngr::TaskContainer<TaskProperties>::TaskID;
+    using TaskID = typename redGrapes::TaskContainer<TaskProperties>::TaskID;
     using Job = typename SchedulingGraph::Job;
 
     std::mutex queue_mutex;
@@ -117,8 +117,8 @@ struct Scheduler
 
     bool write_graph;
 
-    Scheduler( rmngr::TaskContainer< TaskProperties > & tasks, SchedulingGraph & graph )
-        : rmngr::StateScheduler< TaskProperties, SchedulingGraph >( tasks, graph )
+    Scheduler( redGrapes::TaskContainer< TaskProperties > & tasks, SchedulingGraph & graph )
+        : redGrapes::StateScheduler< TaskProperties, SchedulingGraph >( tasks, graph )
         , write_graph( false )
     {
         for( size_t i = 0; i < this->graph.schedule.size(); i++ )
@@ -134,7 +134,7 @@ struct Scheduler
 private:
     void update_queues()
     {
-        //std::cout << "thread["<<rmngr::thread::id<<"] Scheduler: queue empty"<<std::endl;
+        //std::cout << "thread["<<redGrapes::thread::id<<"] Scheduler: queue empty"<<std::endl;
         bool u1 = this->uptodate.test_and_set();
         bool u2 = this->graph.precedence_graph.test_and_set();
         if( !u1 || !u2 )
@@ -166,15 +166,15 @@ private:
                 {
                     switch( this->get_task_state(id) )
                     {
-                    case rmngr::TaskState::uninitialized:
+                    case redGrapes::TaskState::uninitialized:
                         return "purple";
-                    case rmngr::TaskState::pending:
+                    case redGrapes::TaskState::pending:
                         return "brown";
-                    case rmngr::TaskState::ready:
+                    case redGrapes::TaskState::ready:
                         return "green";
-                    case rmngr::TaskState::running:
+                    case redGrapes::TaskState::running:
                         return "yellow";
-                    case rmngr::TaskState::done:
+                    case redGrapes::TaskState::done:
                         return "gray";
                     }
                     return "blue";
