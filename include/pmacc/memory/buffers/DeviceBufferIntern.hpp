@@ -58,7 +58,7 @@ public:
      *                      if true size on device is atomaticly set to false
      */
     DeviceBufferIntern(DataSpace<DIM> size, bool sizeOnDevice = false, bool useVectorAsBase = false)
-        : DeviceBuffer<TYPE, DIM>(size, size, rmngr::FieldResource<DIM>{})
+        : DeviceBuffer<TYPE, DIM>(size, size, redGrapes::FieldResource<DIM>{})
         , sizeOnDevice(sizeOnDevice)
         , useOtherMemory(false)
         , offset(DataSpace<DIM>())

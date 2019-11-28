@@ -38,7 +38,7 @@ struct MPIRequestPool
         return instance;
     }
 
-    using EventID = typename rmngr::SchedulingGraph<pmacc::TaskProperties>::EventID;
+    using EventID = typename redGrapes::SchedulingGraph<pmacc::TaskProperties>::EventID;
 
     std::recursive_mutex mutex;
     std::map<MPI_Request*, std::pair<EventID, std::shared_ptr<MPI_Status>>> requests;
@@ -83,7 +83,7 @@ struct MPIRequestPool
 auto task_mpi_wait( MPI_Request * request )
 {
     auto status = std::make_shared< MPI_Status >();
-    rmngr::IOResource status_resource;
+    redGrapes::IOResource status_resource;
 
     Environment<>::get().ResourceManager().emplace_task(
         [request, status]

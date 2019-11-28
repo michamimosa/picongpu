@@ -68,7 +68,7 @@ struct setValueTest
                 },
                 [&]( ::pmacc::Scheduler::Schedulable& s )
                 {
-                    s.proto_property<rmngr::ResourceUserPolicy>().access_list = {hostBufferIntern.read()};
+                    s.proto_property<redGrapes::ResourceUserPolicy>().access_list = {hostBufferIntern.read()};
                 }
             );
         }

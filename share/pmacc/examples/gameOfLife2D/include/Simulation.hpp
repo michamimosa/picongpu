@@ -102,7 +102,7 @@ public:
         std::thread polling_thread(
             []
             {
-                rmngr::thread::id = -1;
+                redGrapes::thread::id = -1;
                 while(1)
                     pmacc::communication::MPIRequestPool::get().poll();
             });
@@ -221,7 +221,7 @@ public:
     }
 
 private:
-    rmngr::IOResource gatherbuf;
+    redGrapes::IOResource gatherbuf;
 
     void oneStep(uint32_t currentStep, Buffer& read, Buffer& write)
     {
