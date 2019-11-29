@@ -21,21 +21,15 @@ namespace waitfordevice
     int event_pipe[2];
     struct sigaction old_sigaction;
 
-    using EventID = typename redGrapes::SchedulingGraph<pmacc::TaskProperties>::EventID;
+    using EventID = typename std::remove_reference<decltype(Environment<>::get().ResourceManager())>::type::EventID;
 
     void event_loop()
     {
         EventID id;
         while( read(event_pipe[0], &id, sizeof(EventID)) == sizeof(EventID) )
-        {
-            Environment<>::get()
-                .ResourceManager()
-                .getScheduler()
-                .graph.finish_event( id );
-            Environment<>::get().ResourceManager().getScheduler().notify();
-        }
+            Environment<>::get().ResourceManager().reach_event( id );
     }
- 
+
     void segv_handler(int signal, siginfo_t* siginfo, void* uap)
     {
         if( siginfo->si_addr == page1 )
@@ -109,8 +103,7 @@ auto task_synchronize_stream( cudaStream_t cuda_stream )
             static waitfordevice::EventID * event_id_device_ptr = waitfordevice::init_event_id();
             static int * some_device_ptr = waitfordevice::init_something();
 
-            auto task_id = *Environment<>::get().ResourceManager().getScheduler().graph.get_current_task();
-            auto event_id = Environment<>::get().ResourceManager().getScheduler().graph.add_post_dependency( task_id );
+            auto event_id = *Environment<>::get().ResourceManager().create_event();
 
             // Write EventID to device memory
 

@@ -603,8 +603,8 @@ namespace detail
 
     
 std::ostream& functor_backtrace(std::ostream& out)
-{
-    if( std::experimental::optional<std::vector<redGrapes::TaskContainer<TaskProperties>::TaskID>> bt = Environment<>::get().ResourceManager().backtrace() )
+{/*
+    if( std::experimental::optional<std::vector<unsigned int>> bt = Environment<>::get().ResourceManager().backtrace() )
     {
         int i = 0;
         out << "Task Backtrace:" << std::endl;
@@ -613,7 +613,7 @@ std::ostream& functor_backtrace(std::ostream& out)
             out << "[" << i << "] Task[" << task << "] " << Environment<>::get().ResourceManager().task_properties(task).label << std::endl;
             i++;
         }
-    }
+    }*/
     return out;
 }
 
