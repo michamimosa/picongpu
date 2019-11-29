@@ -30,6 +30,8 @@
 #include <pmacc/memory/dataTypes/Mask.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 
+#include <pmacc/communication/MPIWait.hpp>
+
 #include "Evolution.hpp"
 
 #include "GatherSlice.hpp"
@@ -37,8 +39,6 @@
 
 #include <string>
 #include "PngCreator.hpp"
-
-#include <pmacc/communication/MPIWait.hpp>
 
 namespace gol
 {
@@ -68,7 +68,8 @@ public:
     evo(rule), steps(steps), gridSize(gridSize), isMaster(false), buff1(nullptr), buff2(nullptr)
     {
         // initialize Resource Manager
-        pmacc::Environment<>::get().initScheduler( n_threads );
+        pmacc::Environment<>::get().initScheduler( n_threads + 1 );
+        pmacc::Environment<>::get().ResourceManager().getScheduler().schedule[1].set_wait_hook( []{ pmacc::communication::MPIRequestPool::get().poll(); } );
 
         /* -First this initializes the GridController with number of 'devices'*
          *  and 'periodic'ity. The init-routine will then create and manage   *
@@ -98,15 +99,6 @@ public:
                                             gc.getPosition() * localGridSize);
 
         pmacc::waitfordevice::setup();
-
-        std::thread polling_thread(
-            []
-            {
-                redGrapes::thread::id = -1;
-                while(1)
-                    pmacc::communication::MPIRequestPool::get().poll();
-            });
-        polling_thread.detach();
     }
 
     virtual ~Simulation()
@@ -231,6 +223,7 @@ private:
         evo.run<BORDER>( read, write );
 
         write.deviceToHost();
+        //pmacc::memory::buffers::copy( write.getHostBuffer(), write.getDeviceBuffer() );
 
         auto picture = Environment<>::get().ResourceManager().emplace_task(
             [this, &write]

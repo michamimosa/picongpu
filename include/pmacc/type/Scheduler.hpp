@@ -26,7 +26,8 @@
 #include <redGrapes/property/inherit.hpp>
 #include <redGrapes/property/resource.hpp>
 #include <redGrapes/property/label.hpp>
-
+#include <redGrapes/graph/recursive_graph.hpp>
+#include <redGrapes/graph/scheduling_graph.hpp>
 #include <redGrapes/thread/thread_dispatcher.hpp>
 
 namespace pmacc
@@ -48,6 +49,7 @@ struct PMaccProperties
     template < typename PropertiesBuilder >
     struct Builder
     {
+
         PropertiesBuilder & builder;
 
         Builder( PropertiesBuilder & b )
@@ -104,12 +106,11 @@ struct EnqueuePolicy
     }
 };
 
-template < typename SchedulingGraph >
+template < typename TaskID, typename TaskPtr, typename PrecedenceGraph >
 struct Scheduler
-    : redGrapes::StateScheduler< TaskProperties, SchedulingGraph >
+    : redGrapes::StateScheduler< TaskID, TaskPtr, PrecedenceGraph >
 {
-    using TaskID = typename redGrapes::TaskContainer<TaskProperties>::TaskID;
-    using Job = typename SchedulingGraph::Job;
+    using typename redGrapes::StateScheduler<TaskID, TaskPtr, PrecedenceGraph>::Job;
 
     std::mutex queue_mutex;
     std::queue< Job > main_queue;
@@ -117,15 +118,15 @@ struct Scheduler
 
     bool write_graph;
 
-    Scheduler( redGrapes::TaskContainer< TaskProperties > & tasks, SchedulingGraph & graph )
-        : redGrapes::StateScheduler< TaskProperties, SchedulingGraph >( tasks, graph )
+    Scheduler( std::shared_ptr<PrecedenceGraph> pg, size_t n_threads )
+        : redGrapes::StateScheduler< TaskID, TaskPtr, PrecedenceGraph >( pg, n_threads )
         , write_graph( false )
     {
-        for( size_t i = 0; i < this->graph.schedule.size(); i++ )
+        for( size_t i = 0; i < this->schedule.size(); i++ )
         {
-            auto & t = this->graph.schedule[i];
-            if( i == 0 && this->graph.schedule.size() > 1 )
-                t.set_request_hook( [this, &t]{ get_job(t, mpi_queue); });
+            auto & t = this->schedule[i];
+            if( i == 1 )
+                t.set_request_hook( [this,&t]{ get_job(t, mpi_queue); });
             else
                 t.set_request_hook( [this,&t]{ get_job(t, main_queue); });
         }
@@ -134,20 +135,18 @@ struct Scheduler
 private:
     void update_queues()
     {
-        //std::cout << "thread["<<redGrapes::thread::id<<"] Scheduler: queue empty"<<std::endl;
-        bool u1 = this->uptodate.test_and_set();
-        bool u2 = this->graph.precedence_graph.test_and_set();
-        if( !u1 || !u2 )
+        if( !this->uptodate.test_and_set() )
         {
             auto ready_tasks = this->update_graph();
-            for( TaskID t : ready_tasks )
-            {
-                auto prop = this->tasks.task_properties( t );
 
-                if( prop.mpi_task && this->graph.schedule.size() > 1 )
-                    mpi_queue.push( Job{ this->tasks, t } );
+            for( Job job : ready_tasks )
+            {
+                auto & prop = job.task_ptr.locked_get();
+
+                if( prop.mpi_task )
+                    mpi_queue.push( job );
                 else
-                    main_queue.push( Job{ this->tasks, t } );
+                    main_queue.push( job );
             }
         }
 
@@ -156,15 +155,19 @@ private:
             static int step=0;
             std::cout << "write step_" << step << ".dot" << std::endl;
             std::ofstream out( "step_" + std::to_string(step++) + ".dot" );
-            this->graph.precedence_graph.write_dot(
+            this->precedence_graph->write_dot(
                 out,
-                [this]( TaskID id )
+                [this]( auto const & task )
                 {
-                    return "[" + std::to_string(id) + "] " + this->tasks.task_properties(id).label;
+                    return task.task_id;
                 },
-                [this]( TaskID id )
+                [this]( auto const & task )
                 {
-                    switch( this->get_task_state(id) )
+                    return "[" + std::to_string(task.task_id) + "] " + task.label;
+                },
+                [this]( auto const & task )
+                {
+                    switch( this->get_task_state(task.task_id) )
                     {
                     case redGrapes::TaskState::uninitialized:
                         return "purple";
@@ -182,7 +185,7 @@ private:
         }
     }
 
-    void get_job( typename SchedulingGraph::ThreadSchedule & thread, std::queue<Job> & queue )
+    void get_job( redGrapes::ThreadSchedule<Job> & thread, std::queue<Job> & queue )
     {
         std::lock_guard< std::mutex > lock( queue_mutex );
 
