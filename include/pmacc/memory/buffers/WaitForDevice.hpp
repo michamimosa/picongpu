@@ -12,7 +12,6 @@
 namespace pmacc
 {
 
-
 namespace waitfordevice
 {  
     void* page1;
@@ -22,6 +21,21 @@ namespace waitfordevice
     struct sigaction old_sigaction;
 
     using EventID = typename std::remove_reference<decltype(Environment<>::get().ResourceManager())>::type::EventID;
+
+    struct KernelNotify
+    {
+        template <typename T_Acc>
+        DINLINE void operator() (
+             T_Acc const & acc,
+             void * page1,
+             void * page2,
+             EventID event_id
+        ) const
+        {
+            *static_cast<EventID*>(page1) = event_id;
+            *static_cast<int*>(page2) = 1;
+        }
+    };
 
     void event_loop()
     {
@@ -77,22 +91,6 @@ namespace waitfordevice
         mprotect( page1, PAGE_SIZE, PROT_READ );
         mprotect( page2, PAGE_SIZE, PROT_WRITE );
     }
-
-    EventID* init_event_id()
-    {
-        EventID * device_ptr;
-        CUDA_CHECK(cudaMalloc( (void**) &device_ptr, sizeof(EventID) ));
-        return device_ptr;
-    }
-
-    int* init_something()
-    {
-        int * device_ptr;
-        int value = 1;
-        CUDA_CHECK(cudaMalloc( (void**) &device_ptr, sizeof(int) ));
-        CUDA_CHECK(cudaMemset( device_ptr, 1, sizeof(int) ));
-        return device_ptr;
-    }
 } // namespace waitfordevice
 
 auto task_synchronize_stream( cudaStream_t cuda_stream )
@@ -100,41 +98,8 @@ auto task_synchronize_stream( cudaStream_t cuda_stream )
     return Environment<>::get().ResourceManager().emplace_task(
         [cuda_stream]
         {
-            static waitfordevice::EventID * event_id_device_ptr = waitfordevice::init_event_id();
-            static int * some_device_ptr = waitfordevice::init_something();
-
             auto event_id = *Environment<>::get().ResourceManager().create_event();
-
-            // Write EventID to device memory
-
-            // clear
-            CUDA_CHECK(cudaMemsetAsync( event_id_device_ptr, 0, sizeof(waitfordevice::EventID), cuda_stream ));
-
-            // set value bytewise
-            uint64_t v = (uint64_t) event_id;
-            for( int i = 0; i < sizeof(waitfordevice::EventID); i++ )
-            {
-                uint8_t * ptr = ((uint8_t*)event_id_device_ptr) + i;
-                uint8_t byte = (v >> (8*i)) & 0xff;
-                CUDA_CHECK(cudaMemsetAsync( ptr, byte, 1, cuda_stream ));
-            }
-
-            // trigger sigsegv and write taskid to host
-            CUDA_CHECK(cudaMemcpyAsync(
-                waitfordevice::page1,
-                event_id_device_ptr,
-                sizeof(waitfordevice::EventID),
-                cudaMemcpyDeviceToHost,
-                cuda_stream
-            ));
-
-            CUDA_CHECK(cudaMemcpyAsync(
-	        waitfordevice::page2,
-                some_device_ptr,
-                sizeof(int),
-                cudaMemcpyDeviceToHost,
-                cuda_stream
-	    ));
+            CUPLA_KERNEL( waitfordevice::KernelNotify )( 1, 1, 0, cuda_stream )( waitfordevice::page1, waitfordevice::page2, event_id );
         },
         TaskProperties::Builder()
             .label("task_synchronize_stream(" + std::to_string(0) + ")")
