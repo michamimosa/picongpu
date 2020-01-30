@@ -1,4 +1,4 @@
-/* Copyright 2019 Michael Sippel
+/* Copyright 2019-2020 Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -30,13 +30,13 @@
 #include <redGrapes/graph/scheduling_graph.hpp>
 #include <redGrapes/thread/thread_dispatcher.hpp>
 
+#include <redGrapes/helpers/cuda/stream.hpp>
+#include <redGrapes/helpers/cuda/synchronize_event.hpp>
+#include <redGrapes/helpers/mpi/request_pool.hpp>
+#include <redGrapes/manager.hpp>
+
 namespace pmacc
 {
-
-namespace cuda_resources
-{
-redGrapes::IOResource streams[1];
-}
 
 struct PMaccProperties
 {
@@ -202,6 +202,6 @@ private:
     }
 
 };
-
+    
 } // namespace pmacc
 
