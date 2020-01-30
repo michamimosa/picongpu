@@ -26,10 +26,12 @@
 #include "pmacc/memory/boxes/DataBoxDim1Access.hpp"
 #include "pmacc/assert.hpp"
 
-#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
+//#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
 #include <pmacc/Environment.hpp>
 
 namespace pmacc
+{
+namespace mem
 {
 
 /**
@@ -39,8 +41,15 @@ template <
     typename T_Item,
     std::size_t T_Dim
 >
-class HostBufferIntern : public HostBuffer<T_Item, T_Dim>
+class HostBufferIntern
+    : public HostBuffer<T_Item, T_Dim >
 {
+private:
+    std::shared_ptr< HostBufferIntern< T_Item, T_Dim > > shared_from_this()
+    {
+        return this->template shared_from_base< HostBufferIntern<T_Item, T_Dim> >();
+    }
+
 public:
     using Item = T_Item;
     static constexpr size_t dim = T_Dim;
@@ -51,21 +60,18 @@ public:
      * @param size extent for each dimension (in elements)
      */
     HostBufferIntern(DataSpace< dim > size)
-        : HostBuffer<Item, dim>(size, size, redGrapes::FieldResource<dim>{})
+        : HostBuffer<Item, dim>(size, size, rg::Resource< buffer::Access<dim> >())
         , pointer(nullptr)
         , ownPointer(true)
     {
         Environment<>::task(
-            [obj=shared_from_this(), size]
+            [this, size]
             {
-                CUDA_CHECK(cudaMallocHost((void**)&obj->pointer, size.productOfComponents() * sizeof(Item)));
-                obj->reset( false );
+                CUDA_CHECK(cudaMallocHost((void**)&this->pointer, size.productOfComponents() * sizeof(Item)));
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern()")
-                .resources({
-                    access_write()
-                })
+                .resources({ this->make_access(buffer::Access<dim>::write()) })
         );
     }
 
@@ -75,14 +81,13 @@ public:
         , ownPointer(false)
     {
         Environment<>::task(
-            [obj=shared_from_this(), offset]( auto source )
+            [this, offset]( auto source )
             {
                 pointer = &(source.getDataBox()(offset));/*fix me, this is a bad way*/
-                obj->reset(true);
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern(source)")
-                .resources({ access_write() }),
+                .resources({ this->make_access(buffer::Access<dim>::write()) }),
             source.read()
         );
     }
@@ -92,18 +97,7 @@ public:
      */
     virtual ~HostBufferIntern()
     {
-        Environment<>::task(
-            [obj=shared_from_this()]()
-            {
-                if (pointer && ownPointer)
-                {
-                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(pointer));
-                }
-            },
-            TaskProperties::Builder()
-                .label("HostBufferIntern::~HostBufferIntern()")
-                .resources({ access_write() })
-        )
+        CUDA_CHECK_NO_EXCEPT(cudaFreeHost(this->pointer));
     }
 
     /*! Get pointer of memory
@@ -113,6 +107,7 @@ public:
     {
         return pointer;
     }
+
     Item const * getBasePointer() const
     {
         return pointer;
@@ -122,6 +117,7 @@ public:
     {
         return pointer;
     }
+
     Item const * getPointer() const
     {
         return pointer;
@@ -130,7 +126,7 @@ public:
     void reset(bool preserveData = true)
     {
         Environment<>::task(
-            [obj=shared_from_this(), preserveData]
+            [obj=this->shared_from_this(), preserveData]
             {
                 obj->set_size(obj->getDataSpace().productOfComponents());
                 if (!preserveData)
@@ -138,8 +134,8 @@ public:
                     /* if it is a pointer out of other memory we can not assume that
                      * that the physical memory is contiguous
                      */
-                    if(ownPointer)
-                        memset(pointer, 0, this->getDataSpace().productOfComponents() * sizeof (Item));
+                    if(obj->ownPointer)
+                        memset(obj->pointer, 0, obj->getDataSpace().productOfComponents() * sizeof(Item));
                     else
                     {
                         Item value;
@@ -156,16 +152,16 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::reset()")
-                .resources({ access_write() })
+                .resources({ this->make_access(buffer::Access<dim>::write()) })
         );
     }
 
     void fill(Item const & value)
     {
         Environment<>::task(
-            [obj=shared_from_this(), value]
+            [obj=this->shared_from_this(), value]
             {
-                int64_t current_size = static_cast< int64_t >(obj->get_size().get());
+                int64_t current_size = static_cast< int64_t >(obj->get_size());
                 DataBoxDim1Access< DataBoxType > d1Box(
                     obj->getDataBox(),
                     obj->getDataSpace()
@@ -179,7 +175,7 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::setValue(" + std::to_string(value) + ")")
-                .resources({ access_write() })
+                .resources({ this->make_access(buffer::Access<dim>::write()) })
         );
     }
 
@@ -199,6 +195,8 @@ private:
     Item * pointer;
     bool ownPointer;
 };
+
+} // namespace mem
 
 } // namespace pmacc
 

@@ -1,4 +1,5 @@
-/* Copyright 2013-2020 Heiko Burau, Rene Widera, Benjamin Worpitz, Michael Sippel
+/* Copyright 2013-2020 Heiko Burau, Rene Widera, Benjamin Worpitz,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -35,10 +36,15 @@
 
 namespace rg = redGrapes;
 
-#include <share/thirdParty/akrzemi/optional/optional.hpp>
+#include <akrzemi/optional.hpp>
+
 namespace std
 {
-    using optional = experimental::optional;
+
+template < typename T >
+using optional = experimental::optional< T >;
+auto nullopt = experimental::nullopt;
+
 } // namespace std
 
 namespace pmacc
@@ -48,163 +54,214 @@ namespace mem
 namespace buffer
 {
    
-template< std::size_t T_Dim >
+template< std::size_t T_dim >
 struct Access
 {
-    std::optional< rg::access::IO > size;
-    std::optional< rg::access::Field< T_Dim > > data;
+    std::optional< rg::access::IOAccess > size;
+    std::optional< rg::access::FieldAccess< T_dim > > data;
 
+    friend bool operator==(Access const & a, Access const & b )
+    {
+        return a.size == b.size && a.data == b.data;
+    }
+
+    friend std::ostream& operator<<( std::ostream& out, Access const & a )
+    {
+        out << "BufferAccess{" << std::endl;
+        if( a.size )
+            out << "size: " << *a.size << ";" << std::endl;
+        if( a.data )
+            out << "data: " << *a.data << ";" << std::endl;
+        out << "}";
+
+        return out;
+    }
+    
     static bool is_serial( Access const & a, Access const & b )
     {
         if( a.data && b.data )
-            if( rg::access::Field<T_Dim>::is_serial( *a.data, *b.data ) )
+            if( rg::access::FieldAccess<T_dim>::is_serial( *a.data, *b.data ) )
                 return true;
-
         if( a.size && b.size )
-            if( rg::access::IO::is_serial( *a.size, *b.size ) )
+            if( rg::access::IOAccess::is_serial( *a.size, *b.size ) )
                 return true;
-
         return false;
     }
 
-    bool is_superset_of( Access const & sub )
+    bool is_superset_of( Access const & sub ) const
     {
-        if( !size )
-        {
-            if( sub.size )
-                return false;
-        }
-        else if( sub.size && !size->is_superset_of(sub.size) )
+        if( !data && sub.data )
             return false;
+        else if( sub.data )
+            return data->is_superset_of(*sub.data);
 
-        if( !data )
-        {
-            if( sub.data )
-                return false;
-        }
-        else if( sub.data && !data->is_superset_of(sub.data) )
+        if( !size && sub.size )
+            return false;
+        else if( sub.size && !size->is_superset_of(*sub.size) )
             return false;
 
         return true;
     }
 
-    static auto access( rg::access::Field< T_Dim > data ) { return Access { std::nullopt, data }; }
-    static auto access_size_read() { return Access { rg::access::IO::read, std::nullopt }; }
-    static auto access_size_write() { return Access { rg::access::IO::write, std::nullopt }; }
-    static auto access_write() { return access_size_write( rg::access::Field(rg::access::IO::write) ); }
+    static auto data_read() { return Access{ std::nullopt, rg::access::FieldAccess<T_dim>(rg::access::IOAccess::read) }; }
+    static auto data_write() { return Access{ std::nullopt, rg::access::FieldAccess<T_dim>(rg::access::IOAccess::write) }; }
+    static auto size_read() { return Access { rg::access::IOAccess(rg::access::IOAccess::read), std::nullopt }; }
+    static auto size_write() { return Access { rg::access::IOAccess(rg::access::IOAccess::write), std::nullopt }; }
+    static auto write() { return Access{
+            rg::access::IOAccess(rg::access::IOAccess::write),
+            rg::access::FieldAccess< T_dim >(rg::access::IOAccess(rg::access::IOAccess::write)) }; }
+    static auto read() { return Access{
+            rg::access::IOAccess(rg::access::IOAccess::read),
+            rg::access::FieldAccess< T_dim >(rg::access::IOAccess(rg::access::IOAccess::read)) }; }
 };
+
+template < typename Buffer >
+struct ReadGuard;
+template < typename Buffer >
+struct WriteGuard;
 
 namespace size
 {
     template < typename Buffer >
-    struct ReadGuard : rg::SharedResourceObject< Buffer, Access >
+    struct ReadGuard : rg::SharedResourceObject< Buffer, Access< Buffer::dim > >
     {
-        operator ResourceAccess() const noexcept
+        operator rg::ResourceAccess() const noexcept
         {
-            return this->make_access(BufferAccess{ rg::access::IO::read, std::nullopt });
+            return this->make_access(Access<Buffer::dim>::size_read());
         }
 
         ReadGuard read() const noexcept { return *this; }
         std::size_t get() const { return this->obj->get_size(); }
+
+    protected:
+        friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
+        ReadGuard( rg::SharedResourceObject< Buffer, Access< Buffer::dim > > obj )
+            : rg::SharedResourceObject< Buffer, Access< Buffer::dim > >( obj )
+        {}        
     };
 
     template < typename Buffer >
     struct WriteGuard : ReadGuard< Buffer >
     {
-        operator ResourceAccess() const noexcept
+        operator rg::ResourceAccess() const noexcept
         {
-            return this->make_access(BufferAccess{ rg::access::IO::write, std::nullopt });
+            return this->make_access(Access<Buffer::dim>::size_write());
         }
 
         WriteGuard write() { return *this; }
         void set( size_t const new_size ) const { this->obj->set_size( new_size ); }
+
+    protected:
+        friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
+        WriteGuard( rg::SharedResourceObject< Buffer, Access< Buffer::dim > > obj )
+            : ReadGuard<Buffer>( obj )
+        {}
     };
 } // namespace size
 
 namespace data
 {
     template < typename Buffer >
-    struct ReadGuard : rg::SharedResourceObject< Buffer, Access >
+    struct ReadGuard : rg::SharedResourceObject< Buffer, Access< Buffer::dim > >
     {
-        operator ResourceAccess() const noexcept
+        operator rg::ResourceAccess() const noexcept
         {
-            return this->make_access(BufferAccess{ std::nullopt, rg::access::Field<Buffer::T_Dim>(rg::access::IO::read) });
+            return this->make_access(Access<Buffer::dim>::data_read());
         }
 
         ReadGuard read() const noexcept { return *this; }
 
         using Item = typename Buffer::Item;
-        using DataBox = typename Buffer::DataBox;
+        using DataBox = typename Buffer::DataBoxType;
 
-        bool is1D() const { return buffer->obj->is1D(); }
+        bool is1D() const { return this->obj->is1D(); }
         Item const * getPointer() const { return this->obj->getPointer(); }
         Item const * getBasePointer() const { return this->obj->getBasePointer(); }
-        DataBox const getDataBox() const { return->obj->getDataBox(); }
+        DataBox const getDataBox() const { return this->obj->getDataBox(); }
+
+    protected:
+        friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
+        ReadGuard( rg::SharedResourceObject< Buffer, Access< Buffer::dim > > obj )
+            : rg::SharedResourceObject< Buffer, Access< Buffer::dim > >( obj )
+        {}
     };
 
     template < typename Buffer >
     struct WriteGuard : ReadGuard< Buffer >
     {
-        operator ResourceAccess() const noexcept
+        operator rg::ResourceAccess() const noexcept
         {
-            return this->make_access(BufferAccess{ std::nullopt, rg::access::Field<Buffer::T_Dim>(rg::access::IO::write) });
+            return this->make_access(Access<Buffer::dim>::data_write());
         }
 
         WriteGuard write() const noexcept { return *this; }
 
         using Item = typename Buffer::Item;
-        using DataBox = typename Buffer::DataBox;
+        using DataBox = typename Buffer::DataBoxType;
 
-        void reset() const { buffer->obj->reset(); }
-        void fill(Buffer::Item const & item) const { this->obj->fill(item); }
+        void reset() const { this->obj->reset(); }
+        void fill(Item const & item) const { this->obj->fill(item); }
         Item * getPointer() const { return this->obj->getPointer();  }
         Item * getBasePointer() const { return this->obj->getBasePointer(); }
-        DataBox getDataBox() const { return->obj->getDataBox(); }
+        DataBox getDataBox() const { return this->obj->getDataBox(); }
+
+    protected:
+        friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
+        WriteGuard( rg::SharedResourceObject< Buffer, Access< Buffer::dim > > obj )
+            : ReadGuard<Buffer>( obj )
+        {}
     };
 } // namespace data
 
 template < typename Buffer >
-struct ReadGuard : rg::SharedResourceObject< Buffer, BufferAccess >
+struct ReadGuard : public rg::SharedResourceObject< Buffer, Access< Buffer::dim > >
 {
     ReadGuard read() const noexcept { return *this; }
 
-    operator ResourceAccess() const noexcept
+    operator rg::ResourceAccess() const noexcept
     {
-        return this->make_access(BufferAccess{ rg::access::IOAccess::write, rg::access::FieldAccess<Buffer::T_Dim>(rg::access::IOAccess::write) });
+        return this->make_access(Access<Buffer::dim>::read());
     }
 
-    auto data() const noexcept { return data::ReadGuard( *this ); }
-    auto size() const noexcept { return size::ReadGuard( *this ); }
+    auto data() const noexcept { return data::ReadGuard<Buffer>( (rg::SharedResourceObject<Buffer, Access<Buffer::dim>>)*this ); }
+    auto size() const noexcept { return size::ReadGuard<Buffer>( (rg::SharedResourceObject<Buffer, Access<Buffer::dim>>)*this ); }
+
+protected:
+    ReadGuard( std::shared_ptr< Buffer > obj )
+        : rg::SharedResourceObject<Buffer, Access< Buffer::dim >>( obj )
+    {}
 };
 
 template < typename Buffer >
 struct WriteGuard : ReadGuard< Buffer >
 {
     WriteGuard write() const noexcept { return *this; }
-    operator ResourceAccess() const noexcept
+    operator rg::ResourceAccess() const noexcept
     {
-        return this->make_access(BufferAccess{ redGrapes::access::IOAccess::write, this->m_area });
+        return this->make_access(Access<Buffer::dim>::write());
     }
 
-    auto data() const noexcept { return data::WriteGuard( *this ); }
-    auto size() const noexcept { return size::WriteGuard( *this ); }
+    auto data() const noexcept { return data::WriteGuard<Buffer>( *this ); }
+    auto size() const noexcept { return size::WriteGuard<Buffer>( *this ); }
+
+protected:
+    WriteGuard( std::shared_ptr<Buffer> obj )
+        : ReadGuard<Buffer>( obj )
+    {}
 };
 
 } // namespace buffer
 
 template < typename Buffer >
-struct BufferResource : buffer::WriteGuard
+struct BufferResource : buffer::WriteGuard< Buffer >
 {
     template < typename... Args >
-    BufferResource( Args&&... arg )
-        : buffer::WriteGuard(
-              rg::SharedResourceObject< Buffer, buffer::Access >( std::make_shared<Buffer>(std::forward<Args>(args)...) ))
+    BufferResource( Args&&... args )
+        : buffer::WriteGuard<Buffer>( std::make_shared<Buffer>( std::forward<Args>(args)... ) )
     {
-        this->resource = this->obj->resource;
+        *((rg::ResourceBase*)this) = (rg::ResourceBase) *this->obj;
     }
 };
-
-} // namespace mem
 
     /**
      * Minimal function description of a buffer,
@@ -214,11 +271,19 @@ struct BufferResource : buffer::WriteGuard
      */
     template <
         typename T_Item,
-        std::size_t T_dim >
+        std::size_t T_dim
+    >
     class Buffer
-        : std::enable_shared_from_this< Buffer<Item, T_dim> >
-        , rg::Resource< buffer::Access< T_dim > >
+        : public std::enable_shared_from_this< Buffer<T_Item, T_dim> >
+        , public rg::Resource< buffer::Access< T_dim > >
     {
+    protected:
+        template < typename Derived >
+        std::shared_ptr< Derived > shared_from_base()
+        {
+            return std::static_pointer_cast< Derived >( this->shared_from_this() );
+        }
+
     public:
         using Item = T_Item;
         static constexpr size_t dim = T_dim;
@@ -232,39 +297,31 @@ struct BufferResource : buffer::WriteGuard
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        Buffer(DataSpace< T_dim > size,
-               DataSpace< T_dim > physicalMemorySize,
-               rg::Resource< BufferAccess<Item, T_dim> > resource)
-            : data_space( size )
+        Buffer(DataSpace< dim > size,
+               DataSpace< dim > physicalMemorySize,
+               rg::Resource< buffer::Access< dim > > resource)
+            : rg::Resource< buffer::Access< dim > >( resource )
+            , data_space( size )
             , data1D( true )
             , current_size( nullptr )
             , m_physicalMemorySize( physicalMemorySize )
-            , resource_id( resource )
         {
             Environment<>::task(
-                [obj=shared_from_this()] {
-                    CUDA_CHECK(cudaMallocHost((void**)&current_size, sizeof(size_t)));
-                    *current_size = size.productOfComponents();
+                [this, size] {
+                    CUDA_CHECK(cudaMallocHost((void**)&this->current_size, sizeof(size_t)));
+                    *this->current_size = size.productOfComponents();
                 },
                 TaskProperties::Builder()
                     .label("Buffer::Buffer()")
-                    .resources({ access_size_write() })
-            );
+                    .resources({ this->make_access(buffer::Access<dim>::size_write()) }));
         }
 
         /**
          * destructor
          */
-        ~Buffer()
+        virtual ~Buffer()
         {
-            Environment<>::task(
-                [obj=shared_from_this()] {
-                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(current_size));
-                },
-                TaskProperties::Builder()
-                    .label("Buffer::~Buffer()")
-                    .resources({ access_size_write() })
-            );
+            CUDA_CHECK_NO_EXCEPT(cudaFreeHost(this->current_size));
         }
 
         /*! Get base pointer to memory
@@ -282,21 +339,21 @@ struct BufferResource : buffer::WriteGuard
         /*! Get max spread (elements) of any dimension
          * @return spread (elements) per dimension
          */
-        virtual DataSpace<DIM> getDataSpace() const
+        virtual DataSpace<dim> getDataSpace() const
         {
             return data_space;
         }
 
         /** get size of the physical memory (in elements)
          */
-        DataSpace<DIM> getPhysicalMemorySize() const
+        DataSpace<dim> getPhysicalMemorySize() const
         {
             return m_physicalMemorySize;
         }
 
-        virtual DataSpace<DIM> getCurrentDataSpace()
+        virtual DataSpace<dim> getCurrentDataSpace()
         {
-            return getCurrentDataSpace(getCurrentSize());
+            return getCurrentDataSpace(get_size());
         }
 
         /*! Spread of memory per dimension which is currently used
@@ -304,19 +361,19 @@ struct BufferResource : buffer::WriteGuard
          * if DIM == DIM2 than return how many lines (y-direction) of memory is used
          * if DIM == DIM3 than return how many slides (z-direction) of memory is used
          */
-        virtual DataSpace<DIM> getCurrentDataSpace(size_t currentSize)
+        virtual DataSpace<dim> getCurrentDataSpace(size_t currentSize)
         {
-            DataSpace<DIM> tmp;
+            DataSpace<dim> tmp;
             int64_t current_size = static_cast<int64_t>(currentSize);
 
             //!\todo: current size can be changed if it is a DeviceBuffer and current size is on device
             //call first get current size (but const not allow this)
 
-            if (DIM == DIM1)
+            if (dim == DIM1)
             {
                 tmp[0] = current_size;
             }
-            if (DIM == DIM2)
+            if (dim == DIM2)
             {
                 if (current_size <= data_space[0])
                 {
@@ -328,7 +385,7 @@ struct BufferResource : buffer::WriteGuard
                     tmp[1] = (current_size+data_space[0]-1) / data_space[0];
                 }
             }
-            if (DIM == DIM3)
+            if (dim == DIM3)
             {
                 if (current_size <= data_space[0])
                 {
@@ -354,38 +411,38 @@ struct BufferResource : buffer::WriteGuard
         /*! returns the current size (count of elements)
          * @return current size
          */
-        virtual auto get_size()
+        virtual size_t get_size()
         {
-            return pmacc::Environment<>::task(
-                [obj=shared_from_this()] {
+            return Environment<>::task(
+                [obj=this->shared_from_this()] {
                     return *(obj->current_size);
                 },
                 TaskProperties::Builder()
                     .label("Buffer::get_size()")
-                    .resources({ access_size_read() })
-            );
+                    .resources({ this->make_access(buffer::Access<dim>::size_read()) })
+            ).get();
         }
 
         /*! sets the current size (count of elements)
          * @param newsize new current size
          */
-        virtual void set_size( size_t const newsize )
+        virtual void set_size( size_t const new_size )
         {
-            pmacc::Environment<>::task(
-                [obj=shared_from_this()] {
-                    PMACC_ASSERT(static_cast<size_t>(newsize) <= static_cast<size_t>(data_space.productOfComponents()));
-                    *(buffer->obj->current_size) = newsize;
+            Environment<>::task(
+                [obj=this->shared_from_this(), new_size] {
+                    PMACC_ASSERT(static_cast<size_t>(new_size) <= static_cast<size_t>(obj->data_space.productOfComponents()));
+                    *(obj->current_size) = new_size;
                 },
                 TaskProperties::Builder()
-                    .label("Buffer::set_size(" + std::to_string(newsize) + ")")
-                    .resources({ access_size_write() })
-);
+                    .label("Buffer::set_size(" + std::to_string(new_size) + ")")
+                    .resources({ this->make_access(buffer::Access<dim>::size_write()) })
+            );
         }
 
         virtual void reset( bool preserveData = false ) = 0;
         virtual void fill( Item const & value ) = 0;
 
-        virtual DataBox< PitchedBox<Item, T_dim> > getDataBox() = 0;
+        virtual DataBox< PitchedBox<Item, dim> > getDataBox() = 0;
 
         inline bool is1D() const noexcept
         {
@@ -397,18 +454,20 @@ struct BufferResource : buffer::WriteGuard
          * @param other other DataSpace
          * @return true if my DataSpace (one dimension) is greater than other, false otherwise
          */
-        virtual bool isMyDataSpaceGreaterThan(DataSpace<DIM> other)
+        virtual bool isMyDataSpaceGreaterThan(DataSpace<dim> other)
         {
             return !other.isOneDimensionGreaterThan(data_space);
         }
 
-        DataSpace<DIM> data_space;
-        DataSpace<DIM> m_physicalMemorySize;
+        DataSpace<dim> data_space;
+        DataSpace<dim> m_physicalMemorySize;
 
         size_t *current_size;
 
         bool data1D;
     };
+
+} // namespace mem
 
 } // namespace pmacc
 
@@ -418,17 +477,17 @@ namespace trait
 {
 
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::size::ReadGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::size::ReadGuard<Buffer> );
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::size::WriteGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::size::WriteGuard<Buffer> );
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::data::ReadGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::data::ReadGuard<Buffer> );
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::data::WriteGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::data::WriteGuard<Buffer> );
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::ReadGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::ReadGuard<Buffer> );
 template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( buffer::WriteGuard<Buffer> );
+TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::WriteGuard<Buffer> );
 
 } // namespace trait
 }

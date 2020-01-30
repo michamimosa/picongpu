@@ -194,13 +194,13 @@ namespace detail
 
         auto & cuda_stream()
         {
-            static redGrapes::helpers::cuda::StreamResource< redGrapes::helpers::cuda::PollingEventStream<RGManager> > stream(ResourceManager(), cudaStream_t(0));
+            static redGrapes::helpers::cuda::StreamResource< redGrapes::helpers::cuda::PollingEventStream<std::remove_reference<decltype(ResourceManager())>::type> > stream(ResourceManager(), cudaStream_t(0));
             return stream;
         }
 
         auto & mpi_request_pool()
         {
-            static redGrapes::helpers::mpi::RequestPool<RGManager> request_pool( ResourceManager() );
+            static redGrapes::helpers::mpi::RequestPool<std::remove_reference<decltype(ResourceManager())>::type> request_pool( ResourceManager() );
             return request_pool;
         }
 
@@ -402,11 +402,10 @@ public:
         return instance;
     }
 
-    
     template <typename... Args>
     static auto task(Args&&... args)
     {
-        return get().task( std::forward<Args>(args)... );
+        return get().ResourceManager().emplace_task( std::forward<Args>(args)... );
     }
 
     /** create and initialize the environment of PMacc
