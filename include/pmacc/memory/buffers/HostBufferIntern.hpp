@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Rene Widera, Benjamin Worpitz,
- *                     Alexander Grund
+ *                     Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -36,57 +36,54 @@ namespace pmacc
  * Internal implementation of the HostBuffer interface.
  */
 template <
-    class TYPE,
-    std::size_t DIM
+    typename T_Item,
+    std::size_t T_Dim
 >
-class HostBufferIntern : public HostBuffer<TYPE, DIM>
+class HostBufferIntern : public HostBuffer<T_Item, T_Dim>
 {
 public:
-
-    typedef typename HostBuffer<TYPE, DIM>::DataBoxType DataBoxType;
+    using Item = T_Item;
+    static constexpr size_t dim = T_Dim;
+    typedef typename HostBuffer<Item, dim>::DataBoxType DataBoxType;
 
     /** constructor
      *
      * @param size extent for each dimension (in elements)
      */
-    HostBufferIntern(DataSpace<DIM> size)
-        : HostBuffer<TYPE, DIM>(size, size, redGrapes::FieldResource<DIM>{})
+    HostBufferIntern(DataSpace< dim > size)
+        : HostBuffer<Item, dim>(size, size, redGrapes::FieldResource<dim>{})
         , pointer(nullptr)
         , ownPointer(true)
     {
-        Environment<>::get().ResourceManager().emplace_task(
-            [this, size]
+        Environment<>::task(
+            [obj=shared_from_this(), size]
             {
-                CUDA_CHECK(cudaMallocHost((void**)&pointer, size.productOfComponents() * sizeof (TYPE)));
-                reset(false);
+                CUDA_CHECK(cudaMallocHost((void**)&obj->pointer, size.productOfComponents() * sizeof(Item)));
+                obj->reset( false );
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern()")
                 .resources({
-                     this->write(),
-                     this->size_resource.write()
+                    access_write()
                 })
         );
     }
 
-    HostBufferIntern(HostBufferIntern& source, DataSpace<DIM> size, DataSpace<DIM> offset=DataSpace<DIM>())
-        : HostBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source)
+    HostBufferIntern(HostBufferIntern& source, DataSpace<dim> size, DataSpace<dim> offset=DataSpace<dim>())
+        : HostBuffer<Item, dim>(size, source.getPhysicalMemorySize(), source)
         , pointer(nullptr)
         , ownPointer(false)
     {
-        Environment<>::get().ResourceManager().emplace_task(
-            [this, &source, offset]
+        Environment<>::task(
+            [obj=shared_from_this(), offset]( auto source )
             {
-                pointer=&(source.getDataBox()(offset));/*fix me, this is a bad way*/
-                reset(true);
+                pointer = &(source.getDataBox()(offset));/*fix me, this is a bad way*/
+                obj->reset(true);
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern(source)")
-                .resources({
-                    source.read(),
-                    this->write(),
-                    this->size_resource.write()
-                })
+                .resources({ access_write() }),
+            source.read()
         );
     }
 
@@ -95,8 +92,8 @@ public:
      */
     virtual ~HostBufferIntern()
     {
-        Environment<>::get().ResourceManager().emplace_task(
-            [this]()
+        Environment<>::task(
+            [obj=shared_from_this()]()
             {
                 if (pointer && ownPointer)
                 {
@@ -105,77 +102,73 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::~HostBufferIntern()")
-                .resources({
-                    this->write(),
-                    this->size_resource.write()
-                })
-        ).get();
+                .resources({ access_write() })
+        )
     }
 
     /*! Get pointer of memory
      * @return pointer to memory
      */
-    TYPE* getBasePointer()
+    Item * getBasePointer()
+    {
+        return pointer;
+    }
+    Item const * getBasePointer() const
     {
         return pointer;
     }
 
-    TYPE* getPointer()
+    Item * getPointer()
     {
         return pointer;
     }
-
-    void copyFrom(DeviceBuffer<TYPE, DIM> & other)
+    Item const * getPointer() const
     {
-        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
-        memory::buffers::copy( *this, other );
+        return pointer;
     }
 
     void reset(bool preserveData = true)
     {
-        Environment<>::get().ResourceManager().emplace_task(
-            [this, preserveData]
+        Environment<>::task(
+            [obj=shared_from_this(), preserveData]
             {
-                this->setCurrentSize(this->getDataSpace().productOfComponents());
+                obj->set_size(obj->getDataSpace().productOfComponents());
                 if (!preserveData)
                 {
                     /* if it is a pointer out of other memory we can not assume that
                      * that the physical memory is contiguous
                      */
                     if(ownPointer)
-                        memset(pointer, 0, this->getDataSpace().productOfComponents() * sizeof (TYPE));
+                        memset(pointer, 0, this->getDataSpace().productOfComponents() * sizeof (Item));
                     else
                     {
-                        TYPE value;
-                        /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
-                        uint8_t* valuePtr = (uint8_t*)&value;
-                        for( size_t b = 0; b < sizeof(TYPE); ++b)
+                        Item value;
+                        /* using `uint8_t` for byte-wise looping through tmp var value of `Item` */
+                        uint8_t * valuePtr = (uint8_t *) &value;
+                        for( size_t b = 0; b < sizeof(Item); ++b)
                         {
                             valuePtr[b] = static_cast<uint8_t>(0);
                         }
                         /* set value with zero-ed `TYPE` */
-                        setValue(value);
+                        obj->fill( value );
                     }
                 }
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::reset()")
-                .resources({
-                    this->write(),
-                    this->size_resource.write()
-                })
+                .resources({ access_write() })
         );
     }
 
-    void setValue(const TYPE& value)
+    void fill(Item const & value)
     {
-        Environment<>::get().ResourceManager().emplace_task(
-            [this, value]
+        Environment<>::task(
+            [obj=shared_from_this(), value]
             {
-                int64_t current_size = static_cast< int64_t >(this->getCurrentSize());
+                int64_t current_size = static_cast< int64_t >(obj->get_size().get());
                 DataBoxDim1Access< DataBoxType > d1Box(
-                    this->getDataBox(),
-                    this->getDataSpace()
+                    obj->getDataBox(),
+                    obj->getDataSpace()
                 );
 
                 #pragma omp parallel for
@@ -186,27 +179,24 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::setValue(" + std::to_string(value) + ")")
-                .resources({
-                    this->write(),
-                    this->size_resource.read()
-                })
+                .resources({ access_write() })
         );
     }
 
     DataBoxType getDataBox()
     {
         return DataBoxType(
-                   PitchedBox<TYPE, DIM>(
+                   PitchedBox<Item, dim>(
                        pointer,
-                       DataSpace<DIM>(),
+                       DataSpace<dim>(),
                        this->getPhysicalMemorySize(),
-                       this->getPhysicalMemorySize()[0] * sizeof (TYPE)
+                       this->getPhysicalMemorySize()[0] * sizeof (Item)
                    )
                );
     }
 
 private:
-    TYPE* pointer;
+    Item * pointer;
     bool ownPointer;
 };
 
