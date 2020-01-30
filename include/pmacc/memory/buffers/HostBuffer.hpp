@@ -1,4 +1,5 @@
-/* Copyright 2013-2019 Rene Widera, Benjamin Worpitz, Alexander Grund
+/* Copyright 2013-2020 Rene Widera, Benjamin Worpitz, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -21,37 +22,39 @@
 
 #pragma once
 
-
 #include "pmacc/cuSTL/container/HostBuffer.hpp"
 #include "pmacc/memory/buffers/Buffer.hpp"
 #include "pmacc/dimensions/DataSpace.hpp"
 
 namespace pmacc
 {
-    template <class TYPE, std::size_t DIM>
-    class HostBuffer;
+namespace mem
+{
+
+template <class TYPE, std::size_t DIM>
+class HostBuffer;
 
 namespace detail
 {
-    template< class TYPE >
+template< class TYPE >
     container::HostBuffer< TYPE, 1u >
-    make_CartBuffer( HostBuffer<TYPE, 1u> & hb )
+make_CartBuffer( HostBuffer<TYPE, 1u> & hb )
     {
         return container::HostBuffer<TYPE, 1u>(hb.getBasePointer(), hb.getDataSpace(), false);
     }
 
-    template< class TYPE >
+template< class TYPE >
     container::HostBuffer< TYPE, 2u >
-    make_CartBuffer( HostBuffer<TYPE, 2u> & hb )
+make_CartBuffer( HostBuffer<TYPE, 2u> & hb )
     {
         math::Size_t<2u - 1u> pitch;
         pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
         return container::HostBuffer<TYPE, 2u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
     }
 
-    template< class TYPE >
+template< class TYPE >
     container::HostBuffer< TYPE, 3u >
-    make_CartBuffer( HostBuffer<TYPE, 3u> & hb )
+make_CartBuffer( HostBuffer<TYPE, 3u> & hb )
     {
         math::Size_t<3u - 1u> pitch;
         pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
@@ -59,13 +62,12 @@ namespace detail
         return container::HostBuffer<TYPE, 3u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
     }
 }
-    class EventTask;
 
-    template <class TYPE, std::size_t DIM>
-    class DeviceBuffer;
+template <class TYPE, std::size_t DIM>
+class DeviceBuffer;
 
-    template <class TYPE, std::size_t DIM>
-    class Buffer;
+template <class TYPE, std::size_t DIM>
+class Buffer;
 
     /**
      * Interface for a DIM-dimensional Buffer of type TYPE on the host
@@ -82,7 +84,7 @@ namespace detail
          *
          * @param other DeviceBuffer to copy data from
          */
-        virtual void copyFrom(DeviceBuffer<TYPE, DIM>& other) = 0;
+        //virtual void copyFrom(DeviceBuffer<TYPE, DIM>& other) = 0;
 
         /**
          * Returns the current size pointer.
@@ -122,11 +124,13 @@ namespace detail
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, redGrapes::FieldResource<DIM> resource) :
+        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rg::Resource<buffer::Access<DIM>> resource) :
             Buffer<TYPE, DIM>(size, physicalMemorySize, resource)
         {
-
         }
     };
 
-} //namespace pmacc
+} // namespace mem    
+
+} // namespace pmacc
+

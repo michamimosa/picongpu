@@ -26,7 +26,6 @@
 #include <redGrapes/property/inherit.hpp>
 #include <redGrapes/property/resource.hpp>
 #include <redGrapes/property/label.hpp>
-#include <redGrapes/graph/recursive_graph.hpp>
 #include <redGrapes/graph/scheduling_graph.hpp>
 #include <redGrapes/thread/thread_dispatcher.hpp>
 
@@ -100,7 +99,6 @@ struct EnqueuePolicy
                    << (redGrapes::ResourceUser)super << std::endl << std::endl
                    << sub.label << " has access: " << std::endl
 	           << (redGrapes::ResourceUser)sub << std::endl;
-            functor_backtrace(stream);
             throw std::runtime_error(stream.str());
         }
     }
