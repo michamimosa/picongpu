@@ -1,5 +1,5 @@
 /* Copyright 2014-2020 Felix Schmitt, Conrad Schumann,
- *                     Alexander Grund, Axel Huebl
+ *                     Alexander Grund, Axel Huebl, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -37,6 +37,8 @@
 
 #include <pmacc/type/Scheduler.hpp>
 #include <redGrapes/manager.hpp>
+#include <redGrapes/helpers/cuda/stream.hpp>
+#include <redGrapes/helpers/cuda/synchronize_event.hpp>
 
 #include <mpi.h>
 
@@ -179,9 +181,27 @@ namespace detail
             ResourceManager_ptr() = new redGrapes::Manager< TaskProperties, EnqueuePolicy, Scheduler >( n_threads );
         }
 
+        template <typename... Args>
+        auto task(Args&&... args)
+        {
+            return ResourceManager().emplace_task( std::forward<Args>(args)... );
+        }
+
         auto & ResourceManager()
         {
             return *ResourceManager_ptr();
+        }
+
+        auto & cuda_stream()
+        {
+            static redGrapes::helpers::cuda::StreamResource< redGrapes::helpers::cuda::PollingEventStream<RGManager> > stream(ResourceManager(), cudaStream_t(0));
+            return stream;
+        }
+
+        auto & mpi_request_pool()
+        {
+            static redGrapes::helpers::mpi::RequestPool<RGManager> request_pool( ResourceManager() );
+            return request_pool;
         }
 
         /** get the singleton StreamController
@@ -380,6 +400,13 @@ public:
     {
         static Environment< T_dim > instance;
         return instance;
+    }
+
+    
+    template <typename... Args>
+    static auto task(Args&&... args)
+    {
+        return get().task( std::forward<Args>(args)... );
     }
 
     /** create and initialize the environment of PMacc
@@ -605,23 +632,6 @@ namespace detail
     }
 
 } // namespace detail
-
-    
-std::ostream& functor_backtrace(std::ostream& out)
-{/*
-    if( std::experimental::optional<std::vector<unsigned int>> bt = Environment<>::get().ResourceManager().backtrace() )
-    {
-        int i = 0;
-        out << "Task Backtrace:" << std::endl;
-        for( auto task : *bt )
-        {
-            out << "[" << i << "] Task[" << task << "] " << Environment<>::get().ResourceManager().task_properties(task).label << std::endl;
-            i++;
-        }
-    }*/
-    return out;
-}
-
 
 } // namespace pmacc
 
