@@ -124,13 +124,15 @@ class Buffer;
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize, rg::Resource<buffer::Access<DIM>> resource) :
-            Buffer<TYPE, DIM>(size, physicalMemorySize, resource)
+        void init(DataSpace<DIM> size,
+                  DataSpace<DIM> physicalMemorySize,
+                  rg::Resource<rg::access::FieldAccess<DIM>> resource = rg::Resource<rg::access::FieldAccess<DIM>>())
         {
+            this->Buffer<TYPE, DIM>::init( size, physicalMemorySize, resource );
         }
     };
 
-} // namespace mem    
+} // namespace mem
 
 } // namespace pmacc
 
