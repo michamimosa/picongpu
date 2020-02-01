@@ -59,36 +59,36 @@ public:
      *
      * @param size extent for each dimension (in elements)
      */
-    HostBufferIntern(DataSpace< dim > size)
-        : HostBuffer<Item, dim>(size, size, rg::Resource< buffer::Access<dim> >())
-        , pointer(nullptr)
-        , ownPointer(true)
+    void init(DataSpace< dim > size)
     {
+        this->HostBuffer<Item, dim>::init( size, size );
         Environment<>::task(
             [this, size]
             {
+                this->ownPointer = true;
                 CUDA_CHECK(cudaMallocHost((void**)&this->pointer, size.productOfComponents() * sizeof(Item)));
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern()")
-                .resources({ this->make_access(buffer::Access<dim>::write()) })
+                .resources({ this->write_data() })
         );
     }
 
-    HostBufferIntern(HostBufferIntern& source, DataSpace<dim> size, DataSpace<dim> offset=DataSpace<dim>())
-        : HostBuffer<Item, dim>(size, source.getPhysicalMemorySize(), source)
-        , pointer(nullptr)
-        , ownPointer(false)
+    void init(buffer::data::ReadGuard< HostBufferIntern > source,
+              DataSpace< dim > size,
+              DataSpace< dim > offset = DataSpace<dim>())
     {
+        this->HostBuffer<Item, dim>::init( size, source->getPhysicalMemorySize(), source );
         Environment<>::task(
-            [this, offset]( auto source )
+            [obj=this->shared_from_this(), offset]( auto source )
             {
-                pointer = &(source.getDataBox()(offset));/*fix me, this is a bad way*/
+                obj->ownPointer = false;
+                obj->pointer = &(source.getDataBox()(offset));/*fix me, this is a bad way*/
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern(source)")
-                .resources({ this->make_access(buffer::Access<dim>::write()) }),
-            source.read()
+                .resources({ this->write_data() }),
+            source
         );
     }
 
@@ -108,17 +108,7 @@ public:
         return pointer;
     }
 
-    Item const * getBasePointer() const
-    {
-        return pointer;
-    }
-
     Item * getPointer()
-    {
-        return pointer;
-    }
-
-    Item const * getPointer() const
     {
         return pointer;
     }
@@ -152,7 +142,10 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::reset()")
-                .resources({ this->make_access(buffer::Access<dim>::write()) })
+                .resources({
+                    this->read_size(),
+                    this->write_data()
+                })
         );
     }
 
@@ -175,7 +168,10 @@ public:
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::setValue(" + std::to_string(value) + ")")
-                .resources({ this->make_access(buffer::Access<dim>::write()) })
+                .resources({
+                    this->write_size(),
+                    this->write_data()
+                })
         );
     }
 
