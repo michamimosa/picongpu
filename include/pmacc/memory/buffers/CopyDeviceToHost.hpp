@@ -1,5 +1,5 @@
-/* Copyright 2013-2018 Felix Schmitt, Rene Widera, Wolfgang Hoenig,
- *                     Benjamin Worpitz
+/* Copyright 2013-2020 Felix Schmitt, Rene Widera, Wolfgang Hoenig,
+ *                     Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -24,8 +24,9 @@
 
 #include <iomanip>
 #include <pmacc/types.hpp>
+#include <pmacc/Environment.hpp>
 
-#include "WaitForDevice.hpp"
+#include <pmacc/memory/buffers/Buffer.hpp>
 
 namespace pmacc
 {
@@ -36,9 +37,9 @@ class HostBuffer;
 template < typename T, std::size_t T_Dim >
 class DeviceBuffer;
 
-namespace memory
+namespace mem
 {
-namespace buffers
+namespace buffer
 {
 
 namespace device2host_detail
@@ -47,7 +48,7 @@ namespace device2host_detail
 template < typename T >
 void fast_copy(
     T * dst,
-    T * src,
+    T const * src,
     size_t size
 )
 {
@@ -61,8 +62,8 @@ void fast_copy(
 
 template < typename T >
 void copy(
-    HostBuffer<T, DIM1> & dst,
-    DeviceBuffer<T, DIM1> & src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM1> >dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM1> > src,
     DataSpace<DIM1> & size
 )
 {
@@ -76,8 +77,8 @@ void copy(
 
 template < typename T >
 void copy(
-    HostBuffer<T, DIM2> & dst,
-    DeviceBuffer<T, DIM2> & src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM2> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM2> > src,
     DataSpace<DIM2> & size
 )
 {
@@ -94,8 +95,8 @@ void copy(
 
 template < typename T >
 void copy(
-    HostBuffer<T, DIM3> & dst,
-    DeviceBuffer<T, DIM3> & src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM3> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM3> > src,
     DataSpace<DIM3> & size
 )
 {
@@ -129,47 +130,43 @@ void copy(
 } // namespace device2host_detail
 
 template <
-    typename T,
-    std::size_t T_Dim
+    typename T_Item,
+    std::size_t T_dim
 >
 void
 copy(
-    HostBuffer<T, T_Dim> & dst,
-    DeviceBuffer<T, T_Dim> & src
+     WriteGuard< HostBuffer<T_Item, T_dim> > dst,
+     WriteGuard< DeviceBuffer<T_Item, T_dim> > src
 )
 {
-    Environment<>::get().ResourceManager().emplace_task(
-        [&dst, &src]
+    Environment<>::task(
+        []( auto dst, auto src, auto cuda_stream )
         {
-            size_t current_size = src.getCurrentSize();
+            size_t current_size = src.size().get();
 
-            dst.setCurrentSize(current_size);
-            DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
+            dst.size().set(current_size);
+            DataSpace<T_dim> devCurrentSize = src.size().data_space();
 
-            if (src.is1D() && dst.is1D())
-                device2host_detail::fast_copy(dst.getPointer(),
-                                              src.getPointer(),
+            if (src.data().is1D() && dst.data().is1D())
+                device2host_detail::fast_copy(dst.data().getPointer(),
+                                              src.data().getPointer(),
                                               devCurrentSize.productOfComponents());
             else
-                device2host_detail::copy(dst, src, devCurrentSize);
+                device2host_detail::copy(dst.data(), src.data(), devCurrentSize);
 
-            task_synchronize_stream(0);
+            cuda_stream->sync();
         },
         TaskProperties::Builder()
-            .label("copyDeviceToHost")
-            .resources({
-                dst.write(),
-                dst.size_resource.write(),
-                src.read(),
-                src.size_resource.write(),
-                cuda_resources::streams[0].write()
-            })
+            .label("pmacc::mem::buffer::copy(Host <= Device)"),
+        std::move(dst),
+        std::move(src),
+        Environment<>::get().cuda_stream()
     );
 }
 
-} // namespace buffers
+} // namespace buffer
 
-} // namespace memory
+} // namespace mem
 
 } // namespace pmacc
 
