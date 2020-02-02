@@ -27,11 +27,7 @@
 #include "pmacc/memory/boxes/DataBox.hpp"
 #include "pmacc/assert.hpp"
 
-#include <pmacc/memory/buffers/WaitForDevice.hpp>
 #include <pmacc/memory/buffers/SetValueOnDevice.hpp>
-
-#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
-#include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
 
 #include <pmacc/exec/kernelEvents.hpp>
 #include "pmacc/nvidia/gpuEntryFunction.hpp"
@@ -39,6 +35,8 @@
 #include <pmacc/Environment.hpp>
 
 namespace pmacc
+{
+namespace mem
 {
 
 /**
@@ -48,8 +46,10 @@ template <class TYPE, std::size_t DIM>
 class DeviceBufferIntern : public DeviceBuffer<TYPE, DIM>
 {
 public:
-
     typedef typename DeviceBuffer<TYPE, DIM>::DataBoxType DataBoxType;
+
+    using Item = TYPE;
+    static constexpr std::size_t dim = DIM;
 
     /*! create device buffer
      * @param size extent for each dimension (in elements)
@@ -57,17 +57,18 @@ public:
      * @param useVectorAsBase use a vector as base of the array (is not lined pitched)
      *                      if true size on device is atomaticly set to false
      */
-    DeviceBufferIntern(DataSpace<DIM> size,
-                       bool sizeOnDevice = false,
-                       bool useVectorAsBase = false)
-        : DeviceBuffer<TYPE, DIM>(size, size, redGrapes::FieldResource<DIM>{})
-        , sizeOnDevice(sizeOnDevice)
-        , useOtherMemory(false)
-        , offset(DataSpace<DIM>())
+    void init(DataSpace<DIM> size,
+              bool sizeOnDevice = false,
+              bool useVectorAsBase = false)
     {
+        this->DeviceBuffer<TYPE, DIM>::init( size, size );
+
         Environment<>::task(
-            [obj=shared_from_this(), size, useVectorAsBase]
+            [obj=this->shared_from_this(), size, sizeOnDevice, useVectorAsBase]
             {
+                obj->sizeOnDevice = sizeOnDevice;
+                obj->useOtherMemory = false;
+
                 // create size on device before any use of setCurrentSize
                 if (useVectorAsBase)
                 {
@@ -86,23 +87,24 @@ public:
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::DeviceBufferIntern()")
                 .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) )
-                    cuda_resources::streams[0].write()
+                    this->write_data(),
+                    this->write_size(),
+                    Environment<>::get().cuda_stream()
                 })
         );
     }
 
-    DeviceBufferIntern(DeviceBuffer<TYPE, DIM>& source,
-                       DataSpace<DIM> size,
-                       DataSpace<DIM> offset,
-                       bool sizeOnDevice = false)
-        : DeviceBuffer<TYPE, DIM>(size, source.getPhysicalMemorySize(), source)
-        , sizeOnDevice(sizeOnDevice)
-        , useOtherMemory(true)
+    void init(DeviceBuffer<TYPE, DIM>& source,
+              DataSpace<DIM> size,
+              DataSpace<DIM> offset,
+              bool sizeOnDevice = false)
     {
+        this->DeviceBuffer<TYPE, DIM>::init( size, source.getPhysicalMemorySize(), source );
         Environment<>::task(
-            [obj=shared_from_this(), &source, offset]
+            [obj=this->shared_from_this(), &source, offset, sizeOnDevice]
             {
+                obj->sizeOnDevice = sizeOnDevice;
+                obj->useOtherMemory = true;
                 obj->offset = offset + source.getOffset();
                 obj->data = source.getCudaPitched();
                 obj->createSizeOnDevice(obj->sizeOnDevice);
@@ -111,59 +113,53 @@ public:
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::DeviceBufferIntern(source)")
                 .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) ),
-                    cuda_resources::streams[0].write()
+                    this->write_data(),
+                    this->write_size(),
+                    Environment<>::get().cuda_stream()
                 })
         );
     }
 
     virtual ~DeviceBufferIntern()
     {
-        Environment<>::task(
-            [obj=shared_from_this()]
-            {
-                if (obj->sizeOnDevice)
-                {
-                    CUDA_CHECK_NO_EXCEPT(cudaFree(obj->sizeOnDevicePtr));
-                }
-                if (!obj->useOtherMemory)
-                {
-                    CUDA_CHECK_NO_EXCEPT(cudaFree(obj->data.ptr));
-                }
-            },
-            TaskProperties::Builder()
-                .label("DeviceBufferIntern::~DeviceBufferIntern()")
-                .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) )
-                })
-        );
+        if (sizeOnDevice)
+        {
+            CUDA_CHECK_NO_EXCEPT(cudaFree(sizeOnDevicePtr));
+        }
+
+        if (!useOtherMemory)
+        {
+            CUDA_CHECK_NO_EXCEPT(cudaFree(data.ptr));
+        }
     }
 
-    void reset(bool preserveData = true)
+    void reset( bool preserveData = true )
     {
         Environment<>::task(
-            [obj=shared_from_this(), preserveData]
+            [obj=this->shared_from_this(), preserveData]
             {
-                obj->set_size(Buffer<Item, dim>::getDataSpace().productOfComponents());
+                obj->set_size(obj->Buffer<Item, dim>::getDataSpace().productOfComponents());
 
                 if (!preserveData)
                 {
                     Item value;
+
                     /* using `uint8_t` for byte-wise looping through tmp var value of `TYPE` */
                     uint8_t* valuePtr = reinterpret_cast<uint8_t*>(&value);
                     for( size_t b = 0; b < sizeof(Item); ++b)
                     {
                         valuePtr[b] = static_cast<uint8_t>(0);
                     }
+
                     /* set value with zero-ed `TYPE` */
-                    fill(value);
+                    obj->fill( value );
                 }
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::reset()")
                 .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) ),
-                    cuda_resources::streams[0].write()
+                    this->write_size(),
+                    this->write_data()
                 })
         );
     }
@@ -171,11 +167,16 @@ public:
     DataBoxType getDataBox()
     {
         return DataBoxType(
-                   PitchedBox<TYPE, DIM >( (TYPE*) data.ptr, offset, this->getPhysicalMemorySize(), data.pitch )
+                   PitchedBox<TYPE, DIM >(
+                       (TYPE*) data.ptr,
+                       offset,
+                       this->getPhysicalMemorySize(),
+                       data.pitch
+                   )
                );
     }
 
-    TYPE* getPointer()
+    Item * getPointer() const
     {
         if (DIM == DIM1)
         {
@@ -217,7 +218,7 @@ public:
         return this->current_size;
     }
 
-    TYPE* getBasePointer()
+    TYPE* getBasePointer() const
     {
         return (TYPE*) data.ptr;
     }
@@ -225,41 +226,35 @@ public:
     /*! Get current size of any dimension
      * @return count of current elements per dimension
      */
-    virtual auto get_size()
+    virtual std::size_t get_size()
     {
         return Environment<>::task(
-            [obj=shared_from_this()]
+            [obj=this->shared_from_this()]( auto cuda_stream )
             {
                 if (obj->sizeOnDevice)
                 {
-                    cudaStream_t cuda_stream = 0;
-
                     CUDA_CHECK(cudaMemcpyAsync((void*) obj->getCurrentSizeHostSidePointer(),
                                                obj->getCurrentSizeOnDevicePointer(),
                                                sizeof (size_t),
                                                cudaMemcpyDeviceToHost,
                                                cuda_stream));
-
-                    task_synchronize_stream(0);
+                    cuda_stream->sync().get();
                 }
-
+                /*
                 Environment<>::get()
                     .ResourceManager()
                     .update_properties(
                         TaskProperties::Patch::Builder()
                             .remove_resources({ access_size_write() })
                     );
-
-                return DeviceBuffer<Item, dim>::get_size();
+                */
+                return obj->DeviceBuffer<Item, dim>::get_size();
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::get_size()")
-                .resources({
-                    access_size_read(),
-                    access_size_write()
-                    cuda_resources::streams[0].write()
-                })
-        );
+                .resources({ this->write_size() }),
+            Environment<>::get().cuda_stream()
+        ).get();
     }
 
     struct KernelSetValueOnDeviceMemory
@@ -274,45 +269,40 @@ public:
     virtual void set_size( std::size_t const new_size )
     {
         Environment<>::task(
-           [obj=shared_from_this(), new_size] {
-                Buffer< Item, dim >::set_size( new_size );
-
-                if (sizeOnDevice)
+            [obj=this->shared_from_this(), new_size]( auto cuda_stream ) {
+                if (obj->sizeOnDevice)
                 {
-                    cudaStream_t cuda_stream = 0;
-
+                    obj->Buffer< Item, dim >::set_size( new_size );
                     CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
                         1,
                         1,
                         0,
                         cuda_stream
                     )(
-                        this->getCurrentSizeOnDevicePointer(),
-                        size
+                        obj->getCurrentSizeOnDevicePointer(),
+                        new_size
                     );
                 }
             },
             TaskProperties::Builder()
                .label("DeviceBufferIntern::set_size()")
-               .resources({
-                   access_size_write(),
-                   cuda_resources::streams[0].write()
-               })
+               .resources({ this->write_size() }),
+            Environment<>::get().cuda_stream()
         );
     }
-
-    void copyFrom(HostBuffer<TYPE, DIM>& other)
+    /*
+    void copyFrom(buffer::ReadGuard<HostBuffer<TYPE, DIM>> other)
     {
-        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other->getCurrentDataSpace()));
         memory::buffers::copy( *this, other );
     }
 
-    void copyFrom(DeviceBuffer<TYPE, DIM>& other)
+    void copyFrom(buffer::ReadGuard<DeviceBuffer<TYPE, DIM>> other)
     {
-        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other.getCurrentDataSpace()));
+        PMACC_ASSERT(this->isMyDataSpaceGreaterThan(other->getCurrentDataSpace()));
         memory::buffers::copy( *this, other );
     }
-
+    */
     cudaPitchedPtr const getCudaPitched() const
     {
         return data;
@@ -330,39 +320,46 @@ public:
             isSmall = (sizeof(Item) <= 128)
         }; //if we use const variable the compiler create warnings
 
-        auto guard = buffer::WriteGuard< DeviceBufferIntern<Item, Dim> >(
-                         rg::SharedResourceObject(shared_from_this(), *this));
+        auto res = BufferResource< DeviceBuffer< Item, dim > >( this->template shared_from_base<DeviceBuffer<Item, dim>>() );
 
         if( isSmall )
-            device_set_value_small( guard, value );
+            buffer::device_set_value_small<Item, dim>( res.write(), value );
         else
-            device_set_value_big( guard, value );
+            buffer::device_set_value_big<Item, dim>( res.write(), value );
     }
 
 private:
+    std::shared_ptr< DeviceBufferIntern< Item, dim > > shared_from_this()
+    {
+        return this->template shared_from_base< DeviceBufferIntern<Item, dim> >();
+    }
 
     /*! create native array with pitched lines
      */
     void createData()
     {
         Environment<>::task(
-            [obj=shared_from_this()]
+            [obj=this->shared_from_this()]
             {
-                data.ptr = nullptr;
-                data.pitch = 1;
-                data.xsize = obj->getDataSpace()[0] * sizeof(Item);
-                data.ysize = 1;
+                obj->data.ptr = nullptr;
+                obj->data.pitch = 1;
+                obj->data.xsize = obj->getDataSpace()[0] * sizeof(Item);
+                obj->data.ysize = 1;
 
                 if (DIM == DIM1)
                 {
-                    log<ggLog::MEMORY >("Create device 1D data: %1% MiB") % (data.xsize / 1024 / 1024);
-                    CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, 1));
+                    log<ggLog::MEMORY >("Create device 1D data: %1% MiB") % (obj->data.xsize / 1024 / 1024);
+                    CUDA_CHECK(cudaMallocPitch(&obj->data.ptr, &obj->data.pitch, obj->data.xsize, 1));
                 }
                 if (DIM == DIM2)
                 {
-                    data.ysize = obj->getDataSpace()[1];
-                    log<ggLog::MEMORY >("Create device 2D data: %1% MiB") % (data.xsize * data.ysize / 1024 / 1024);
-                    CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, data.xsize, data.ysize));
+                    obj->data.ysize = obj->getDataSpace()[1];
+                    log<ggLog::MEMORY >("Create device 2D data: %1% MiB") % (obj->data.xsize * obj->data.ysize / 1024 / 1024);
+                    CUDA_CHECK(cudaMallocPitch(
+                        &obj->data.ptr,
+                        &obj->data.pitch,
+                        obj->data.xsize,
+                        obj->data.ysize));
                 }
                 if (DIM == DIM3)
                 {
@@ -372,16 +369,16 @@ private:
                     extent.depth = obj->getDataSpace()[2];
 
                     log<ggLog::MEMORY >("Create device 3D data: %1% MiB") % (obj->getDataSpace().productOfComponents() * sizeof(Item) / 1024 / 1024);
-                    CUDA_CHECK(cudaMalloc3D(&data, extent));
+                    CUDA_CHECK(cudaMalloc3D(&obj->data, extent));
                 }
 
-                reset(false);
+                obj->reset( false );
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::createData()")
                 .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) )
-                    cuda_resources::streams[0].write()
+                    this->write_size(),
+                    this->write_data()
                 })
         );
     }
@@ -391,31 +388,31 @@ private:
     void createFakeData()
     {
         Environment<>::task(
-            [obj=shared_from_this()]
+            [obj=this->shared_from_this()]
             {
-                data.ptr = nullptr;
-                data.pitch = 1;
-                data.xsize = obj->getDataSpace()[0] * sizeof(Item);
-                data.ysize = 1;
+                obj->data.ptr = nullptr;
+                obj->data.pitch = 1;
+                obj->data.xsize = obj->getDataSpace()[0] * sizeof(Item);
+                obj->data.ysize = 1;
 
                 log<ggLog::MEMORY >("Create device fake data: %1% MiB") % (obj->getDataSpace().productOfComponents() * sizeof(Item) / 1024 / 1024);
-                CUDA_CHECK(cudaMallocPitch(&data.ptr, &data.pitch, obj->getDataSpace().productOfComponents() * sizeof(Item), 1));
+                CUDA_CHECK(cudaMallocPitch(&obj->data.ptr, &obj->data.pitch, obj->getDataSpace().productOfComponents() * sizeof(Item), 1));
 
                 //fake the pitch, thus we can use this 1D Buffer as 2D or 3D
-                data.pitch = obj->getDataSpace()[0] * sizeof(Item);
+                obj->data.pitch = obj->getDataSpace()[0] * sizeof(Item);
 
                 if (DIM > DIM1)
                 {
-                    data.ysize = obj->getDataSpace()[1];
+                    obj->data.ysize = obj->getDataSpace()[1];
                 }
 
-                reset(false);
+                obj->reset( false );
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::createFakeData()")
                 .resources({
-                    access_size_write( rg::access::Field<dim>(rg::access::IO::write) )
-                    cuda_resources::streams[0].write()
+                    this->write_size(),
+                    this->write_data()
                 })
         );
     }
@@ -423,23 +420,20 @@ private:
     void createSizeOnDevice(bool sizeOnDevice)
     {
         Environment<>::task(
-            [obj=shared_from_this(), sizeOnDevice]
+            [obj=this->shared_from_this(), sizeOnDevice]
             {
-                this->sizeOnDevicePtr = nullptr;
+                obj->sizeOnDevicePtr = nullptr;
 
-                if (sizeOnDevice)
+                if (obj->sizeOnDevice)
                 {
-                    CUDA_CHECK(cudaMalloc((void**)&this->sizeOnDevicePtr, sizeof (size_t)));
+                    CUDA_CHECK(cudaMalloc((void**)&obj->sizeOnDevicePtr, sizeof (size_t)));
                 }
 
-                setCurrentSize(this->getDataSpace().productOfComponents());
+                obj->set_size( obj->getDataSpace().productOfComponents() );
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::createSizeOnDevice()")
-                .resources({
-                    access_size_write()
-                    cuda_resources::streams[0].write()
-                })
+                .resources({ this->write_size() })
         );
     }
 
@@ -452,4 +446,7 @@ private:
     bool useOtherMemory;
 };
 
-} //namespace pmacc
+} // namespace mem
+
+} // namespace pmacc
+
