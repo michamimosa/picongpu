@@ -63,14 +63,18 @@ public:
     {
         this->HostBuffer<Item, dim>::init( size, size );
         Environment<>::task(
-            [this, size]
+            [obj=shared_from_this(), size]
             {
-                this->ownPointer = true;
-                CUDA_CHECK(cudaMallocHost((void**)&this->pointer, size.productOfComponents() * sizeof(Item)));
+                obj->ownPointer = true;
+                CUDA_CHECK(cudaMallocHost((void**)&obj->pointer, size.productOfComponents() * sizeof(Item)));
+                obj->reset( false );
             },
             TaskProperties::Builder()
                 .label("HostBufferIntern::HostBufferIntern()")
-                .resources({ this->write_data() })
+                .resources({
+                    this->write_size(),
+                    this->write_data()
+                })
         );
     }
 
@@ -103,12 +107,12 @@ public:
     /*! Get pointer of memory
      * @return pointer to memory
      */
-    Item * getBasePointer()
+    Item * getBasePointer() const
     {
         return pointer;
     }
 
-    Item * getPointer()
+    Item * getPointer() const
     {
         return pointer;
     }
@@ -143,7 +147,7 @@ public:
             TaskProperties::Builder()
                 .label("HostBufferIntern::reset()")
                 .resources({
-                    this->read_size(),
+                    this->write_size(),
                     this->write_data()
                 })
         );

@@ -21,9 +21,9 @@ namespace pmacc
 template <class TYPE, std::size_t DIM>
 class DeviceBuffer;
 
-namespace memory
+namespace mem
 {
-namespace buffers
+namespace buffer
 {
 
 namespace taskSetValueHelper
@@ -68,7 +68,7 @@ getValue(T_Type& value)
     return Functor()(value);
 }
 
-}
+} // namespace taskSetValueHelper
 
 /** set a value to all elements of a box
  *
@@ -139,19 +139,17 @@ struct KernelSetValue
 };
 
 template <
-    typename T,
+    typename T_Item,
     std::size_t T_Dim
 >
 void
-device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
+device_set_value_small( WriteGuard< DeviceBuffer<T_Item, T_Dim> > dst, T_Item const & value)
 {
-    Environment<>::get().ResourceManager().emplace_task(
-        [&dst, value]
+    Environment<>::task(
+        [value]( auto dst, auto cuda_stream )
         {
-            cudaStream_t cuda_stream = 0;
-
             // n-dimensional size of destination
-            DataSpace< T_Dim > const area_size( dst.getCurrentDataSpace() );
+            DataSpace< T_Dim > const area_size( dst.size().data_space() );
 
             if( area_size.productOfComponents() != 0 )
             {
@@ -163,15 +161,15 @@ device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
                 constexpr uint32_t xChunkSize = 256;
                 constexpr uint32_t numWorkers = traits::GetNumWorkers<
                     xChunkSize
-                    >::value;
+                >::value;
 
                 // number of blocks in x direction
                 gridSize.x() = ceil(
-                                    static_cast< double >( gridSize.x( ) ) /
-                                    static_cast< double >( xChunkSize )
-                                    );
+                    static_cast< double >( gridSize.x( ) ) /
+                    static_cast< double >( xChunkSize )
+                );
 
-                auto destBox = dst.getDataBox( );
+                auto destBox = dst.data().getDataBox( );
 
                 CUPLA_KERNEL(
                     KernelSetValue<
@@ -191,12 +189,9 @@ device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
             }
         },
         TaskProperties::Builder()
-           .label("device_set_value_small(" + std::to_string(value) + ")")
-           .resources({
-                dst.write(),
-                dst.size_resource.write(),
-                cuda_resources::streams[0].write()
-            })
+            .label("device_set_value_small(" + std::to_string(value) + ")"),
+        dst.write(),
+        Environment<>::get().cuda_stream()
     );
 }
 
@@ -206,19 +201,17 @@ device_set_value_small(DeviceBuffer<T, T_Dim> & dst, T const & value)
  * and runs a kernel which assigns this value to all cells.
  */
 template <
-    typename T,
+    typename T_Item,
     std::size_t T_Dim
 >
 void
-device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
+device_set_value_big( WriteGuard<DeviceBuffer<T_Item, T_Dim>> dst, T_Item const & value)
 {
-    Environment<>::get().ResourceManager().emplace_task(
-        [&dst, value]
+    Environment<>::task(
+        [value]( auto dst, auto cuda_stream )
         {
-            cudaStream_t cuda_stream = 0;
-
-            size_t current_size = dst.getCurrentSize();
-            const DataSpace< T_Dim > area_size(dst.getCurrentDataSpace(current_size));
+            size_t current_size = dst.size().get(); 
+            const DataSpace< T_Dim > area_size(dst.size().data_space());
             if(area_size.productOfComponents() != 0)
             {
                 auto gridSize = area_size;
@@ -229,31 +222,31 @@ device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
                 constexpr int xChunkSize = 256;
                 constexpr uint32_t numWorkers = traits::GetNumWorkers<
                     xChunkSize
-                    >::value;
+                >::value;
 
                 // number of blocks in x direction
                 gridSize.x() = ceil(
-                                    static_cast< double >( gridSize.x( ) ) /
-                                    static_cast< double >( xChunkSize )
-                                    );
+                    static_cast< double >( gridSize.x( ) ) /
+                    static_cast< double >( xChunkSize )
+                );
 
-                T* devicePtr = dst.getPointer();
-                T* valuePointer_host;
-                CUDA_CHECK( cudaMallocHost(
-                                           (void**)&valuePointer_host,
-                                           sizeof(T)
-                                           ));
+                T_Item * devicePtr = dst.data().getPointer();
+                T_Item * valuePointer_host;
+
+                CUDA_CHECK(cudaMallocHost(
+                    (void**)&valuePointer_host,
+                    sizeof(T_Item)));
+
                 *valuePointer_host = value; //copy value to new place
 
-                CUDA_CHECK( cudaMemcpyAsync(
-                                            devicePtr,
-                                            valuePointer_host,
-                                            sizeof(T),
-                                            cudaMemcpyHostToDevice,
-                                            cuda_stream
-                                            ));
+                CUDA_CHECK(cudaMemcpyAsync(
+                    devicePtr,
+                    valuePointer_host,
+                    sizeof(T_Item),
+                    cudaMemcpyHostToDevice,
+                    cuda_stream));
 
-                auto destBox = dst.getDataBox( );
+                auto destBox = dst.data().getDataBox( );
                 CUPLA_KERNEL(
                     KernelSetValue<
                         numWorkers,
@@ -270,8 +263,6 @@ device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
                     area_size
                 );
 
-                cudaDeviceSynchronize();
-
                 if (valuePointer_host != nullptr)
                 {
                     CUDA_CHECK_NO_EXCEPT(cudaFreeHost(valuePointer_host));
@@ -280,18 +271,15 @@ device_set_value_big(DeviceBuffer<T, T_Dim> & dst, T const & value)
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_big(" + std::to_string(value) + ")")
-            .resources({
-                dst.write(),
-                dst.size_resource.write(),
-                cuda_resources::streams[0].write()
-            })
+            .label("device_set_value_big(" + std::to_string(value) + ")"),
+        dst,
+        Environment<>::get().cuda_stream()
     );
 }
 
-} // namespace buffers
+} // namespace buffer
 
-} // namespace memory
+} // namespace mem
 
 } // namespace pmacc
 
