@@ -1,4 +1,4 @@
-/* Copyright 2016-2020 Alexander Grund
+/* Copyright 2016-2020 Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -23,75 +23,73 @@
 
 #include "HostDeviceBuffer.hpp"
 
+namespace pmacc
+{
+namespace mem
+{
 
-namespace pmacc{
+template <typename T_Type, std::size_t T_dim>
+HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(DataSpace<T_dim> const & size, bool sizeOnDevice)
+   : hostBuffer( (std::shared_ptr<HBuffer>)BufferResource<HostBufferType>( size ) )
+   , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( size, sizeOnDevice ) )
+{}
 
-    template<typename T_Type, std::size_t T_dim>
-    HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(const DataSpace<T_dim>& size, bool sizeOnDevice)
-    {
-        hostBuffer   = new HostBufferIntern<T_Type, T_dim>(size);
-        deviceBuffer = new DeviceBufferIntern<T_Type, T_dim>(size, sizeOnDevice);
-    }
+template <typename T_Type, std::size_t T_dim>
+HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
+    BufferResource< DBuffer > otherDeviceBuffer,
+    DataSpace<T_dim> const & size,
+    bool sizeOnDevice)
+    : hostBuffer( (std::shared_ptr<HBuffer>)BufferResource<HostBufferType>( size ) )
+    , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( otherDeviceBuffer, size, DataSpace<T_dim>(), sizeOnDevice ) )
+{}
 
-    template<typename T_Type, std::size_t T_dim>
-    HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
-            DBuffer& otherDeviceBuffer,
-            const DataSpace<T_dim>& size,
-            bool sizeOnDevice)
-    {
-        hostBuffer   = new HostBufferIntern<T_Type, T_dim>(size);
-        deviceBuffer = new DeviceBufferType(otherDeviceBuffer, size, DataSpace<T_dim>(), sizeOnDevice);
-    }
+template<typename T_Type, std::size_t T_dim>
+HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
+    BufferResource<HBuffer> otherHostBuffer,
+    DataSpace<T_dim> const & offsetHost,
+    BufferResource<DBuffer> otherDeviceBuffer,
+    DataSpace<T_dim> const & offsetDevice,
+    GridLayout<T_dim> const size,
+    bool sizeOnDevice)
+  : hostBuffer( (std::shared_ptr<HBuffer>)BufferResource<HostBufferType>( otherHostBuffer, size, offsetHost ) )
+   , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( otherDeviceBuffer, size, offsetDevice, sizeOnDevice ) )
+{}
 
-    template<typename T_Type, std::size_t T_dim>
-    HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
-               HBuffer& otherHostBuffer,
-               const DataSpace<T_dim>& offsetHost,
-               DBuffer& otherDeviceBuffer,
-               const DataSpace<T_dim>& offsetDevice,
-               const GridLayout<T_dim> size,
-               bool sizeOnDevice)
-   {
-        hostBuffer   = new HostBufferType(otherHostBuffer, size, offsetHost);
-        deviceBuffer = new DeviceBufferType(otherDeviceBuffer, size, offsetDevice, sizeOnDevice);
-   }
+template<typename T_Type, std::size_t T_dim>
+HostDeviceBuffer<T_Type, T_dim>::~HostDeviceBuffer()
+{}
 
-    template<typename T_Type, std::size_t T_dim>
-    HostDeviceBuffer<T_Type, T_dim>::~HostDeviceBuffer()
-    {
-        __delete(hostBuffer);
-        __delete(deviceBuffer);
-    }
+template<typename T_Type, std::size_t T_dim>
+BufferResource<HostBuffer<T_Type, T_dim>> HostDeviceBuffer<T_Type, T_dim>::getHostBuffer() const
+{
+    return hostBuffer;
+}
 
-    template<typename T_Type, std::size_t T_dim>
-    HostBuffer<T_Type, T_dim>& HostDeviceBuffer<T_Type, T_dim>::getHostBuffer() const
-    {
-        return *hostBuffer;
-    }
+template<typename T_Type, std::size_t T_dim>
+BufferResource<DeviceBuffer<T_Type, T_dim>> HostDeviceBuffer<T_Type, T_dim>::getDeviceBuffer() const
+{
+    return deviceBuffer;
+}
 
-    template<typename T_Type, std::size_t T_dim>
-    DeviceBuffer<T_Type, T_dim>& HostDeviceBuffer<T_Type, T_dim>::getDeviceBuffer() const
-    {
-        return *deviceBuffer;
-    }
+template<typename T_Type, std::size_t T_dim>
+void HostDeviceBuffer<T_Type, T_dim>::reset(bool preserveData)
+{
+    deviceBuffer.data().reset(preserveData);
+    hostBuffer.data().reset(preserveData);
+}
 
-    template<typename T_Type, std::size_t T_dim>
-    void HostDeviceBuffer<T_Type, T_dim>::reset(bool preserveData)
-    {
-        deviceBuffer->reset(preserveData);
-        hostBuffer->reset(preserveData);
-    }
+template<typename T_Type, std::size_t T_dim>
+void HostDeviceBuffer<T_Type, T_dim>::hostToDevice()
+{
+    buffer::copy( deviceBuffer, hostBuffer );
+}
 
-    template<typename T_Type, std::size_t T_dim>
-    void HostDeviceBuffer<T_Type, T_dim>::hostToDevice()
-    {
-        deviceBuffer->copyFrom(*hostBuffer);
-    }
+template<typename T_Type, std::size_t T_dim>
+void HostDeviceBuffer<T_Type, T_dim>::deviceToHost()
+{
+    buffer::copy( hostBuffer, deviceBuffer );
+}
 
-    template<typename T_Type, std::size_t T_dim>
-    void HostDeviceBuffer<T_Type, T_dim>::deviceToHost()
-    {
-        hostBuffer->copyFrom(*deviceBuffer);
-    }
+} // namespac mem
 
-}  // namespace pmacc
+} // namespace pmacc

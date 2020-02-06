@@ -12,9 +12,9 @@ class HostBuffer;
 template <class T, std::size_t T_Dim>
 class DeviceBuffer;
 
-namespace memory
+namespace mem
 {
-namespace buffers
+namespace buffer
 {
 
 namespace host2device_detail
@@ -23,7 +23,7 @@ namespace host2device_detail
 template < typename T >
 void fast_copy(
     T * dst,
-    T * src,
+    T const * src,
     size_t size
 )
 {
@@ -37,8 +37,8 @@ void fast_copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM1> & dst,
-    HostBuffer<T, DIM1> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM1> > dst,
+    buffer::data::ReadGuard< HostBuffer<T, DIM1> > src,
     DataSpace<DIM1> & size
 )
 {
@@ -52,8 +52,8 @@ void copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM2> & dst,
-    HostBuffer<T, DIM2> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM2> > dst,
+    buffer::data::ReadGuard< HostBuffer<T, DIM2> > src,
     DataSpace<DIM2> & size
 )
 {
@@ -71,8 +71,8 @@ void copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM3> & dst,
-    HostBuffer<T, DIM3> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM3> > dst,
+    buffer::data::ReadGuard< HostBuffer<T, DIM3> > src,
     DataSpace<DIM3> & size
 )
 {
@@ -106,49 +106,44 @@ void copy(
 
 } // namespace host2device_detail
 
-
-
 template <
     typename T,
     std::size_t T_Dim
 >
 void
 copy(
-    DeviceBuffer<T, T_Dim> & dst,
-    HostBuffer<T, T_Dim> & src
+    WriteGuard< DeviceBuffer<T, T_Dim> > dst,
+    WriteGuard< HostBuffer<T, T_Dim> > src
 )
 {
-    Environment<>::get().ResourceManager().emplace_task(
-        [&dst, &src]
+    Environment<>::task(
+        []( auto dst, auto src, auto cuda_stream )
         {
-            size_t current_size = src.getCurrentSize();
+            size_t current_size = src.size().get();
+            dst.size().set(current_size);
 
-            dst.setCurrentSize(current_size);
-            DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
+            DataSpace<T_Dim> devCurrentSize = src.size().data_space();
 
-            if (src.is1D() && dst.is1D())
-                host2device_detail::fast_copy(dst.getPointer(),
-                                              src.getPointer(),
+            if (src.data().is1D() && dst.data().is1D())
+                host2device_detail::fast_copy(dst.data().getPointer(),
+                                              src.data().getPointer(),
                                               devCurrentSize.productOfComponents());
             else
-                host2device_detail::copy(dst, src, devCurrentSize);
+                host2device_detail::copy(dst.data(), src.data(), devCurrentSize);
 
-            task_synchronize_stream(0);
+            cuda_stream->sync();
         },
         TaskProperties::Builder()
-            .label("copyHostToDevice")
-            .resources({
-                dst.write(),
-                dst.size_resource.write(),
-                src.read(),
-                src.size_resource.write(),
-                cuda_resources::streams[0].write()
-            })
+            .label("copyHostToDevice"),
+        std::move(dst),
+        std::move(src),
+        Environment<>::get().cuda_stream()
     );
 }
 
-} // namespace buffers
+} // namespace buffer
 
-} // namespace memory
+} // namespace mem
 
 } // namespace pmacc
+
