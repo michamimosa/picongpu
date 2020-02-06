@@ -240,19 +240,12 @@ public:
                                                cuda_stream));
                     cuda_stream->sync().get();
                 }
-                /*
-                Environment<>::get()
-                    .ResourceManager()
-                    .update_properties(
-                        TaskProperties::Patch::Builder()
-                            .remove_resources({ access_size_write() })
-                    );
-                */
+
                 return obj->DeviceBuffer<Item, dim>::get_size();
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::get_size()")
-                .resources({ this->write_size() }),
+                .resources({ this->read_size() }),
             Environment<>::get().cuda_stream()
         ).get();
     }
