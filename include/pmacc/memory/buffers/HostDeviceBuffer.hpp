@@ -127,9 +127,88 @@ namespace mem
         BufferResource< DBuffer > deviceBuffer;
     };
 
+    namespace host_device_buffer
+    {
+        template < typename T_Item, std::size_t T_dim >
+        struct ReadGuard : protected std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> >
+        {
+            auto read() { return *this; }
+            HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().read(); }
+            HINLINE auto getDeviceBuffer() const { return this->get()->getDeviceBuffer().read(); }
+
+        protected:
+            ReadGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> > obj )
+                : std::shared_ptr< HostDeviceBuffer< T_Item, T_dim > >( obj )
+            {}
+        };
+
+        template < typename T_Item, std::size_t T_dim >
+        struct WriteGuard : ReadGuard< T_Item, T_dim >
+        {
+            auto write() { return *this; }
+            HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().write(); }
+            HINLINE auto getDeviceBuffer() const { return this->get()->getDeviceBuffer().write(); }
+
+            HINLINE void hostToDevice() { buffer::copy(getDeviceBuffer(), getHostBuffer()); }
+            HINLINE void deviceToHost() { buffer::copy(getHostBuffer(), getDeviceBuffer()); }
+
+            void reset(bool preserveData = true) { this->get()->reset(preserveData); }
+
+        protected:
+            WriteGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> > obj )
+                : ReadGuard< T_Item, T_dim >( obj )
+            {}
+        };
+    } // namespace host_device_buffer
+
+
+    template< typename T_Item, std::size_t T_dim >
+    struct BufferResource< HostDeviceBuffer< T_Item, T_dim > > : host_device_buffer::WriteGuard< T_Item, T_dim >
+    {
+        template < typename... Args >
+        BufferResource( Args&&... args )
+            : host_device_buffer::WriteGuard< T_Item, T_dim >( std::make_shared< HostDeviceBuffer< T_Item, T_dim > >( std::forward<Args>(args)... ) )
+        {}
+
+        BufferResource( std::shared_ptr< HostDeviceBuffer< T_Item, T_dim > > obj )
+            : host_device_buffer::WriteGuard< T_Item, T_dim >( obj )
+        {}
+    };
+
 } // namespace mem
 
 } // namespace pmacc
 
 #include "pmacc/memory/buffers/HostDeviceBuffer.tpp"
+
+namespace redGrapes
+{
+namespace trait
+{
+
+template < typename T_Item, std::size_t T_dim >
+struct BuildProperties< pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim> >
+{
+    template < typename Builder >
+    static void build(Builder & builder, pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim> const & buf)
+    {
+        BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
+        BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
+    }
+};
+
+template < typename T_Item, std::size_t T_dim >
+struct BuildProperties< pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim> >
+{
+    template < typename Builder >
+    static void build(Builder & builder, pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim> const & buf)
+    {
+        BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
+        BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
+    }
+};
+
+} // namespace trait
+
+} // namespace redGrapes
 
