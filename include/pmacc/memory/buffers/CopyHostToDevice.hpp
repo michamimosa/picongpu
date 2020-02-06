@@ -113,7 +113,7 @@ template <
 void
 copy(
     WriteGuard< DeviceBuffer<T, T_Dim> > dst,
-    WriteGuard< HostBuffer<T, T_Dim> > src
+    ReadGuard< HostBuffer<T, T_Dim> > src
 )
 {
     Environment<>::task(
