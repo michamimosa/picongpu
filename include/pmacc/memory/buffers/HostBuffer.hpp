@@ -31,42 +31,42 @@ namespace pmacc
 namespace mem
 {
 
-template <class TYPE, std::size_t DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class HostBuffer;
 
 namespace detail
 {
-template< class TYPE >
-    container::HostBuffer< TYPE, 1u >
-make_CartBuffer( HostBuffer<TYPE, 1u> & hb )
-    {
-        return container::HostBuffer<TYPE, 1u>(hb.getBasePointer(), hb.getDataSpace(), false);
-    }
-
-template< class TYPE >
-    container::HostBuffer< TYPE, 2u >
-make_CartBuffer( HostBuffer<TYPE, 2u> & hb )
-    {
-        math::Size_t<2u - 1u> pitch;
-        pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
-        return container::HostBuffer<TYPE, 2u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
-    }
-
-template< class TYPE >
-    container::HostBuffer< TYPE, 3u >
-make_CartBuffer( HostBuffer<TYPE, 3u> & hb )
-    {
-        math::Size_t<3u - 1u> pitch;
-        pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
-        pitch[1] = pitch[0] * hb.getPhysicalMemorySize()[1];
-        return container::HostBuffer<TYPE, 3u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
-    }
+template< class TYPE, typename T_DataAccessPolicy >
+container::HostBuffer< TYPE, 1u >
+make_CartBuffer( HostBuffer<TYPE, 1u, T_DataAccessPolicy > & hb )
+{
+    return container::HostBuffer<TYPE, 1u>(hb.getBasePointer(), hb.getDataSpace(), false);
 }
 
-template <class TYPE, std::size_t DIM>
+template< class TYPE, typename T_DataAccessPolicy >
+container::HostBuffer< TYPE, 2u >
+make_CartBuffer( HostBuffer<TYPE, 2u, T_DataAccessPolicy> & hb )
+{
+    math::Size_t<2u - 1u> pitch;
+    pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
+    return container::HostBuffer<TYPE, 2u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
+}
+
+template< class TYPE, typename T_DataAccessPolicy >
+container::HostBuffer< TYPE, 3u >
+make_CartBuffer( HostBuffer<TYPE, 3u, T_DataAccessPolicy> & hb )
+{
+    math::Size_t<3u - 1u> pitch;
+    pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
+    pitch[1] = pitch[0] * hb.getPhysicalMemorySize()[1];
+    return container::HostBuffer<TYPE, 3u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
+}
+}
+
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class DeviceBuffer;
 
-template <class TYPE, std::size_t DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class Buffer;
 
     /**
@@ -75,8 +75,8 @@ class Buffer;
      * @tparam TYPE datatype for buffer data
      * @tparam DIM dimension of the buffer
      */
-    template <class TYPE, std::size_t DIM>
-    class HostBuffer : public Buffer<TYPE, DIM>
+    template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
+    class HostBuffer : public Buffer<TYPE, DIM, T_DataAccessPolicy>
     {
     public:
         /**
@@ -124,11 +124,9 @@ class Buffer;
          *             can be less than `physicalMemorySize`
          * @param physicalMemorySize size of the physical memory (in elements)
          */
-        void init(DataSpace<DIM> size,
-                  DataSpace<DIM> physicalMemorySize,
-                  rg::Resource<rg::access::FieldAccess<DIM>> resource = rg::Resource<rg::access::FieldAccess<DIM>>())
+        void init( DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize )
         {
-            this->Buffer<TYPE, DIM>::init( size, physicalMemorySize, resource );
+            this->Buffer<TYPE, DIM, T_DataAccessPolicy>::init( size, physicalMemorySize );
         }
     };
 

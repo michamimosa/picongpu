@@ -36,10 +36,10 @@ namespace pmacc
 namespace mem
 {
 
-template <class TYPE, std::size_t DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class HostBuffer;
 
-template <class TYPE, std::size_t DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class Buffer;
 
 /**
@@ -48,8 +48,8 @@ class Buffer;
  * @tparam TYPE datatype of the buffer
  * @tparam DIM dimension of the buffer
  */
-template <class TYPE, std::size_t DIM>
-class DeviceBuffer : public Buffer<TYPE, DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
+class DeviceBuffer : public Buffer<TYPE, DIM, T_DataAccessPolicy>
 {
 protected:
     /** constructor
@@ -60,10 +60,9 @@ protected:
      * @param physicalMemorySize size of the physical memory (in elements)
      */
     void init(DataSpace<DIM> size,
-              DataSpace<DIM> physicalMemorySize,
-              rg::Resource<rg::access::FieldAccess<DIM>> resource = rg::Resource<rg::access::FieldAccess<DIM>>())
+              DataSpace<DIM> physicalMemorySize)
     {
-        this->Buffer<TYPE, DIM>::init( size, physicalMemorySize, resource );
+        this->Buffer<TYPE, DIM, T_DataAccessPolicy>::init( size, physicalMemorySize );
     }
 
 public:

@@ -140,10 +140,11 @@ struct KernelSetValue
 
 template <
     typename T_Item,
-    std::size_t T_Dim
+    std::size_t T_Dim,
+    typename T_DataAccessPolicy
 >
 void
-device_set_value_small( WriteGuard< DeviceBuffer<T_Item, T_Dim> > dst, T_Item const & value)
+device_set_value_small( WriteGuard< DeviceBuffer<T_Item, T_Dim, T_DataAccessPolicy> > dst, T_Item const & value)
 {
     Environment<>::task(
         [value]( auto dst, auto cuda_stream )
@@ -190,7 +191,7 @@ device_set_value_small( WriteGuard< DeviceBuffer<T_Item, T_Dim> > dst, T_Item co
         },
         TaskProperties::Builder()
             .label("device_set_value_small(" + std::to_string(value) + ")"),
-        dst.write(),
+        std::move( dst ),
         Environment<>::get().cuda_stream()
     );
 }
@@ -202,10 +203,11 @@ device_set_value_small( WriteGuard< DeviceBuffer<T_Item, T_Dim> > dst, T_Item co
  */
 template <
     typename T_Item,
-    std::size_t T_Dim
+    std::size_t T_Dim,
+    typename T_DataAccessPolicy
 >
 void
-device_set_value_big( WriteGuard<DeviceBuffer<T_Item, T_Dim>> dst, T_Item const & value)
+device_set_value_big( WriteGuard<DeviceBuffer<T_Item, T_Dim, T_DataAccessPolicy>> dst, T_Item const & value)
 {
     Environment<>::task(
         [value]( auto dst, auto cuda_stream )
@@ -272,7 +274,7 @@ device_set_value_big( WriteGuard<DeviceBuffer<T_Item, T_Dim>> dst, T_Item const 
         },
         TaskProperties::Builder()
             .label("device_set_value_big(" + std::to_string(value) + ")"),
-        dst,
+        std::move(dst),
         Environment<>::get().cuda_stream()
     );
 }
