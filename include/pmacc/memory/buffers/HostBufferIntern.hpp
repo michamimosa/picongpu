@@ -39,21 +39,22 @@ namespace mem
  */
 template <
     typename T_Item,
-    std::size_t T_Dim
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
 >
 class HostBufferIntern
-    : public HostBuffer<T_Item, T_Dim >
+    : public HostBuffer< T_Item, T_dim, T_DataAccessPolicy >
 {
 private:
-    std::shared_ptr< HostBufferIntern< T_Item, T_Dim > > shared_from_this()
+    std::shared_ptr< HostBufferIntern< T_Item, T_dim, T_DataAccessPolicy > > shared_from_this()
     {
-        return this->template shared_from_base< HostBufferIntern<T_Item, T_Dim> >();
+        return this->template shared_from_base< HostBufferIntern<T_Item, T_dim, T_DataAccessPolicy> >();
     }
 
 public:
     using Item = T_Item;
-    static constexpr size_t dim = T_Dim;
-    typedef typename HostBuffer<Item, dim>::DataBoxType DataBoxType;
+    static constexpr size_t dim = T_dim;
+    typedef typename HostBuffer<Item, dim, T_DataAccessPolicy>::DataBoxType DataBoxType;
 
     /** constructor
      *
@@ -61,28 +62,26 @@ public:
      */
     void init(DataSpace< dim > size)
     {
-        this->HostBuffer<Item, dim>::init( size, size );
+        this->HostBuffer<Item, dim, T_DataAccessPolicy>::init( size, size );
         Environment<>::task(
-            [obj=shared_from_this(), size]
+            [size]( auto x )
             {
+                auto obj = std::static_pointer_cast< HostBufferIntern >( x );
                 obj->ownPointer = true;
                 CUDA_CHECK(cudaMallocHost((void**)&obj->pointer, size.productOfComponents() * sizeof(Item)));
                 obj->reset( false );
             },
             TaskProperties::Builder()
-                .label("HostBufferIntern::HostBufferIntern()")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("HostBufferIntern::HostBufferIntern()"),
+            this->buffer_resource().write()
         );
     }
 
-    void init(buffer::data::ReadGuard< HostBufferIntern > source,
+    void init(BufferResource< HostBufferIntern > source,
               DataSpace< dim > size,
               DataSpace< dim > offset = DataSpace<dim>())
     {
-        this->HostBuffer<Item, dim>::init( size, source->getPhysicalMemorySize(), source );
+        this->HostBuffer<Item, dim, T_DataAccessPolicy>::init( size, source->getPhysicalMemorySize(), source );
         Environment<>::task(
             [obj=this->shared_from_this(), offset]( auto source )
             {
@@ -120,8 +119,10 @@ public:
     void reset(bool preserveData = true)
     {
         Environment<>::task(
-            [obj=this->shared_from_this(), preserveData]
+            [preserveData]( auto x )
             {
+                auto obj = std::static_pointer_cast< HostBufferIntern >( x );
+
                 obj->set_size(obj->getDataSpace().productOfComponents());
                 if (!preserveData)
                 {
@@ -145,19 +146,18 @@ public:
                 }
             },
             TaskProperties::Builder()
-                .label("HostBufferIntern::reset()")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("HostBufferIntern::reset()"),
+            this->buffer_resource().write()
         );
     }
 
     void fill(Item const & value)
     {
         Environment<>::task(
-            [obj=this->shared_from_this(), value]
+            [value]( auto x )
             {
+                auto obj = std::static_pointer_cast< HostBufferIntern >( x );
+
                 int64_t current_size = static_cast< int64_t >(obj->get_size());
                 DataBoxDim1Access< DataBoxType > d1Box(
                     obj->getDataBox(),
@@ -171,11 +171,8 @@ public:
                 }
             },
             TaskProperties::Builder()
-                .label("HostBufferIntern::setValue(" + std::to_string(value) + ")")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("HostBufferIntern::setValue(" + std::to_string(value) + ")"),
+            this->buffer_resource().write()
         );
     }
 

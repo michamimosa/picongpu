@@ -60,10 +60,10 @@ void fast_copy(
                                cuda_stream));
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< HostBuffer<T, DIM1> >dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM1> > src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM1, T_DataAccessPolicy> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > src,
     DataSpace<DIM1> & size
 )
 {
@@ -75,10 +75,10 @@ void copy(
                                cuda_stream));
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< HostBuffer<T, DIM2> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM2> > src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM2, T_DataAccessPolicy> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > src,
     DataSpace<DIM2> & size
 )
 {
@@ -93,10 +93,10 @@ void copy(
                                  cuda_stream));
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< HostBuffer<T, DIM3> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM3> > src,
+    buffer::data::WriteGuard< HostBuffer<T, DIM3, T_DataAccessPolicy> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > src,
     DataSpace<DIM3> & size
 )
 {
@@ -131,12 +131,13 @@ void copy(
 
 template <
     typename T_Item,
-    std::size_t T_dim
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
 >
 void
 copy(
-     WriteGuard< HostBuffer<T_Item, T_dim> > dst,
-     ReadGuard< DeviceBuffer<T_Item, T_dim> > src
+     WriteGuard< HostBuffer<T_Item, T_dim, T_DataAccessPolicy> > dst,
+     ReadGuard< DeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > src
 )
 {
     Environment<>::task(

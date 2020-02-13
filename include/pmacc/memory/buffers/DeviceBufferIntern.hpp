@@ -42,11 +42,11 @@ namespace mem
 /**
  * Internal device buffer implementation.
  */
-template <class TYPE, std::size_t DIM>
-class DeviceBufferIntern : public DeviceBuffer<TYPE, DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
+class DeviceBufferIntern : public DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>
 {
 public:
-    typedef typename DeviceBuffer<TYPE, DIM>::DataBoxType DataBoxType;
+    typedef typename DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>::DataBoxType DataBoxType;
 
     using Item = TYPE;
     static constexpr std::size_t dim = DIM;
@@ -61,11 +61,12 @@ public:
               bool sizeOnDevice = false,
               bool useVectorAsBase = false)
     {
-        this->DeviceBuffer<TYPE, DIM>::init( size, size );
+        this->DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>::init( size, size );
 
         Environment<>::task(
-            [obj=this->shared_from_this(), size, sizeOnDevice, useVectorAsBase]
+            [size, sizeOnDevice, useVectorAsBase]( auto x )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->sizeOnDevice = sizeOnDevice;
                 obj->useOtherMemory = false;
 
@@ -87,22 +88,22 @@ public:
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::DeviceBufferIntern()")
                 .resources({
-                    this->write_data(),
-                    this->write_size(),
                     Environment<>::get().cuda_stream()
-                })
+                }),
+            this->buffer_resource().write()
         );
     }
 
-    void init(DeviceBuffer<TYPE, DIM>& source,
+    void init(DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>& source,
               DataSpace<DIM> size,
               DataSpace<DIM> offset,
               bool sizeOnDevice = false)
     {
-        this->DeviceBuffer<TYPE, DIM>::init( size, source.getPhysicalMemorySize(), source );
+        this->DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>::init( size, source.getPhysicalMemorySize(), source );
         Environment<>::task(
-            [obj=this->shared_from_this(), &source, offset, sizeOnDevice]
+            [&source, offset, sizeOnDevice]( auto x )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->sizeOnDevice = sizeOnDevice;
                 obj->useOtherMemory = true;
                 obj->offset = offset + source.getOffset();
@@ -113,10 +114,9 @@ public:
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::DeviceBufferIntern(source)")
                 .resources({
-                    this->write_data(),
-                    this->write_size(),
                     Environment<>::get().cuda_stream()
-                })
+                }),
+            this->buffer_resource().write()
         );
     }
 
@@ -136,9 +136,10 @@ public:
     void reset( bool preserveData = true )
     {
         Environment<>::task(
-            [obj=this->shared_from_this(), preserveData]
+            [preserveData]( auto x )
             {
-                obj->set_size(obj->Buffer<Item, dim>::getDataSpace().productOfComponents());
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
+                obj->set_size(obj->Buffer<Item, dim, T_DataAccessPolicy>::getDataSpace().productOfComponents());
 
                 if (!preserveData)
                 {
@@ -156,11 +157,8 @@ public:
                 }
             },
             TaskProperties::Builder()
-                .label("DeviceBufferIntern::reset()")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("DeviceBufferIntern::reset()"),
+            this->buffer_resource().write()
         );
     }
 
@@ -229,8 +227,9 @@ public:
     virtual std::size_t get_size()
     {
         return Environment<>::task(
-            [obj=this->shared_from_this()]( auto cuda_stream )
+            []( auto x, auto cuda_stream )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 if (obj->sizeOnDevice)
                 {
                     CUDA_CHECK(cudaMemcpyAsync((void*) obj->getCurrentSizeHostSidePointer(),
@@ -241,11 +240,11 @@ public:
                     cuda_stream->sync().get();
                 }
 
-                return obj->DeviceBuffer<Item, dim>::get_size();
+                return obj->DeviceBuffer<Item, dim, T_DataAccessPolicy>::get_size();
             },
             TaskProperties::Builder()
-                .label("DeviceBufferIntern::get_size()")
-                .resources({ this->read_size() }),
+                .label("DeviceBufferIntern::get_size()"),
+            this->buffer_resource().size().read(),
             Environment<>::get().cuda_stream()
         ).get();
     }
@@ -262,7 +261,8 @@ public:
     virtual void set_size( std::size_t const new_size )
     {
         Environment<>::task(
-            [obj=this->shared_from_this(), new_size]( auto cuda_stream ) {
+            [new_size]( auto x, auto cuda_stream ) {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 if (obj->sizeOnDevice)
                 {
                     obj->Buffer< Item, dim >::set_size( new_size );
@@ -278,8 +278,8 @@ public:
                 }
             },
             TaskProperties::Builder()
-               .label("DeviceBufferIntern::set_size()")
-               .resources({ this->write_size() }),
+                .label("DeviceBufferIntern::set_size()"),
+            this->buffer_resource().size().write(),
             Environment<>::get().cuda_stream()
         );
     }
@@ -313,18 +313,18 @@ public:
             isSmall = (sizeof(Item) <= 128)
         }; //if we use const variable the compiler create warnings
 
-        auto res = BufferResource< DeviceBuffer< Item, dim > >( this->template shared_from_base<DeviceBuffer<Item, dim>>() );
+        auto res = BufferResource< DeviceBuffer< Item, dim, T_DataAccessPolicy > >( this->template shared_from_base<DeviceBuffer<Item, dim, T_DataAccessPolicy>>() );
 
         if( isSmall )
-            buffer::device_set_value_small<Item, dim>( res.write(), value );
+            buffer::device_set_value_small( res.write(), value );
         else
-            buffer::device_set_value_big<Item, dim>( res.write(), value );
+            buffer::device_set_value_big( res.write(), value );
     }
 
 private:
-    std::shared_ptr< DeviceBufferIntern< Item, dim > > shared_from_this()
+    std::shared_ptr< DeviceBufferIntern< Item, dim, T_DataAccessPolicy > > shared_from_this()
     {
-        return this->template shared_from_base< DeviceBufferIntern<Item, dim> >();
+        return this->template shared_from_base< DeviceBufferIntern<Item, dim, T_DataAccessPolicy> >();
     }
 
     /*! create native array with pitched lines
@@ -332,8 +332,9 @@ private:
     void createData()
     {
         Environment<>::task(
-            [obj=this->shared_from_this()]
+            []( auto x )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->data.ptr = nullptr;
                 obj->data.pitch = 1;
                 obj->data.xsize = obj->getDataSpace()[0] * sizeof(Item);
@@ -368,11 +369,8 @@ private:
                 obj->reset( false );
             },
             TaskProperties::Builder()
-                .label("DeviceBufferIntern::createData()")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("DeviceBufferIntern::createData()"),
+            this->buffer_resource().write()
         );
     }
 
@@ -381,8 +379,9 @@ private:
     void createFakeData()
     {
         Environment<>::task(
-            [obj=this->shared_from_this()]
+            []( auto x )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->data.ptr = nullptr;
                 obj->data.pitch = 1;
                 obj->data.xsize = obj->getDataSpace()[0] * sizeof(Item);
@@ -402,19 +401,17 @@ private:
                 obj->reset( false );
             },
             TaskProperties::Builder()
-                .label("DeviceBufferIntern::createFakeData()")
-                .resources({
-                    this->write_size(),
-                    this->write_data()
-                })
+                .label("DeviceBufferIntern::createFakeData()"),
+            this->buffer_resource().write()
         );
     }
 
     void createSizeOnDevice(bool sizeOnDevice)
     {
         Environment<>::task(
-            [obj=this->shared_from_this(), sizeOnDevice]
+            [sizeOnDevice]( auto x )
             {
+                auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->sizeOnDevicePtr = nullptr;
 
                 if (obj->sizeOnDevice)
@@ -425,8 +422,8 @@ private:
                 obj->set_size( obj->getDataSpace().productOfComponents() );
             },
             TaskProperties::Builder()
-                .label("DeviceBufferIntern::createSizeOnDevice()")
-                .resources({ this->write_size() })
+                .label("DeviceBufferIntern::createSizeOnDevice()"),
+            this->buffer_resource().size().write()
         );
     }
 

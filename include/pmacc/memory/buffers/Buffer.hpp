@@ -75,6 +75,8 @@ namespace size
 
     protected:
         friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
+        friend Buffer;
+
         ReadGuard( std::shared_ptr< Buffer > obj )
             : std::shared_ptr< Buffer >( obj )
         {}        
@@ -93,6 +95,8 @@ namespace size
 
     protected:
         friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
+        friend Buffer;
+
         WriteGuard( std::shared_ptr< Buffer > obj )
             : ReadGuard< Buffer >( obj )
         {}
@@ -106,7 +110,7 @@ namespace data
     {
         operator rg::ResourceAccess() const
         {
-            return this->get()->read_data();
+            return this->get()->access_data( rg::access::IOAccess::read );
         }
 
         ReadGuard read() const noexcept { return *this; }
@@ -121,6 +125,8 @@ namespace data
 
     protected:
         friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
+        friend Buffer;
+
         ReadGuard( std::shared_ptr< Buffer > obj )
             : std::shared_ptr< Buffer >( obj )
         {}
@@ -131,7 +137,7 @@ namespace data
     {
         operator rg::ResourceAccess() const
         {
-            return this->std::shared_ptr<Buffer>::get()->write_data();
+            return this->get()->access_data( rg::access::IOAccess::write );
         }
 
         WriteGuard write() const noexcept { return *this; }
@@ -147,6 +153,8 @@ namespace data
 
     protected:
         friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
+        friend Buffer;
+
         WriteGuard( std::shared_ptr< Buffer > obj )
             : ReadGuard< Buffer >( obj )
         {}
@@ -162,6 +170,8 @@ struct ReadGuard : public std::shared_ptr< Buffer >
     auto size() const noexcept { return size::ReadGuard<Buffer>( *this ); }
 
 protected:
+    friend Buffer;
+
     ReadGuard( std::shared_ptr< Buffer > obj )
         : std::shared_ptr< Buffer >( obj )
     {}
@@ -176,6 +186,8 @@ struct WriteGuard : ReadGuard< Buffer >
     auto size() const noexcept { return size::WriteGuard<Buffer>( (std::shared_ptr<Buffer>)*this ); }
 
 protected:
+    friend Buffer;
+
     WriteGuard( std::shared_ptr<Buffer> obj )
         : ReadGuard<Buffer>( obj )
     {}
@@ -206,16 +218,22 @@ struct BufferResource : buffer::WriteGuard< Buffer >
      */
     template <
         typename T_Item,
-        std::size_t T_dim
+        std::size_t T_dim,
+        typename T_DataAccessPolicy = rg::access::IOAccess
     >
     class Buffer
-        : public std::enable_shared_from_this< Buffer<T_Item, T_dim> >
+        : public std::enable_shared_from_this< Buffer<T_Item, T_dim, T_DataAccessPolicy> >
     {
     protected:
         template < typename Derived >
         std::shared_ptr< Derived > shared_from_base()
         {
             return std::static_pointer_cast< Derived >( this->shared_from_this() );
+        }
+
+        auto buffer_resource()
+        {
+            return BufferResource<Buffer<T_Item, dim, T_DataAccessPolicy>>(this->shared_from_this());
         }
 
     public:
@@ -232,10 +250,8 @@ struct BufferResource : buffer::WriteGuard< Buffer >
          * @param physicalMemorySize size of the physical memory (in elements)
          */
         void init(DataSpace< dim > size,
-                  DataSpace< dim > physicalMemorySize,
-                  rg::Resource< rg::access::FieldAccess< dim > > resource)
+                  DataSpace< dim > physicalMemorySize)
         {
-            this->resource_data = resource;
             Environment<>::task(
                 [obj=this->shared_from_this(), size, physicalMemorySize] {
                     obj->data_space = DataSpace< dim >( size );
@@ -386,11 +402,6 @@ struct BufferResource : buffer::WriteGuard< Buffer >
             return this->resource_size.make_access( mode );
         }
 
-        rg::ResourceAccess access_data( rg::access::FieldAccess<dim> mode ) const
-        {
-            return this->resource_data.make_access( mode );
-        }
-
         rg::ResourceAccess read_size() const
         {
             return this->access_size( rg::access::IOAccess::read );
@@ -401,16 +412,11 @@ struct BufferResource : buffer::WriteGuard< Buffer >
             return this->access_size( rg::access::IOAccess::write );
         }
 
-        rg::ResourceAccess read_data() const
+        rg::ResourceAccess access_data( T_DataAccessPolicy acc ) const
         {
-            return this->access_data( rg::access::FieldAccess<dim>(rg::access::IOAccess::read) );
+            return this->resource_data.make_access( acc );
         }
-
-        rg::ResourceAccess write_data() const
-        {
-            return this->access_data( rg::access::FieldAccess<dim>(rg::access::IOAccess::write) );
-        }
-
+        
     protected:
         /*! Check if my DataSpace is greater than other.
          * @param other other DataSpace
@@ -427,7 +433,7 @@ struct BufferResource : buffer::WriteGuard< Buffer >
         size_t *current_size;
 
         rg::Resource< rg::access::IOAccess > resource_size;
-        rg::Resource< rg::access::FieldAccess<dim> > resource_data;
+        rg::Resource< T_DataAccessPolicy > resource_data;
 
         bool data1D;
     };
@@ -456,8 +462,8 @@ struct BuildProperties< pmacc::mem::buffer::ReadGuard<Buffer> >
     template < typename Builder >
     static void build(Builder & builder, pmacc::mem::buffer::ReadGuard<Buffer> const & buf)
     {
-        builder.add_resource( buf->read_size() );
-        builder.add_resource( buf->read_data() );
+        builder.add( buf.size() );
+        builder.add( buf.data() );
     }
 };
 
@@ -467,8 +473,8 @@ struct BuildProperties< pmacc::mem::buffer::WriteGuard<Buffer> >
     template < typename Builder >
     static void build(Builder & builder, pmacc::mem::buffer::WriteGuard<Buffer> const & buf)
     {
-        builder.add_resource( buf->write_size() );
-        builder.add_resource( buf->write_data() );
+        builder.add( buf.size() );
+        builder.add( buf.data() );
     }
 };
 

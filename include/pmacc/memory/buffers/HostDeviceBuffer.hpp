@@ -36,16 +36,16 @@ namespace mem
 {
 
     /** Buffer that contains a host and device buffer and allows synchronizing those 2 */
-    template<typename T_Type, std::size_t T_dim>
+    template<typename T_Type, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess >
     class HostDeviceBuffer
     {
-        typedef HostBufferIntern<T_Type, T_dim> HostBufferType;
-        typedef DeviceBufferIntern<T_Type, T_dim> DeviceBufferType;
+        typedef HostBufferIntern<T_Type, T_dim, T_DataAccessPolicy> HostBufferType;
+        typedef DeviceBufferIntern<T_Type, T_dim, T_DataAccessPolicy> DeviceBufferType;
 
     public:
         using ValueType = T_Type;
-        typedef HostBuffer<T_Type, T_dim> HBuffer;
-        typedef DeviceBuffer<T_Type, T_dim> DBuffer;
+        typedef HostBuffer<T_Type, T_dim, T_DataAccessPolicy> HBuffer;
+        typedef DeviceBuffer<T_Type, T_dim, T_DataAccessPolicy> DBuffer;
 
         typedef typename HostBufferType::DataBoxType DataBoxType;
         PMACC_CASSERT_MSG(DataBoxTypes_must_match, boost::is_same<DataBoxType, typename DeviceBufferType::DataBoxType>::value);
@@ -129,21 +129,21 @@ namespace mem
 
     namespace host_device_buffer
     {
-        template < typename T_Item, std::size_t T_dim >
-        struct ReadGuard : protected std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> >
+        template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+        struct ReadGuard : protected std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> >
         {
             auto read() { return *this; }
             HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().read(); }
             HINLINE auto getDeviceBuffer() const { return this->get()->getDeviceBuffer().read(); }
 
         protected:
-            ReadGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> > obj )
-                : std::shared_ptr< HostDeviceBuffer< T_Item, T_dim > >( obj )
+            ReadGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > obj )
+                : std::shared_ptr< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > >( obj )
             {}
         };
 
-        template < typename T_Item, std::size_t T_dim >
-        struct WriteGuard : ReadGuard< T_Item, T_dim >
+        template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+        struct WriteGuard : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
         {
             auto write() { return *this; }
             HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().write(); }
@@ -155,23 +155,23 @@ namespace mem
             void reset(bool preserveData = true) { this->get()->reset(preserveData); }
 
         protected:
-            WriteGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim> > obj )
-                : ReadGuard< T_Item, T_dim >( obj )
+            WriteGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > obj )
+                : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >( obj )
             {}
         };
     } // namespace host_device_buffer
 
 
-    template< typename T_Item, std::size_t T_dim >
-    struct BufferResource< HostDeviceBuffer< T_Item, T_dim > > : host_device_buffer::WriteGuard< T_Item, T_dim >
+    template< typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+    struct BufferResource< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > > : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
     {
         template < typename... Args >
         BufferResource( Args&&... args )
-            : host_device_buffer::WriteGuard< T_Item, T_dim >( std::make_shared< HostDeviceBuffer< T_Item, T_dim > >( std::forward<Args>(args)... ) )
+            : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >( std::make_shared< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > >( std::forward<Args>(args)... ) )
         {}
 
-        BufferResource( std::shared_ptr< HostDeviceBuffer< T_Item, T_dim > > obj )
-            : host_device_buffer::WriteGuard< T_Item, T_dim >( obj )
+        BufferResource( std::shared_ptr< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > > obj )
+            : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >( obj )
         {}
     };
 
@@ -186,22 +186,22 @@ namespace redGrapes
 namespace trait
 {
 
-template < typename T_Item, std::size_t T_dim >
-struct BuildProperties< pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim> >
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+struct BuildProperties< pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> >
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim> const & buf)
+    static void build(Builder & builder, pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
     {
         BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
         BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
     }
 };
 
-template < typename T_Item, std::size_t T_dim >
-struct BuildProperties< pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim> >
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+struct BuildProperties< pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> >
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim> const & buf)
+    static void build(Builder & builder, pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
     {
         BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
         BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
