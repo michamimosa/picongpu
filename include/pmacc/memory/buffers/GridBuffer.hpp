@@ -34,6 +34,8 @@
 
 namespace pmacc
 {
+namespace mem
+{
 namespace privateGridBuffer
 {
 
@@ -72,6 +74,67 @@ private:
 };
 
 }//end namespace privateGridBuffer
+
+namespace grid_buffer
+{
+
+namespace data
+{
+
+struct Access {
+    rg::access::IOAccess mode;
+
+    enum AreaType area;
+    enum ExchangeType direction;
+
+    static bool is_serial( Access const & a, Access const & b )
+    {
+        if(
+            a.area == b.area &&
+            rg::access::IOAccess::is_serial(a.mode, b.mode)
+        )
+        {
+            switch( a.area )
+            {
+            case CORE:
+                return true;
+
+            case BORDER:
+            case GUARD:
+                return a.direction & bdirection;
+            }
+        }
+        else
+            return false;
+    }
+
+    bool is_superset_of( Access const & other )
+    {
+        if(
+            this->area == other.area &&
+            this->mode.is_superset_of( other.mode )
+        )
+        {
+            switch( this->area )
+            {
+            case CORE:
+                return true;
+
+            case BORDER:
+            case GUARD:
+                return (this->direction & other.direction) && other.direction >= this->direction;
+            }
+        }
+        else
+            return false;
+    }
+};
+
+} // namespace data
+
+
+
+} // namespace grid_buffer
 
 /**
  * GridBuffer represents a DIM-dimensional buffer which exists on the host as well as on the device.
@@ -490,4 +553,12 @@ protected:
     uint32_t maxExchange; //use max exchanges and run over the array is faster as use set from stl
 };
 
-}
+template < typename T_Item, std::size_t T_dim, typename T_Bordertype >
+struct BufferResource< GridBuffer< T_Item, T_dim, T_Bordertype > > : BufferResource< HostDeviceBuffer< T_Item, T_dim > >
+{
+};
+
+} // namespace mem
+
+} // namespace pmacc
+
