@@ -1,7 +1,6 @@
 #pragma once
 
 #include <pmacc/types.hpp>
-#include <pmacc/memory/buffers/WaitForDevice.hpp>
 
 namespace pmacc
 {
@@ -9,9 +8,9 @@ namespace pmacc
 template < typename T, std::size_t T_Dim >
 class DeviceBuffer;
 
-namespace memory
+namespace mem
 {
-namespace buffers
+namespace buffer
 {
 
 namespace device2device_detail
@@ -20,7 +19,7 @@ namespace device2device_detail
 template < typename T >
 void fast_copy(
     T * dst,
-    T * src,
+    T const * src,
     size_t size
 )
 {
@@ -34,8 +33,8 @@ void fast_copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM1> & dst,
-    DeviceBuffer<T, DIM1> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM1> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM1> > src,
     DataSpace<DIM1> & size
 )
 {
@@ -49,8 +48,8 @@ void copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM2> & dst,
-    DeviceBuffer<T, DIM2> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM2> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM2> > src,
     DataSpace<DIM2> & size
 )
 {
@@ -68,8 +67,8 @@ void copy(
 
 template < typename T >
 void copy(
-    DeviceBuffer<T, DIM3> & dst,
-    DeviceBuffer<T, DIM3> & src,
+    buffer::data::WriteGuard< DeviceBuffer<T, DIM3> > dst,
+    buffer::data::ReadGuard< DeviceBuffer<T, DIM3> > src,
     DataSpace<DIM3> & size
 )
 {
@@ -104,37 +103,33 @@ template <
 >
 void
 copy(
-    DeviceBuffer<T, T_Dim> & dst,
-    DeviceBuffer<T, T_Dim> & src
+    WriteGuard< DeviceBuffer<T, T_Dim> > dst,
+    ReadGuard< DeviceBuffer<T, T_Dim> > src
 )
 {
-    Environment<>::get().ResourceManager().emplace_task(
-        [&dst, &src]
+    Environment<>::task(
+        []( auto dst, auto src, auto cuda_stream )
         {
-            size_t current_size = src.getCurrentSize();
-            dst.setCurrentSize(current_size);
+            size_t current_size = src.size().get();
+            dst.size().set(current_size);
 
-            DataSpace<T_Dim> devCurrentSize = src.getCurrentDataSpace(current_size);
-            if (src.is1D() && dst.is1D())
-                device2device_detail::fast_copy(dst.getPointer(), src.getPointer(), devCurrentSize.productOfComponents());
+            DataSpace<T_Dim> devCurrentSize = src.size().getCurrentDataSpace();
+            if (src.data().is1D() && dst.data().is1D())
+                device2device_detail::fast_copy(dst.data().getPointer(), src.data().getPointer(), devCurrentSize.productOfComponents());
             else
-                device2device_detail::copy(dst, src, devCurrentSize);
+                device2device_detail::copy(dst.data(), src.data(), devCurrentSize);
         },
         TaskProperties::Builder()
-            .label("copyDeviceToDevice")
-            .resources({
-                dst.write(),
-                dst.size_resource.write(),
-                src.write(),
-                src.size_resource.write(),
-                cuda_resources::streams[0].write()
-            })
+            .label("copyDeviceToDevice"),
+        std::move(dst),
+        std::move(src),
+        Environment<>::get().cuda_stream()
     );
 }
 
-} // namespace buffers
+} // namespace buffer
 
-} // namespace memory
+} // namespace mem
 
 } // namespace pmacc
 

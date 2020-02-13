@@ -28,14 +28,14 @@ namespace pmacc
 namespace mem
 {
 
-template <typename T_Type, std::size_t T_dim>
-HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(DataSpace<T_dim> const & size, bool sizeOnDevice)
+template <typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::HostDeviceBuffer(DataSpace<T_dim> const & size, bool sizeOnDevice)
    : hostBuffer( (std::shared_ptr<HBuffer>)BufferResource<HostBufferType>( size ) )
    , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( size, sizeOnDevice ) )
 {}
 
-template <typename T_Type, std::size_t T_dim>
-HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
+template <typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::HostDeviceBuffer(
     BufferResource< DBuffer > otherDeviceBuffer,
     DataSpace<T_dim> const & size,
     bool sizeOnDevice)
@@ -43,8 +43,8 @@ HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
     , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( otherDeviceBuffer, size, DataSpace<T_dim>(), sizeOnDevice ) )
 {}
 
-template<typename T_Type, std::size_t T_dim>
-HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
+template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::HostDeviceBuffer(
     BufferResource<HBuffer> otherHostBuffer,
     DataSpace<T_dim> const & offsetHost,
     BufferResource<DBuffer> otherDeviceBuffer,
@@ -55,37 +55,37 @@ HostDeviceBuffer<T_Type, T_dim>::HostDeviceBuffer(
    , deviceBuffer( (std::shared_ptr<DBuffer>)BufferResource<DeviceBufferType>( otherDeviceBuffer, size, offsetDevice, sizeOnDevice ) )
 {}
 
-template<typename T_Type, std::size_t T_dim>
-HostDeviceBuffer<T_Type, T_dim>::~HostDeviceBuffer()
+template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::~HostDeviceBuffer()
 {}
 
-template<typename T_Type, std::size_t T_dim>
-BufferResource<HostBuffer<T_Type, T_dim>> HostDeviceBuffer<T_Type, T_dim>::getHostBuffer() const
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+BufferResource<HostBuffer<T_Item, T_dim, T_DataAccessPolicy>> HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::getHostBuffer() const
 {
     return hostBuffer;
 }
 
-template<typename T_Type, std::size_t T_dim>
-BufferResource<DeviceBuffer<T_Type, T_dim>> HostDeviceBuffer<T_Type, T_dim>::getDeviceBuffer() const
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+BufferResource<DeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>> HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::getDeviceBuffer() const
 {
     return deviceBuffer;
 }
 
-template<typename T_Type, std::size_t T_dim>
-void HostDeviceBuffer<T_Type, T_dim>::reset(bool preserveData)
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+void HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::reset(bool preserveData)
 {
     deviceBuffer.data().reset(preserveData);
     hostBuffer.data().reset(preserveData);
 }
 
-template<typename T_Type, std::size_t T_dim>
-void HostDeviceBuffer<T_Type, T_dim>::hostToDevice()
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+void HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::hostToDevice()
 {
     buffer::copy( deviceBuffer, hostBuffer );
 }
 
-template<typename T_Type, std::size_t T_dim>
-void HostDeviceBuffer<T_Type, T_dim>::deviceToHost()
+template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
+void HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>::deviceToHost()
 {
     buffer::copy( hostBuffer, deviceBuffer );
 }
