@@ -115,6 +115,11 @@ class Buffer;
             return detail::make_CartBuffer( *this );
         }
 
+        buffer::data::WriteGuard< HostBuffer > data_guard()
+        {
+            return typename buffer::data::WriteGuard< HostBuffer >( this->template shared_from_base< HostBuffer >() );
+        }
+
     protected:
 
         /** Constructor.
@@ -128,6 +133,7 @@ class Buffer;
         {
             this->Buffer<TYPE, DIM, T_DataAccessPolicy>::init( size, physicalMemorySize );
         }
+
     };
 
 } // namespace mem

@@ -18,7 +18,7 @@
 namespace pmacc
 {
 
-template <class TYPE, std::size_t DIM>
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class DeviceBuffer;
 
 namespace mem

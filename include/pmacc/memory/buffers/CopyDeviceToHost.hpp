@@ -31,10 +31,10 @@
 namespace pmacc
 {
 
-template < typename T, std::size_t T_Dim >
+template < typename T, std::size_t T_Dim, typename T_DataAccessPolicy >
 class HostBuffer;
 
-template < typename T, std::size_t T_Dim >
+template < typename T, std::size_t T_Dim, typename T_DataAccessPolicy >
 class DeviceBuffer;
 
 namespace mem
@@ -63,8 +63,8 @@ void fast_copy(
 template < typename T, typename T_DataAccessPolicy >
 void copy(
     buffer::data::WriteGuard< HostBuffer<T, DIM1, T_DataAccessPolicy> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > src,
-    DataSpace<DIM1> & size
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > src,
+    DataSpace<DIM1> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
@@ -78,13 +78,13 @@ void copy(
 template < typename T, typename T_DataAccessPolicy >
 void copy(
     buffer::data::WriteGuard< HostBuffer<T, DIM2, T_DataAccessPolicy> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > src,
-    DataSpace<DIM2> & size
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > src,
+    DataSpace<DIM2> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
     CUDA_CHECK(cudaMemcpy2DAsync(dst.getBasePointer(),
-                                 dst.getDataSpace()[0] * sizeof (T), /*this is pitch*/
+                                 size[0] * sizeof (T), /*this is pitch*/
                                  src.getPointer(),
                                  src.getPitch(), /*this is pitch*/
                                  size[0] * sizeof (T),
@@ -96,17 +96,17 @@ void copy(
 template < typename T, typename T_DataAccessPolicy >
 void copy(
     buffer::data::WriteGuard< HostBuffer<T, DIM3, T_DataAccessPolicy> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > src,
-    DataSpace<DIM3> & size
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > src,
+    DataSpace<DIM3> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
 
     cudaPitchedPtr hostPtr;
-    hostPtr.pitch = dst.getDataSpace()[0] * sizeof(T);
+    hostPtr.pitch = size[0] * sizeof(T);
     hostPtr.ptr = dst.getBasePointer();
-    hostPtr.xsize = dst.getDataSpace()[0] * sizeof(T);
-    hostPtr.ysize = dst.getDataSpace()[1];
+    hostPtr.xsize = size[0] * sizeof(T);
+    hostPtr.ysize = size[1];
 
     cudaMemcpy3DParms params;
     params.srcArray = nullptr;
@@ -134,11 +134,9 @@ template <
     std::size_t T_dim,
     typename T_DataAccessPolicy
 >
-void
-copy(
-     WriteGuard< HostBuffer<T_Item, T_dim, T_DataAccessPolicy> > dst,
-     ReadGuard< DeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > src
-)
+void copy(
+    WriteGuard<HostBuffer<T_Item, T_dim, T_DataAccessPolicy>> dst,
+    ReadGuard<DeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>> src)
 {
     Environment<>::task(
         []( auto dst, auto src, auto cuda_stream )
@@ -157,10 +155,9 @@ copy(
 
             cuda_stream->sync();
         },
-        TaskProperties::Builder()
-            .label("pmacc::mem::buffer::copy(Host <= Device)"),
-        std::move(dst),
-        std::move(src),
+        TaskProperties::Builder().label("pmacc::mem::buffer::copy(Host <= Device)"),
+        dst.write(),
+        src.read(),
         Environment<>::get().cuda_stream()
     );
 }

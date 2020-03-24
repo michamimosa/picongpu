@@ -1,11 +1,12 @@
 #pragma once
 
 #include <pmacc/types.hpp>
+#include <pmacc/memory/buffers/Buffer.hpp>
 
 namespace pmacc
 {
 
-template < typename T, std::size_t T_Dim >
+template < typename T, std::size_t T_Dim, typename T_DataAccessPolicy >
 class DeviceBuffer;
 
 namespace mem
@@ -31,11 +32,11 @@ void fast_copy(
                                cuda_stream));
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM1> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM1> > src,
-    DataSpace<DIM1> & size
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > dst,
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > src,
+    DataSpace<DIM1> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
@@ -46,11 +47,11 @@ void copy(
                                cuda_stream));
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM2> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM2> > src,
-    DataSpace<DIM2> & size
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > dst,
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > src,
+    DataSpace<DIM2> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
@@ -65,11 +66,11 @@ void copy(
 
 }
 
-template < typename T >
+template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM3> > dst,
-    buffer::data::ReadGuard< DeviceBuffer<T, DIM3> > src,
-    DataSpace<DIM3> & size
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > dst,
+    device_buffer::data::ReadGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > src,
+    DataSpace<DIM3> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
@@ -99,12 +100,14 @@ void copy(
 
 template <
     typename T,
-    std::size_t T_Dim
+    std::size_t T_Dim,
+    typename T_DstDataAccessPolicy,
+    typename T_SrcDataAccessPolicy
 >
 void
 copy(
-    WriteGuard< DeviceBuffer<T, T_Dim> > dst,
-    ReadGuard< DeviceBuffer<T, T_Dim> > src
+    WriteGuard< DeviceBuffer<T, T_Dim, T_DstDataAccessPolicy> > dst,
+    ReadGuard< DeviceBuffer<T, T_Dim, T_SrcDataAccessPolicy> > src
 )
 {
     Environment<>::task(

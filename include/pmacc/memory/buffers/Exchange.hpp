@@ -1,4 +1,4 @@
-/* Copyright 2013-2020 Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Rene Widera, Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -26,6 +26,8 @@
 
 namespace pmacc
 {
+namespace mem
+{
 
     /**
      * Interface for a DIM-dimensional buffer used for data exchange.
@@ -38,7 +40,7 @@ namespace pmacc
      * @tparam TYPE the datatype for internal buffers
      * @tparam DIM the dimension of the internal buffers
      */
-    template <class TYPE, unsigned DIM>
+    template <class TYPE, unsigned DIM, typename T_DataAccessPolicy>
     class Exchange
     {
     public:
@@ -48,14 +50,14 @@ namespace pmacc
          *
          * @return Exchange buffer on device
          */
-        virtual DeviceBuffer<TYPE, DIM> &getDeviceBuffer() = 0;
+        virtual BufferResource< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> > getDeviceBuffer() = 0;
 
         /**
          * Returns the exchange buffer on the host.
          *
          * @return Exchange buffer on host
          */
-        virtual HostBuffer <TYPE, DIM> &getHostBuffer() = 0;
+        virtual BufferResource< HostBuffer<TYPE, DIM, T_DataAccessPolicy> > getHostBuffer() = 0;
 
         /**
          * Returns the type describing exchange directions
@@ -86,7 +88,7 @@ namespace pmacc
 
         virtual bool hasDeviceDoubleBuffer()=0;
 
-        virtual DeviceBuffer<TYPE, DIM>& getDeviceDoubleBuffer()=0;
+        virtual BufferResource< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> > getDeviceDoubleBuffer()=0;
 
     protected:
 
@@ -101,4 +103,7 @@ namespace pmacc
         uint32_t communicationTag;
     };
 
-}
+} // namespace mem
+
+} // namespace pmacc
+
