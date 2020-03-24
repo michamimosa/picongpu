@@ -6,10 +6,10 @@
 namespace pmacc
 {
 
-template <class T, std::size_t T_Dim>
+template <class T, std::size_t T_Dim, typename T_DataAccessPolicy>
 class HostBuffer;
 
-template <class T, std::size_t T_Dim>
+template <class T, std::size_t T_Dim, typename T_DataAccessPolicy>
 class DeviceBuffer;
 
 namespace mem
@@ -37,9 +37,9 @@ void fast_copy(
 
 template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > dst,
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM1, T_DataAccessPolicy> > dst,
     buffer::data::ReadGuard< HostBuffer<T, DIM1, T_DataAccessPolicy> > src,
-    DataSpace<DIM1> & size
+    DataSpace<DIM1> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
@@ -52,16 +52,16 @@ void copy(
 
 template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > dst,
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM2, T_DataAccessPolicy> > dst,
     buffer::data::ReadGuard< HostBuffer<T, DIM2, T_DataAccessPolicy> > src,
-    DataSpace<DIM2> & size
+    DataSpace<DIM2> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
     CUDA_CHECK(cudaMemcpy2DAsync(dst.getPointer(),
                                  dst.getPitch(), /*this is pitch*/
                                  src.getBasePointer(),
-                                 src.getDataSpace()[0] * sizeof (T), /*this is pitch*/
+                                 size[0] * sizeof (T), /*this is pitch*/
                                  size[0] * sizeof (T),
                                  size[1],
                                  cudaMemcpyHostToDevice,
@@ -71,18 +71,18 @@ void copy(
 
 template < typename T, typename T_DataAccessPolicy >
 void copy(
-    buffer::data::WriteGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > dst,
+    device_buffer::data::WriteGuard< DeviceBuffer<T, DIM3, T_DataAccessPolicy> > dst,
     buffer::data::ReadGuard< HostBuffer<T, DIM3, T_DataAccessPolicy> > src,
-    DataSpace<DIM3> & size
+    DataSpace<DIM3> const & size
 )
 {
     cudaStream_t cuda_stream = 0;
 
     cudaPitchedPtr hostPtr;
-    hostPtr.pitch = src.getDataSpace()[0] * sizeof (T);
+    hostPtr.pitch = size[0] * sizeof (T);
     hostPtr.ptr = src.getBasePointer();
-    hostPtr.xsize = src.getDataSpace()[0] * sizeof (T);
-    hostPtr.ysize = src.getDataSpace()[1];
+    hostPtr.xsize = size[0] * sizeof (T);
+    hostPtr.ysize = size[1];
 
     cudaMemcpy3DParms params;
     params.dstArray = nullptr;
@@ -113,8 +113,8 @@ template <
 >
 void
 copy(
-     WriteGuard< DeviceBuffer<T, T_Dim, T_DataAccessPolicy> > dst,
-     ReadGuard< HostBuffer<T, T_Dim, T_DataAccessPolicy> > src
+     buffer::WriteGuard< DeviceBuffer<T, T_Dim, T_DataAccessPolicy> > dst,
+     buffer::ReadGuard< HostBuffer<T, T_Dim, T_DataAccessPolicy> > src
 )
 {
     Environment<>::task(

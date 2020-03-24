@@ -72,14 +72,15 @@ namespace size
         ReadGuard read() const noexcept { return *this; }
         std::size_t get() const { return this->std::shared_ptr<Buffer>::get()->get_size(); }
         auto data_space() const { return this->std::shared_ptr<Buffer>::get()->getCurrentDataSpace(); }
+        auto getDataSpace() const { return this->data_space(); }
 
     protected:
         friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
         friend Buffer;
 
-        ReadGuard( std::shared_ptr< Buffer > obj )
+        ReadGuard( std::shared_ptr< Buffer > const & obj ) noexcept
             : std::shared_ptr< Buffer >( obj )
-        {}        
+        {}
     };
 
     template < typename Buffer >
@@ -97,7 +98,7 @@ namespace size
         friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
         friend Buffer;
 
-        WriteGuard( std::shared_ptr< Buffer > obj )
+        WriteGuard( std::shared_ptr< Buffer > const & obj ) noexcept
             : ReadGuard< Buffer >( obj )
         {}
     };
@@ -106,15 +107,9 @@ namespace size
 namespace data
 {
     template < typename Buffer >
-    struct ReadGuard : std::shared_ptr< Buffer >
+    struct ReadGuardBase
+        : std::shared_ptr< Buffer >
     {
-        operator rg::ResourceAccess() const
-        {
-            return this->get()->access_data( rg::access::IOAccess::read );
-        }
-
-        ReadGuard read() const noexcept { return *this; }
-
         using Item = typename Buffer::Item;
         using DataBox = typename Buffer::DataBoxType;
 
@@ -127,21 +122,14 @@ namespace data
         friend class ::pmacc::mem::buffer::ReadGuard< Buffer >;
         friend Buffer;
 
-        ReadGuard( std::shared_ptr< Buffer > obj )
+        ReadGuardBase( std::shared_ptr< Buffer > const & obj ) noexcept
             : std::shared_ptr< Buffer >( obj )
         {}
     };
 
     template < typename Buffer >
-    struct WriteGuard : ReadGuard< Buffer >
+    struct WriteGuardBase : ReadGuardBase< Buffer >
     {
-        operator rg::ResourceAccess() const
-        {
-            return this->get()->access_data( rg::access::IOAccess::write );
-        }
-
-        WriteGuard write() const noexcept { return *this; }
-
         using Item = typename Buffer::Item;
         using DataBox = typename Buffer::DataBoxType;
 
@@ -155,9 +143,36 @@ namespace data
         friend class ::pmacc::mem::buffer::WriteGuard< Buffer >;
         friend Buffer;
 
-        WriteGuard( std::shared_ptr< Buffer > obj )
-            : ReadGuard< Buffer >( obj )
+        WriteGuardBase( std::shared_ptr< Buffer > const & obj ) noexcept
+            : ReadGuardBase< Buffer >( obj )
         {}
+    };
+
+    template <
+        typename Buffer,
+        typename Sfinae = void
+    >
+    struct ReadGuard
+        : ReadGuardBase< Buffer >
+    {
+        ReadGuard( std::shared_ptr< Buffer > const & obj ) noexcept
+            : ReadGuardBase< Buffer >( obj ) {}
+
+        ReadGuard read() const { return *this; }
+    };
+
+    template <
+        typename Buffer,
+        typename Sfinae = void
+    >
+    struct WriteGuard
+        : WriteGuardBase< Buffer >
+    {
+        WriteGuard( std::shared_ptr< Buffer > const & obj ) noexcept
+            : WriteGuardBase< Buffer > ( obj ) {}
+
+        ReadGuard< Buffer > read() const { return *this; }
+        WriteGuard write() const  { return *this; }
     };
 } // namespace data
 
@@ -166,13 +181,13 @@ struct ReadGuard : public std::shared_ptr< Buffer >
 {
     ReadGuard read() const noexcept { return *this; }
 
-    auto data() const noexcept { return data::ReadGuard<Buffer>( *this ); }
-    auto size() const noexcept { return size::ReadGuard<Buffer>( *this ); }
+    auto data() const { return this->get()->data_guard().read(); }
+    auto size() const { return this->get()->size_guard().read(); }
 
 protected:
     friend Buffer;
 
-    ReadGuard( std::shared_ptr< Buffer > obj )
+    ReadGuard( std::shared_ptr< Buffer > const & obj ) noexcept
         : std::shared_ptr< Buffer >( obj )
     {}
 };
@@ -182,13 +197,13 @@ struct WriteGuard : ReadGuard< Buffer >
 {
     WriteGuard write() const noexcept { return *this; }
 
-    auto data() const noexcept { return data::WriteGuard<Buffer>( (std::shared_ptr<Buffer>)*this ); }
-    auto size() const noexcept { return size::WriteGuard<Buffer>( (std::shared_ptr<Buffer>)*this ); }
+    auto data() const { return this->get()->data_guard().write(); }
+    auto size() const { return this->get()->size_guard().write(); }
 
 protected:
     friend Buffer;
 
-    WriteGuard( std::shared_ptr<Buffer> obj )
+    WriteGuard( std::shared_ptr<Buffer> const & obj ) noexcept
         : ReadGuard<Buffer>( obj )
     {}
 };
@@ -196,8 +211,14 @@ protected:
 } // namespace buffer
 
 template < typename Buffer >
-struct BufferResource : buffer::WriteGuard< Buffer >
+struct BufferResource
+    : buffer::WriteGuard< Buffer >
 {
+    /*
+    BufferResource( BufferResource const & other )
+        : buffer::WriteGuard<Buffer>( other )
+    {}
+    */
     template < typename... Args >
     BufferResource( Args&&... args )
         : buffer::WriteGuard<Buffer>( std::make_shared<Buffer>() )
@@ -239,8 +260,18 @@ struct BufferResource : buffer::WriteGuard< Buffer >
     public:
         using Item = T_Item;
         static constexpr size_t dim = T_dim;
+        using DataAccessPolicy = T_DataAccessPolicy;
 
         typedef DataBox< PitchedBox<Item, dim> > DataBoxType;
+
+        buffer::data::WriteGuard< Buffer > data_guard()
+        {
+            return buffer::data::WriteGuard<Buffer>( this->shared_from_this() );
+        }
+        buffer::size::WriteGuard< Buffer > size_guard()
+        {
+            return buffer::size::WriteGuard<Buffer>( this->shared_from_this() );
+        }
 
         /** constructor
          *
@@ -402,7 +433,7 @@ struct BufferResource : buffer::WriteGuard< Buffer >
             return this->resource_size.make_access( mode );
         }
 
-        rg::ResourceAccess read_size() const
+        virtual rg::ResourceAccess read_size() const
         {
             return this->access_size( rg::access::IOAccess::read );
         }
@@ -430,7 +461,7 @@ struct BufferResource : buffer::WriteGuard< Buffer >
         DataSpace<dim> data_space;
         DataSpace<dim> m_physicalMemorySize;
 
-        size_t *current_size;
+        size_t * current_size;
 
         rg::Resource< rg::access::IOAccess > resource_size;
         rg::Resource< T_DataAccessPolicy > resource_data;
@@ -447,20 +478,59 @@ namespace redGrapes
 namespace trait
 {
 
-template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::size::ReadGuard<Buffer> );
-template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::size::WriteGuard<Buffer> );
-template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::data::ReadGuard<Buffer> );
-template< typename Buffer >
-TRAIT_BUILD_RESOURCE_PROPERTIES( pmacc::mem::buffer::data::WriteGuard<Buffer> );
+/*
+ * Property Builders for Buffers that use an IOAccess policy
+ */
 
 template < typename Buffer >
-struct BuildProperties< pmacc::mem::buffer::ReadGuard<Buffer> >
+struct BuildProperties<
+    pmacc::mem::buffer::data::ReadGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            rg::access::IOAccess
+        >::value
+    >::type
+>
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::buffer::ReadGuard<Buffer> const & buf)
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::ReadGuard< Buffer > const & buf
+    )
+    {
+        builder.add( buf.get()->access_data(rg::access::IOAccess::read) );
+    }
+};
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::data::WriteGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            rg::access::IOAccess
+        >::value
+    >::type
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::WriteGuard< Buffer > const & buf
+    )
+    {
+        builder.add( buf.get()->access_data(rg::access::IOAccess::write) );
+    }
+};
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::ReadGuard< Buffer >
+>
+{
+    template < typename Builder >
+    static void build(Builder & builder, pmacc::mem::buffer::ReadGuard< Buffer > const & buf)
     {
         builder.add( buf.size() );
         builder.add( buf.data() );
@@ -468,10 +538,12 @@ struct BuildProperties< pmacc::mem::buffer::ReadGuard<Buffer> >
 };
 
 template < typename Buffer >
-struct BuildProperties< pmacc::mem::buffer::WriteGuard<Buffer> >
+struct BuildProperties<
+    pmacc::mem::buffer::WriteGuard< Buffer >
+>
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::buffer::WriteGuard<Buffer> const & buf)
+    static void build(Builder & builder, pmacc::mem::buffer::WriteGuard< Buffer > const & buf)
     {
         builder.add( buf.size() );
         builder.add( buf.data() );

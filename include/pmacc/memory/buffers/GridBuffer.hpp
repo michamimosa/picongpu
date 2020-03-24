@@ -25,7 +25,10 @@
 #include "pmacc/mappings/simulation/EnvironmentController.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/memory/buffers/ExchangeIntern.hpp"
-#include "pmacc/memory/buffers/HostDeviceBuffer.hpp"
+#include <pmacc/memory/buffers/Buffer.hpp>
+#include <pmacc/memory/buffers/HostBufferIntern.hpp>
+#include <pmacc/memory/buffers/DeviceBufferIntern.hpp>
+#include <pmacc/memory/buffers/HostDeviceBuffer.hpp>
 
 #include <sstream>
 #include <stdexcept>
@@ -77,15 +80,14 @@ private:
 
 namespace grid_buffer
 {
-
 namespace data
 {
-
-struct Access {
+struct Access
+{
     rg::access::IOAccess mode;
 
-    enum AreaType area;
-    enum ExchangeType direction;
+    uint32_t area;
+    uint32_t direction;
 
     static bool is_serial( Access const & a, Access const & b )
     {
@@ -101,14 +103,14 @@ struct Access {
 
             case BORDER:
             case GUARD:
-                return a.direction & bdirection;
+                return a.direction & b.direction;
             }
         }
         else
             return false;
     }
 
-    bool is_superset_of( Access const & other )
+    bool is_superset_of( Access const & other ) const
     {
         if(
             this->area == other.area &&
@@ -128,13 +130,103 @@ struct Access {
         else
             return false;
     }
+
+    friend bool operator==(Access const& a, Access const & b)
+    {
+        return a.area == b.area && a.direction == b.direction;
+    }
+
+    friend std::ostream & operator<<(std::ostream & out, Access const & a)
+    {
+        pmacc::type::ExchangeTypeNames names;
+        out << "GridAccess { mode = " << a.mode << ", area = {";
+        if( a.area & CORE )
+            out << "CORE;";
+        if( a.area & BORDER )
+            out << "BORDER;";
+        if( a.area & GUARD )
+            out << "GUARD;";
+        out << "}, direction = " << names[a.direction] << " }";
+        return out;
+    }
 };
 
 } // namespace data
-
-
-
 } // namespace grid_buffer
+
+namespace buffer
+{
+namespace data
+{
+
+template < typename Buffer >
+struct ReadGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : ReadGuardBase< Buffer >
+{
+    //protected:
+    uint32_t area;
+    std::vector< uint32_t > directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< ReadGuard >;
+
+public:
+    ReadGuard( std::shared_ptr< Buffer > const & obj )
+        : ReadGuardBase< Buffer >( obj )
+        , area{ CORE + BORDER + GUARD }
+        , directions{
+              TOP+LEFT, TOP, TOP+RIGHT,
+              RIGHT, BOTTOM+RIGHT,
+              BOTTOM, BOTTOM+LEFT, LEFT
+          }
+    {}
+
+    ReadGuard read() const { return *this; }
+};
+
+template < typename Buffer >
+struct WriteGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : WriteGuardBase< Buffer >
+{
+public:
+    uint32_t area;
+    std::vector< uint32_t > directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< WriteGuard >;
+
+    WriteGuard( std::shared_ptr< Buffer > const & obj )
+        : WriteGuardBase< Buffer >( obj )
+        , area{ CORE + BORDER + GUARD }
+        , directions{
+              TOP+LEFT, TOP, TOP+RIGHT,
+              RIGHT, BOTTOM+RIGHT,
+              BOTTOM, BOTTOM+LEFT, LEFT
+          }
+    {}
+
+    ReadGuard< Buffer > read() const { return *this; }
+    WriteGuard write() const { return *this; }
+};
+
+} // namespace data
+} // namespace buffer
 
 /**
  * GridBuffer represents a DIM-dimensional buffer which exists on the host as well as on the device.
@@ -147,10 +239,12 @@ struct Access {
  * @tparam DIM dimension of the buffers
  * @tparam BORDERTYPE optional type for border data in the buffers. TYPE is used by default.
  */
-template <class TYPE, unsigned DIM, class BORDERTYPE = TYPE>
-class GridBuffer: public HostDeviceBuffer<TYPE, DIM>
+template <class TYPE, std::size_t T_dim, typename BORDERTYPE>
+class GridBuffer
+    : public HostDeviceBuffer<TYPE, T_dim, grid_buffer::data::Access>
 {
-    typedef HostDeviceBuffer<TYPE, DIM> Parent;
+    typedef HostDeviceBuffer<TYPE, T_dim, grid_buffer::data::Access> Parent;
+
 public:
 
     typedef typename Parent::DataBoxType DataBoxType;
@@ -161,7 +255,7 @@ public:
      * @param gridLayout layout of the buffers, including border-cells
      * @param sizeOnDevice if true, size information exists on device, too.
      */
-    GridBuffer(const GridLayout<DIM>& gridLayout, bool sizeOnDevice = false) :
+    GridBuffer(const GridLayout<T_dim>& gridLayout, bool sizeOnDevice = false) :
     Parent(gridLayout.getDataSpace(), sizeOnDevice),
     gridLayout(gridLayout),
     hasOneExchange(false),
@@ -180,11 +274,11 @@ public:
      *        performance on host-device copies, but some algorithms on the device
      *        might need to know the size of the buffer)
      */
-    GridBuffer(const DataSpace<DIM>& dataSpace, bool sizeOnDevice = false) :
-    Parent(dataSpace, sizeOnDevice),
-    gridLayout(dataSpace),
-    hasOneExchange(false),
-    maxExchange(0)
+    GridBuffer(DataSpace<T_dim> const & dataSpace, bool sizeOnDevice = false) :
+        Parent(dataSpace, sizeOnDevice),
+        gridLayout(dataSpace),
+        hasOneExchange(false),
+        maxExchange(0)
     {
         init();
     }
@@ -200,21 +294,23 @@ public:
      *        performance on host-device copies, but some algorithms on the device
      *        might need to know the size of the buffer)
      */
-    GridBuffer(DeviceBuffer<TYPE, DIM>& otherDeviceBuffer, const GridLayout<DIM>& gridLayout, bool sizeOnDevice = false) :
-    Parent(otherDeviceBuffer, gridLayout.getDataSpace(), sizeOnDevice),
-    gridLayout(gridLayout),
-    hasOneExchange(false),
-    maxExchange(0)
+    GridBuffer(DeviceBuffer<TYPE, T_dim, grid_buffer::data::Access> & otherDeviceBuffer,
+               GridLayout<T_dim> const & gridLayout,
+               bool sizeOnDevice = false) :
+        Parent(otherDeviceBuffer, gridLayout.getDataSpace(), sizeOnDevice),
+        gridLayout(gridLayout),
+        hasOneExchange(false),
+        maxExchange(0)
     {
         init();
     }
 
     GridBuffer(
-               HostBuffer<TYPE, DIM>& otherHostBuffer,
-               const DataSpace<DIM>& offsetHost,
-               DeviceBuffer<TYPE, DIM>& otherDeviceBuffer,
-               const DataSpace<DIM>& offsetDevice,
-               const GridLayout<DIM>& gridLayout,
+               HostBuffer<TYPE, T_dim, grid_buffer::data::Access>& otherHostBuffer,
+               const DataSpace<T_dim>& offsetHost,
+               DeviceBuffer<TYPE, T_dim, grid_buffer::data::Access>& otherDeviceBuffer,
+               const DataSpace<T_dim>& offsetDevice,
+               const GridLayout<T_dim>& gridLayout,
                bool sizeOnDevice = false) :
     Parent(otherHostBuffer, offsetHost, otherDeviceBuffer, offsetDevice, gridLayout.getDataSpace(), sizeOnDevice),
     gridLayout(gridLayout),
@@ -256,7 +352,7 @@ public:
      * @param sizeOnDeviceReceive if true, internal receive buffers must store their
      *        size additionally on the device
      */
-    void addExchange(uint32_t dataPlace, const Mask &receive, DataSpace<DIM> guardingCells, uint32_t communicationTag, bool sizeOnDeviceSend, bool sizeOnDeviceReceive )
+    void addExchange(uint32_t dataPlace, const Mask &receive, DataSpace<T_dim> guardingCells, uint32_t communicationTag, bool sizeOnDeviceSend, bool sizeOnDeviceReceive )
     {
 
         if (hasOneExchange && (communicationTag != lastUsedCommunicationTag))
@@ -270,7 +366,7 @@ public:
 
 
 
-        for (uint32_t ex = 1; ex< -12 * (int) DIM + 6 * (int) DIM * (int) DIM + 9; ++ex)
+        for (uint32_t ex = 1; ex< -12 * (int) T_dim + 6 * (int) T_dim * (int) T_dim + 9; ++ex)
         {
             if (send.isSet(ex))
             {
@@ -292,13 +388,13 @@ public:
                 }
 
                 maxExchange = std::max(maxExchange, ex + 1u);
-                sendExchanges[ex] = new ExchangeIntern<BORDERTYPE, DIM > (this->getDeviceBuffer(), gridLayout, guardingCells,
+                sendExchanges[ex] = new ExchangeIntern< BORDERTYPE, T_dim, grid_buffer::data::Access > (this->getDeviceBuffer(), gridLayout, guardingCells,
                                                                           (ExchangeType) ex, uniqCommunicationTag,
                                                                           dataPlace == GUARD ? BORDER : GUARD, sizeOnDeviceSend);
                 ExchangeType recvex = Mask::getMirroredExchangeType(ex);
                 maxExchange = std::max(maxExchange, recvex + 1u);
                 receiveExchanges[recvex] =
-                    new ExchangeIntern<BORDERTYPE, DIM > (
+                    new ExchangeIntern< BORDERTYPE, T_dim, grid_buffer::data::Access > (
                                                           this->getDeviceBuffer(),
                                                           gridLayout,
                                                           guardingCells,
@@ -328,7 +424,7 @@ public:
      *        performance on host-device copies, but some algorithms on the device
      *        might need to know the size of the buffer)
      */
-    void addExchange(uint32_t dataPlace, const Mask &receive, DataSpace<DIM> guardingCells, uint32_t communicationTag, bool sizeOnDevice = false)
+    void addExchange(uint32_t dataPlace, const Mask &receive, DataSpace<T_dim> guardingCells, uint32_t communicationTag, bool sizeOnDevice = false)
     {
         addExchange( dataPlace, receive, guardingCells, communicationTag, sizeOnDevice, sizeOnDevice );
     }
@@ -350,7 +446,7 @@ public:
      * @param sizeOnDeviceReceive if true, internal receive buffers must store their
      *        size additionally on the device
      */
-    void addExchangeBuffer(const Mask &receive, const DataSpace<DIM> &dataSpace, uint32_t communicationTag, bool sizeOnDeviceSend, bool sizeOnDeviceReceive )
+    void addExchangeBuffer(const Mask &receive, const DataSpace<T_dim> &dataSpace, uint32_t communicationTag, bool sizeOnDeviceSend, bool sizeOnDeviceReceive )
     {
 
         if (hasOneExchange && (communicationTag != lastUsedCommunicationTag))
@@ -386,12 +482,12 @@ public:
 
                     //GridLayout<DIM> memoryLayout(size);
                     maxExchange = std::max(maxExchange, ex + 1u);
-                    sendExchanges[ex] = new ExchangeIntern<BORDERTYPE, DIM > (/*memoryLayout*/ dataSpace,
+                    sendExchanges[ex] = new ExchangeIntern< BORDERTYPE, T_dim, grid_buffer::data::Access > (/*memoryLayout*/ dataSpace,
                                                                               ex, uniqCommunicationTag, sizeOnDeviceSend);
 
                     ExchangeType recvex = Mask::getMirroredExchangeType(ex);
                     maxExchange = std::max(maxExchange, recvex + 1u);
-                    receiveExchanges[recvex] = new ExchangeIntern<BORDERTYPE, DIM > (/*memoryLayout*/ dataSpace,
+                    receiveExchanges[recvex] = new ExchangeIntern< BORDERTYPE, T_dim, grid_buffer::data::Access > (/*memoryLayout*/ dataSpace,
                                                                                      recvex, uniqCommunicationTag, sizeOnDeviceReceive);
                 }
             }
@@ -413,7 +509,7 @@ public:
      *        performance on host-device copies, but some algorithms on the device
      *        might need to know the size of the buffer)
      */
-    void addExchangeBuffer(const Mask &receive, const DataSpace<DIM> &dataSpace, uint32_t communicationTag, bool sizeOnDevice = false )
+    void addExchangeBuffer(const Mask &receive, const DataSpace<T_dim> &dataSpace, uint32_t communicationTag, bool sizeOnDevice = false )
     {
         addExchangeBuffer( receive, dataSpace, communicationTag, sizeOnDevice, sizeOnDevice );
     }
@@ -449,7 +545,7 @@ public:
      * @param ex the direction to query
      * @return the Exchange for sending data
      */
-    Exchange<BORDERTYPE, DIM>& getSendExchange(uint32_t ex) const
+    Exchange<BORDERTYPE, T_dim, grid_buffer::data::Access>& getSendExchange(uint32_t ex) const
     {
         return *sendExchanges[ex];
     }
@@ -463,7 +559,7 @@ public:
      * @param ex the direction to query
      * @return the Exchange for receiving data
      */
-    Exchange<BORDERTYPE, DIM>& getReceiveExchange(uint32_t ex) const
+    Exchange<BORDERTYPE, T_dim, grid_buffer::data::Access>& getReceiveExchange(uint32_t ex) const
     {
         return *receiveExchanges[ex];
     }
@@ -475,7 +571,7 @@ public:
      */
     Mask getSendMask() const
     {
-        return (Environment<DIM>::get().EnvironmentController().getCommunicationMask() & sendMask);
+        return (Environment<T_dim>::get().EnvironmentController().getCommunicationMask() & sendMask);
     }
 
     /**
@@ -485,7 +581,7 @@ public:
      */
     Mask getReceiveMask() const
     {
-        return (Environment<DIM>::get().EnvironmentController().getCommunicationMask() & receiveMask);
+        return (Environment<T_dim>::get().EnvironmentController().getCommunicationMask() & receiveMask);
     }
 
     /**
@@ -520,14 +616,14 @@ public:
      *
      * @return the layout of this buffer
      */
-    GridLayout<DIM> getGridLayout()
+    GridLayout<T_dim> getGridLayout()
     {
         return gridLayout;
     }
 
 private:
 
-    friend class Environment<DIM>;
+    friend class Environment<T_dim>;
 
     void init()
     {
@@ -542,23 +638,96 @@ protected:
     /*if we have one exchange we don't check if communicationTag has been used before*/
     bool hasOneExchange;
     uint32_t lastUsedCommunicationTag;
-    GridLayout<DIM> gridLayout;
+    GridLayout<T_dim> gridLayout;
 
     Mask sendMask;
     Mask receiveMask;
 
-    ExchangeIntern<BORDERTYPE, DIM>* sendExchanges[27];
-    ExchangeIntern<BORDERTYPE, DIM>* receiveExchanges[27];
+    ExchangeIntern<BORDERTYPE, T_dim, grid_buffer::data::Access>* sendExchanges[27];
+    ExchangeIntern<BORDERTYPE, T_dim, grid_buffer::data::Access>* receiveExchanges[27];
 
     uint32_t maxExchange; //use max exchanges and run over the array is faster as use set from stl
 };
 
 template < typename T_Item, std::size_t T_dim, typename T_Bordertype >
-struct BufferResource< GridBuffer< T_Item, T_dim, T_Bordertype > > : BufferResource< HostDeviceBuffer< T_Item, T_dim > >
+struct BufferResource< GridBuffer< T_Item, T_dim, T_Bordertype > >
+    : BufferResource< HostDeviceBuffer< T_Item, T_dim, grid_buffer::data::Access > >
 {
+    template < typename... Args >
+    BufferResource( Args&&... args )
+        : BufferResource< HostDeviceBuffer< T_Item, T_dim, grid_buffer::data::Access > >(std::static_pointer_cast< HostDeviceBuffer< T_Item, T_dim, grid_buffer::data::Access > >( std::make_shared< GridBuffer< T_Item, T_dim, T_Bordertype > >( std::forward<Args>(args)... )))
+    {}    
 };
 
 } // namespace mem
 
 } // namespace pmacc
+
+namespace redGrapes
+{
+namespace trait
+{
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::data::ReadGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::ReadGuard< Buffer > const & buf
+    )
+    {
+        for(auto dir : buf.directions)
+            builder.add(
+                buf.get()->access_data(
+                    pmacc::mem::grid_buffer::data::Access {
+                        rg::access::IOAccess::read,
+                        buf.area,
+                        dir
+                    }));
+       
+    }
+};
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::data::WriteGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::ReadGuard< Buffer > const & buf
+    )
+    {
+        for(auto dir : buf.directions)
+            builder.add(
+                buf.get()->access_data(
+                    pmacc::mem::grid_buffer::data::Access {
+                        rg::access::IOAccess::write,
+                        buf.area,
+                        dir
+                    }));
+       
+    }
+};
+
+} // namespace trait
+
+} // namespace redGrapes
+
 
