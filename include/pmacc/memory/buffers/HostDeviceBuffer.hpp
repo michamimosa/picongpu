@@ -186,25 +186,37 @@ namespace redGrapes
 namespace trait
 {
 
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties< pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> >
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct BuildProperties<
+    pmacc::mem::host_device_buffer::ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
+>
 {
     template < typename Builder >
     static void build(Builder & builder, pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
     {
         BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
-        BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
+        BuildProperties< decltype(buf.getDeviceBuffer()) >::build( builder, buf.getDeviceBuffer() );
     }
 };
 
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties< pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> >
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct BuildProperties<
+    pmacc::mem::host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
+>
 {
     template < typename Builder >
     static void build(Builder & builder, pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
     {
         BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
-        BuildProperties< decltype(buf.getDeviceBufer()) >::build( builder, buf.getDeviceBuffer() );
+        BuildProperties< decltype(buf.getDeviceBuffer()) >::build( builder, buf.getDeviceBuffer() );
     }
 };
 

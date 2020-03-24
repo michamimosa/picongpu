@@ -157,6 +157,7 @@ public:
                 }
             },
             TaskProperties::Builder()
+                .resources({ Environment<>::get().cuda_stream() })
                 .label("DeviceBufferIntern::reset()"),
             this->buffer_resource().write()
         );
@@ -265,7 +266,7 @@ public:
                 auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 if (obj->sizeOnDevice)
                 {
-                    obj->Buffer< Item, dim >::set_size( new_size );
+                    obj->Buffer< Item, dim, T_DataAccessPolicy >::set_size( new_size );
                     CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
                         1,
                         1,
@@ -369,6 +370,7 @@ private:
                 obj->reset( false );
             },
             TaskProperties::Builder()
+                .resources({ Environment<>::get().cuda_stream() })
                 .label("DeviceBufferIntern::createData()"),
             this->buffer_resource().write()
         );
@@ -409,7 +411,7 @@ private:
     void createSizeOnDevice(bool sizeOnDevice)
     {
         Environment<>::task(
-            [sizeOnDevice]( auto x )
+            [sizeOnDevice]( auto x, auto cuda_stream )
             {
                 auto obj = std::static_pointer_cast< DeviceBufferIntern >( x );
                 obj->sizeOnDevicePtr = nullptr;
@@ -423,7 +425,8 @@ private:
             },
             TaskProperties::Builder()
                 .label("DeviceBufferIntern::createSizeOnDevice()"),
-            this->buffer_resource().size().write()
+            this->buffer_resource().size().write(),
+            Environment<>::get().cuda_stream()
         );
     }
 

@@ -37,11 +37,71 @@ namespace mem
 {
 
 template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
+class Buffer;
+
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
 class HostBuffer;
 
 template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
-class Buffer;
+class DeviceBuffer;
 
+namespace device_buffer
+{
+namespace data
+{
+
+template < typename Buffer >
+struct ReadGuard
+    : pmacc::mem::buffer::data::ReadGuard< Buffer >
+{
+    size_t getPitch() const { this->get()->getPitch(); }
+    cudaPitchedPtr const getCudaPitched() const { return this->get()->getCudaPitched();  }
+
+    ReadGuard read() const noexcept { return *this; }
+
+    ReadGuard( std::shared_ptr< Buffer > const & obj )
+        : pmacc::mem::buffer::data::ReadGuard< Buffer >( obj )
+    {}
+};
+
+template < typename Buffer >
+struct WriteGuard
+    : pmacc::mem::buffer::data::WriteGuard< Buffer >
+{
+    size_t getPitch() const { this->get()->getPitch(); }
+    cudaPitchedPtr getCudaPitched() const { return this->get()->getCudaPitched();  }
+
+    ReadGuard<Buffer> read() const noexcept { return *this; }
+    WriteGuard write() const noexcept { return *this; }
+
+    WriteGuard( std::shared_ptr< Buffer > const & obj )
+        : pmacc::mem::buffer::data::WriteGuard< Buffer >( obj )
+    {}
+};
+
+} // namespace data
+
+} // namespace device_buffer
+
+/*
+template <class TYPE, std::size_t DIM, typename T_DataAccessPolicy>
+struct BufferResource< DeviceBuffer< TYPE, DIM, T_DataAccessPolicy> >
+    : device_buffer::WriteGuard< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> >
+{
+    using Buffer = DeviceBuffer<TYPE, DIM, T_DataAccessPolicy>;
+
+    template < typename... Args >
+    BufferResource( Args&&... args )
+        : device_buffer::WriteGuard<Buffer>( std::make_shared<Buffer>() )
+    {
+        this->get()->init( std::forward<Args>(args)... );
+    }
+
+    BufferResource( std::shared_ptr<Buffer> obj )
+        : device_buffer::WriteGuard<Buffer>( obj )
+    {}
+};
+*/
 /**
  * Interface for a DIM-dimensional Buffer of type TYPE on the device.
  *
@@ -160,9 +220,82 @@ public:
      */
     //virtual void copyFrom(DeviceBuffer<TYPE, DIM>& other) = 0;
 
+    device_buffer::data::WriteGuard< DeviceBuffer > data_guard()
+    {
+        return typename device_buffer::data::WriteGuard< DeviceBuffer >( this->template shared_from_base< DeviceBuffer >() );
+    }
+
+    rg::ResourceAccess read_size() const
+    {
+        // Needs to be write because the size has to be copied from device
+        // TODO only write if it has to be synced, otherwise read
+        return this->access_size( rg::access::IOAccess::write );
+    }
 };
 
 } // namespace mem
 
 } // namespace pmacc
+
+namespace redGrapes
+{
+namespace trait
+{
+/*
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct BuildProperties<
+    pmacc::mem::buffer::size::ReadGuard<
+        pmacc::mem::DeviceBuffer< T_Item, T_dim, T_DataAccessPolicy>
+    >
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::size::ReadGuard<
+            pmacc::mem::DeviceBuffer< T_Item, T_dim, T_DataAccessPolicy >
+        > const & buf
+    )
+    {
+        builder.add( buf->get()->write_size() );
+    }
+};
+*/
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::device_buffer::data::ReadGuard< Buffer >
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::device_buffer::data::ReadGuard< Buffer > const & buf
+    )
+    {
+        builder.add( (pmacc::mem::buffer::data::ReadGuard< Buffer > const &) buf );
+    }
+};
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::device_buffer::data::WriteGuard< Buffer >
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::device_buffer::data::WriteGuard< Buffer > const & buf
+    )
+    {
+        builder.add( (pmacc::mem::buffer::data::WriteGuard<Buffer> const &) buf );
+    }
+};
+
+} // namespace trait
+
+} // namespace redGrapes
 

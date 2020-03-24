@@ -25,16 +25,14 @@
 #include "pmacc/mappings/simulation/GridController.hpp"
 #include "pmacc/memory/buffers/Exchange.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
-#include "pmacc/memory/buffers/DeviceBufferIntern.hpp"
-#include "pmacc/memory/buffers/HostBufferIntern.hpp"
-#include "pmacc/memory/MakeUnique.hpp"
 
-#include <pmacc/communication/MPISend.hpp>
-#include <pmacc/communication/MPIReceive.hpp>
-
+#include <pmacc/memory/buffers/DeviceBufferIntern.hpp>
+#include <pmacc/memory/buffers/HostBufferIntern.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToDevice.hpp>
 #include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
 #include <pmacc/memory/buffers/CopyHostToDevice.hpp>
+//#include <pmacc/communication/MPISend.hpp>
+//#include <pmacc/communication/MPIReceive.hpp>
 
 #include "pmacc/assert.hpp"
 #include "pmacc/types.hpp"
@@ -43,21 +41,28 @@
 
 namespace pmacc
 {
-
-    /** Internal Exchange implementation.
-     *
-     * There will be no host double buffer available if MPI direct for PMacc is enabled.
+namespace mem
+{
+   
+    /**
+     * Internal Exchange implementation.
      */
-    template <class TYPE, unsigned DIM>
-    class ExchangeIntern : public Exchange<TYPE, DIM>
+    template <class TYPE, unsigned DIM, typename T_DataAccessPolicy>
+    class ExchangeIntern : public Exchange<TYPE, DIM, T_DataAccessPolicy>
     {
     public:
 
-        ExchangeIntern(DeviceBuffer<TYPE, DIM>& source, GridLayout<DIM> memoryLayout, DataSpace<DIM> guardingCells, uint32_t exchange,
-                       uint32_t communicationTag, uint32_t area = BORDER, bool sizeOnDevice = false) :
-        Exchange<TYPE, DIM>(exchange, communicationTag), deviceDoubleBuffer(nullptr), hostBuffer(nullptr)
+        ExchangeIntern(
+            BufferResource< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> > source,
+            GridLayout<DIM> memoryLayout,
+            DataSpace<DIM> guardingCells,
+            uint32_t exchange,
+            uint32_t communicationTag,
+            uint32_t area = BORDER,
+            bool sizeOnDevice = false
+        )
+            : Exchange<TYPE, DIM, T_DataAccessPolicy>( exchange, communicationTag )
         {
-
             PMACC_ASSERT(!guardingCells.isOneDimensionGreaterThan(memoryLayout.getGuard()));
 
             DataSpace<DIM> tmp_size = memoryLayout.getDataSpaceWithoutGuarding();
@@ -75,8 +80,8 @@ namespace pmacc
 
             /*This is only a pointer to other device data
              */
-            using DeviceBuffer = DeviceBufferIntern<TYPE, DIM>;
-            deviceBuffer = memory::makeUnique<DeviceBuffer>(
+            using DeviceBuffer = DeviceBufferIntern<TYPE, DIM, T_DataAccessPolicy>;
+            deviceBuffer = BufferResource< DeviceBuffer >(
                 source,
                 tmp_size,
                 exchangeTypeToOffset(
@@ -87,48 +92,43 @@ namespace pmacc
                 ),
                 sizeOnDevice
             );
+
             if (DIM > DIM1)
             {
                 /*create double buffer on gpu for faster memory transfers*/
-                deviceDoubleBuffer = memory::makeUnique<DeviceBuffer>(
+                deviceDoubleBuffer = BufferResource< DeviceBuffer >(
                     tmp_size,
                     false,
                     true
                 );
             }
 
-            if(!Environment<>::get().isMpiDirectEnabled())
-            {
-                using HostBuffer = HostBufferIntern<TYPE, DIM>;
-                hostBuffer = memory::makeUnique<HostBuffer>(tmp_size);
-            }
+            using HostBuffer = HostBufferIntern<TYPE, DIM>;
+            hostBuffer = BufferResource<HostBuffer>(tmp_size);
         }
 
-        ExchangeIntern(DataSpace<DIM> exchangeDataSpace, uint32_t exchange,
-                       uint32_t communicationTag, bool sizeOnDevice = false) :
-        Exchange<TYPE, DIM>(exchange, communicationTag), deviceDoubleBuffer(nullptr), hostBuffer(nullptr)
+        ExchangeIntern(DataSpace<DIM> exchangeDataSpace,
+                       uint32_t exchange,
+                       uint32_t communicationTag,
+                       bool sizeOnDevice = false)
+            : Exchange<TYPE, DIM, T_DataAccessPolicy>(exchange, communicationTag)
+            , deviceBuffer( exchangeDataSpace, sizeOnDevice )
         {
-            using DeviceBuffer = DeviceBufferIntern<TYPE, DIM >;
-            deviceBuffer = memory::makeUnique<DeviceBuffer>(
-                exchangeDataSpace,
-                sizeOnDevice
-            );
+            using DeviceBuffer = DeviceBufferIntern< TYPE, DIM, T_DataAccessPolicy >;
+
             //  this->deviceBuffer = new DeviceBufferIntern<TYPE, DIM > (exchangeDataSpace, sizeOnDevice,true);
             if (DIM > DIM1)
             {
                 /*create double buffer on gpu for faster memory transfers*/
-                deviceDoubleBuffer = memory::makeUnique<DeviceBuffer>(
+                deviceDoubleBuffer = BufferResource< DeviceBuffer >(
                     exchangeDataSpace,
                     false,
                     true
                 );
             }
 
-            if(!Environment<>::get().isMpiDirectEnabled())
-            {
-                using HostBuffer = HostBufferIntern<TYPE, DIM>;
-                hostBuffer = memory::makeUnique<HostBuffer>(exchangeDataSpace);
-            }
+            using HostBuffer = HostBufferIntern< TYPE, DIM, T_DataAccessPolicy >;
+            hostBuffer = BufferResource< HostBuffer >( exchangeDataSpace );
         }
 
         /**
@@ -226,63 +226,63 @@ namespace pmacc
 
         }
 
-        HostBuffer<TYPE, DIM>& getHostBuffer() override
+        virtual BufferResource< HostBuffer<TYPE, DIM, T_DataAccessPolicy> > getHostBuffer()
         {
-            PMACC_ASSERT(hostBuffer != nullptr);
-            return *hostBuffer;
+            return BufferResource<HostBuffer<TYPE,DIM,T_DataAccessPolicy>>(std::static_pointer_cast<HostBuffer<TYPE, DIM, T_DataAccessPolicy >>( *hostBuffer ));
         }
 
-        DeviceBuffer<TYPE, DIM>& getDeviceBuffer() override
+        virtual BufferResource< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> > getDeviceBuffer()
         {
-            PMACC_ASSERT(deviceBuffer != nullptr);
-            return *deviceBuffer;
+            return BufferResource<DeviceBuffer<TYPE,DIM,T_DataAccessPolicy>>(std::static_pointer_cast<DeviceBuffer<TYPE,DIM,T_DataAccessPolicy>>(*deviceBuffer));
         }
 
         bool hasDeviceDoubleBuffer() override
         {
-            return deviceDoubleBuffer != nullptr;
+            return deviceDoubleBuffer != std::nullopt;
         }
 
-        DeviceBuffer<TYPE, DIM>& getDeviceDoubleBuffer() override
+        virtual BufferResource< DeviceBuffer<TYPE, DIM, T_DataAccessPolicy> > getDeviceDoubleBuffer()
         {
-            PMACC_ASSERT(deviceDoubleBuffer != nullptr);
-            return *deviceDoubleBuffer;
+            return BufferResource<DeviceBuffer<TYPE,DIM,T_DataAccessPolicy>>(std::static_pointer_cast<DeviceBuffer<TYPE,DIM,T_DataAccessPolicy>>(*deviceDoubleBuffer));
         }
 
         void startSend()
         {
+            /*
             // Device -> Host
             if( this->hasDeviceDoubleBuffer() )
             {
-                memory::buffers::copy(
+                buffer::copy(
                     this->getDeviceDoubleBuffer(),
                     this->getDeviceBuffer()
                 );
-                memory::buffers::copy(
+                buffer::copy(
                     this->getHostBuffer(),
                     this->getDeviceDoubleBuffer()
                 );
             }
             else
             {
-                memory::buffers::copy(
+                buffer::copy(
                     this->getHostBuffer(),
                     this->getDeviceBuffer()
                 );
             }
 
             // communicate between host buffers
-            communication::task_mpi_send(
+            communication::mpi_send(
                 this->getHostBuffer(),
                 this->getExchangeType(),
                 this->getCommunicationTag()
             );
+            */
         }
 
         void startReceive()
         {
+            /*
             // communicate between host buffers
-            communication::task_mpi_receive(
+            communication::mpi_receive(
                 this->getHostBuffer(),
                 this->getExchangeType(),
                 this->getCommunicationTag()
@@ -291,22 +291,23 @@ namespace pmacc
             // Host -> Device
             if( this->hasDeviceDoubleBuffer() )
             {
-                memory::buffers::copy(
+                buffer::copy(
                     this->getDeviceDoubleBuffer(),
                     this->getHostBuffer()
                 );
-                memory::buffers::copy(
+                buffer::copy(
                     this->getDeviceBuffer(),
                     this->getDeviceDoubleBuffer()
                 );
             }
             else
             {
-                memory::buffers::copy(
+                buffer::copy(
                     this->getDeviceBuffer(),
                     this->getHostBuffer()
                 );
             }
+            */
         }
 
         Buffer<TYPE, DIM>* getCommunicationBuffer() override
@@ -323,16 +324,14 @@ namespace pmacc
         }
 
     protected:
-        /** host double buffer of the exchange data
-         *
-         * Is always a nullptr if MPI direct is used
-         */
-        std::unique_ptr< HostBufferIntern<TYPE, DIM> > hostBuffer;
+        std::optional< BufferResource< HostBufferIntern<TYPE, DIM, T_DataAccessPolicy> > > hostBuffer;
 
         //! This buffer is a vector which is used as message buffer for faster memcopy
-        std::unique_ptr< DeviceBufferIntern<TYPE, DIM> > deviceDoubleBuffer;
-        std::unique_ptr< DeviceBufferIntern<TYPE, DIM> > deviceBuffer;
-
+        std::optional< BufferResource< DeviceBufferIntern<TYPE, DIM, T_DataAccessPolicy> > > deviceDoubleBuffer;
+        std::optional< BufferResource< DeviceBufferIntern<TYPE, DIM, T_DataAccessPolicy> > > deviceBuffer;
     };
 
-}
+} // namespace mem
+    
+} // namespace pmacc
+
