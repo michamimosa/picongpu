@@ -15,6 +15,78 @@ namespace host_buffer
 template <
     typename T_Item,
     std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct HostBufferResource;
+
+
+namespace data
+{
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+using ReadGuard =
+    buffer::data::ReadGuard<
+        HostBufferResource<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >
+    >;
+
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+using WriteGuard =
+    buffer::data::WriteGuard<
+        HostBufferResource<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >
+    >;
+}
+
+namespace size
+{
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+using ReadGuard =
+    buffer::size::ReadGuard<
+        HostBufferResource<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >
+    >;
+
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+using WriteGuard =
+    buffer::size::WriteGuard<
+        HostBufferResource<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >
+    >;
+}
+
+
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
     typename T_DataAccessPolicy = rg::access::IOAccess
 >
 struct HostBufferResource
@@ -30,6 +102,9 @@ struct HostBufferResource
 
     using Data = host_buffer::HostBufferData< Item, dim >;
     using Size = buffer::BufferSize< dim >;
+
+    using DataGuard = host_buffer::data::WriteGuard< Item, dim, DataAccessPolicy >;
+    using SizeGuard = host_buffer::size::WriteGuard< Item, dim, DataAccessPolicy >;
 
     HostBufferResource( DataSpace< dim > capacity )
         : rg::SharedResourceObject<
