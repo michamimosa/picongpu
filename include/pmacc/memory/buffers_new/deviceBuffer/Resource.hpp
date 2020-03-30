@@ -36,8 +36,7 @@ struct ReadGuard
         DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy >
     >
 {
-    size_t getPitch() const { this->data.obj->get_pitch(); }
-    cudaPitchedPtr const getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
+    cudaPitchedPtr getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
 
     ReadGuard read() const noexcept { return *this; }
 
@@ -56,8 +55,7 @@ struct WriteGuard
         DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy >
     >
 {
-    size_t getPitch() const { this->data.obj->get_pitch(); }
-    cudaPitchedPtr const getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
+    cudaPitchedPtr getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
 
     ReadGuard< T_Item, T_dim, T_DataAccessPolicy > read() const noexcept { return *this; }
     WriteGuard write() const noexcept { return *this; }

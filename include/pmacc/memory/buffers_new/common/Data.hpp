@@ -28,6 +28,7 @@ struct BufferData
     virtual Item * get_base_ptr() const noexcept = 0;
     virtual Item * get_pointer( DataSpace< dim > offset ) const noexcept = 0;
     virtual DataBoxType get_data_box( DataSpace< dim > offset ) const noexcept = 0;
+    virtual std::size_t getPitch() const noexcept = 0;
 };
 
 } // namespace buffer
