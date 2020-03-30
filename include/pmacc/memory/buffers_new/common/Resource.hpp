@@ -54,6 +54,13 @@ struct GuardBase
         return size.get_data_space();
     }
 
+    /*!
+     */
+    DataSpace< dim > getOffset() const noexcept
+    {
+        return offset;
+    }
+
 protected:
     friend Buffer;
 
@@ -230,8 +237,8 @@ template < typename Buffer >
 struct ReadGuard
     : GuardBase< Buffer >
 {
-    auto size() const noexcept { return size::ReadGuard< Buffer >( *this ); }
-    auto data() const noexcept { return data::ReadGuard< Buffer >( *this ); }
+    auto size() const noexcept { return typename Buffer::SizeGuard( *this ).read(); }
+    auto data() const noexcept { return typename Buffer::DataGuard( *this ).read(); }
 
     ReadGuard< Buffer > read() const noexcept { return *this; }
 
@@ -249,8 +256,8 @@ template < typename Buffer >
 struct WriteGuard
     : GuardBase< Buffer >
 {
-    auto size() const noexcept { return size::WriteGuard< Buffer >( *this ); }
-    auto data() const noexcept { return data::WriteGuard< Buffer >( *this ); }
+    auto size() const noexcept { return typename Buffer::SizeGuard( *this ).write(); }
+    auto data() const noexcept { return typename Buffer::DataGuard( *this ).write(); }
 
     ReadGuard< Buffer > read() const noexcept { return *this; }
     WriteGuard< Buffer > write() const noexcept { return *this; }
