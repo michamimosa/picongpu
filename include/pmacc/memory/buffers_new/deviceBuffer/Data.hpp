@@ -57,6 +57,10 @@ public:
     {
         return pitched_ptr.pitch;
     }
+    size_t getPitch() const noexcept
+    {
+        return pitched_ptr.pitch;
+    }
 
     Item * get_base_ptr() const noexcept
     {
@@ -134,7 +138,7 @@ private:
         pitched_ptr.xsize = capacity[0] * sizeof(Item);
         pitched_ptr.ysize = 1;
 
-        log<ggLog::MEMORY >("Create device fake data: %1% MiB") % (capacity.productOfComponents() * sizeof(Item) / 1024 / 1024);
+        log< ggLog::MEMORY >("Create device fake data: %1% MiB") % (capacity.productOfComponents() * sizeof(Item) / 1024 / 1024);
         CUDA_CHECK(cudaMallocPitch(&pitched_ptr.ptr, &pitched_ptr.pitch, capacity.productOfComponents() * sizeof(Item), 1));
 
         //fake the pitch, thus we can use this 1D Buffer as 2D or 3D
