@@ -67,6 +67,11 @@ struct HostBufferData
         return &(*get_data_box(offset));
     }
 
+    std::size_t getPitch() const noexcept
+    {
+        return capacity[0] * sizeof( Item );
+    }
+
 protected:
     Item * ptr;
     DataSpace< dim > capacity;

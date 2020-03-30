@@ -61,6 +61,13 @@ struct GuardBase
         return offset;
     }
 
+    /*! get pitch of the base buffer
+     */
+    std::size_t getPitch() const noexcept
+    {
+        return data.obj->getPitch();
+    }
+
 protected:
     friend Buffer;
 
@@ -137,6 +144,7 @@ struct ReadGuard : GuardBase< Buffer >
 {
     auto read() { return *this; }
 
+    std::size_t get() const { return this->size.get_current_size(); }
     std::size_t getCurrentSize() const { return this->size.get_current_size(); }
     DataSpace< Buffer::dim > getCurrentDataSpace() const { return this->size.get_current_data_space(); }
 
@@ -150,6 +158,7 @@ struct WriteGuard : ReadGuard< Buffer >
     auto write() { return *this; }
 
     void reset() { this->size.reset(); }
+    void set( std::size_t new_size ) { this->size.set_current_size( new_size ); }
     void setCurrentSize( std::size_t new_size ) { this->size.set_current_size( new_size ); }
 
     WriteGuard( GuardBase< Buffer > const & base )
