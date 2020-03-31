@@ -1,5 +1,6 @@
-/* Copyright 2013-2019 Axel Huebl, Felix Schmitt, Heiko Burau, Rene Widera,
- *                     Wolfgang Hoenig, Benjamin Worpitz, Alexander Grund
+/* Copyright 2013-2020 Axel Huebl, Felix Schmitt, Heiko Burau, Rene Widera,
+ *                     Wolfgang Hoenig, Benjamin Worpitz, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -22,11 +23,13 @@
 
 #pragma once
 
+#include <pmacc/Environment.hpp>
 #include "pmacc/communication/ICommunicator.hpp"
 #include "pmacc/communication/manager_common.hpp"
 #include "pmacc/dimensions/DataSpace.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/types.hpp"
+#include "pmacc/assert.hpp"
 
 #include <mpi.h>
 
@@ -188,39 +191,80 @@ public:
 
     // description in ICommunicator
 
-    MPI_Request* startSend(uint32_t ex, const char *send_data, size_t send_data_count, uint32_t tag)
+    void send(
+        uint32_t ex,
+        char const * send_data,
+        size_t send_data_count,
+        uint32_t tag
+    )
     {
-        MPI_Request *request = new MPI_Request;
+        Environment<DIM>::task(
+            [=]
+            {
+                MPI_Request * request = new MPI_Request;
 
-        MPI_CHECK(MPI_Isend(
-                            (void*) send_data,
-                            static_cast<int>(send_data_count),
-                            MPI_CHAR,
-                            ExchangeTypeToRank(ex),
-                            gridExchangeTag + tag,
-                            topology,
-                            request));
+                MPI_CHECK(MPI_Isend(
+                    send_data,
+                    send_data_count,
+                    MPI_CHAR,
+                    ExchangeTypeToRank(ex),
+                    gridExchangeTag + tag,
+                    topology,
+                    request));
 
-        return request;
+                Environment<DIM>::get().mpi_request_pool().wait( request );
+            },
+            TaskProperties::Builder()
+                .label("CommunicatorMPI::send (ex = " + std::to_string(ex) + ", tag = " + std::to_string(tag) + ")")
+                .mpi_task()
+        ).get();
     }
 
     // description in ICommunicator
 
-    MPI_Request* startReceive(uint32_t ex, char *recv_data, size_t recv_data_max, uint32_t tag)
+    size_t recv(
+        uint32_t ex,
+        char * recv_data,
+        size_t recv_data_max,
+        uint32_t tag
+    )
     {
+        return Environment<DIM>::task(
+            [=]
+            {
+                MPI_Request * request = new MPI_Request;
 
-        MPI_Request *request = new MPI_Request;
+                MPI_CHECK(MPI_Irecv(
+                    recv_data,
+                    recv_data_max,
+                    MPI_CHAR,
+                    ExchangeTypeToRank(ex),
+                    gridExchangeTag + tag,
+                    topology,
+                    request));
 
-        MPI_CHECK(MPI_Irecv(
-                            recv_data,
-                            static_cast<int>(recv_data_max),
-                            MPI_CHAR,
-                            ExchangeTypeToRank(ex),
-                            gridExchangeTag + tag,
-                            topology,
-                            request));
+                auto status = Environment<DIM>::get().mpi_request_pool().wait( request );
 
-        return request;
+                return Environment<DIM>::task(
+                    []( auto status )
+                    {
+                        int recv_data_count;
+                        MPI_CHECK_NO_EXCEPT( MPI_Get_count( &(*status), MPI_CHAR, &recv_data_count ) );
+
+                        if( recv_data_count == MPI_UNDEFINED )
+                            std::cerr << "CommunicatorMPI: undefined number of elements received" << std::endl;
+
+                        return recv_data_count;
+                    },
+                    TaskProperties::Builder()
+                        .label("MPI_Get_count()")
+                        .mpi_task(),
+                    status.read()
+                ).get();
+            },
+            TaskProperties::Builder()
+                .label("CommunicatorMPI::recv (ex = " + std::to_string(ex) + ", tag = " + std::to_string(tag) + ")")
+        ).get();
     }
 
     // description in ICommunicator
