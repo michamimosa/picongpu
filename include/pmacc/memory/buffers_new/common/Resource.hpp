@@ -105,6 +105,18 @@ protected:
         data1D = true;
     }
 
+    GuardBase(
+        rg::SharedResourceObject<
+            typename Buffer::Data,
+            typename Buffer::DataAccessPolicy
+        > const & data,
+        GuardBase const & other
+    ) :
+        data( data ),
+        size( other.size ),
+        data1D( other.data1D )
+    {}
+
     GuardBase( GuardBase const & other )
         : data( other.data ),
           size( other.size ),
@@ -243,6 +255,9 @@ struct WriteGuard
  */
 
 template < typename Buffer >
+struct WriteGuard;
+
+template < typename Buffer >
 struct ReadGuard
     : GuardBase< Buffer >
 {
@@ -263,12 +278,11 @@ struct ReadGuard
 
 template < typename Buffer >
 struct WriteGuard
-    : GuardBase< Buffer >
+    : ReadGuard< Buffer >
 {
     auto size() const noexcept { return typename Buffer::SizeGuard( *this ).write(); }
     auto data() const noexcept { return typename Buffer::DataGuard( *this ).write(); }
 
-    ReadGuard< Buffer > read() const noexcept { return *this; }
     WriteGuard< Buffer > write() const noexcept { return *this; }
 
     WriteGuard< Buffer > sub_area( DataSpace< Buffer::dim > offset, DataSpace< Buffer::dim > data_space )
@@ -277,9 +291,9 @@ struct WriteGuard
     }
 
     WriteGuard( GuardBase< Buffer > const & base )
-        : GuardBase< Buffer >( base )
+        : ReadGuard< Buffer >( base )
     {}
-};
+}; 
 
 } // namespace buffer
 
