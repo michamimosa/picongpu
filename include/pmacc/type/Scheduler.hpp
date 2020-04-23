@@ -30,7 +30,7 @@
 #include <redGrapes/thread/thread_dispatcher.hpp>
 
 #include <redGrapes/helpers/cuda/stream.hpp>
-#include <redGrapes/helpers/cuda/synchronize_event.hpp>
+#include <redGrapes/helpers/cuda/synchronize.hpp>
 #include <redGrapes/helpers/mpi/request_pool.hpp>
 #include <redGrapes/manager.hpp>
 
@@ -123,7 +123,7 @@ struct Scheduler
         for( size_t i = 0; i < this->schedule.size(); i++ )
         {
             auto & t = this->schedule[i];
-            if( i == 1 )
+            if( i == 0 )
                 t.set_request_hook( [this,&t]{ get_job(t, mpi_queue); });
             else
                 t.set_request_hook( [this,&t]{ get_job(t, main_queue); });

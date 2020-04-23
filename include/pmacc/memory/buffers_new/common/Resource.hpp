@@ -68,7 +68,7 @@ struct GuardBase
         return data.obj->getPitch();
     }
 
-protected:
+    //protected:
     friend Buffer;
 
     /*! Create a subdomain
@@ -113,12 +113,14 @@ protected:
         GuardBase const & other
     ) :
         data( data ),
+        offset( other.offset ),
         size( other.size ),
         data1D( other.data1D )
     {}
 
     GuardBase( GuardBase const & other )
         : data( other.data ),
+          offset( other.offset ),
           size( other.size ),
           data1D( other.data1D )
     {}
@@ -128,6 +130,7 @@ protected:
         DataSpace< Buffer::dim > data_space
     )
     {
+        std::cout << "create sub area wtih offset " << offset << std::endl;
         return GuardBase( this->data, this->offset + offset, data_space );
     }
 

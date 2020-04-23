@@ -146,11 +146,12 @@ void copy(
 template <
     typename T_Item,
     std::size_t T_dim,
-    typename T_DataAccessPolicy
+    typename T_DstDataAccessPolicy,
+    typename T_SrcDataAccessPolicy
 >
 void copy(
-    host_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > const & dst,
-    device_buffer::ReadGuard< T_Item, T_dim, T_DataAccessPolicy > const & src
+    host_buffer::WriteGuard< T_Item, T_dim, T_DstDataAccessPolicy > const & dst,
+    device_buffer::ReadGuard< T_Item, T_dim, T_SrcDataAccessPolicy > const & src
 )
 {
     Environment<>::task(
@@ -168,7 +169,7 @@ void copy(
             else
                 device2host_detail::copy(dst.data(), src.data(), devCurrentSize);
 
-            cuda_stream->sync();
+            cuda_stream.sync();
         },
         TaskProperties::Builder().label("pmacc::mem::copy(dst: Host, src: Device)"),
         dst.write(),
