@@ -170,7 +170,146 @@ struct Access
 
 } // namespace grid_buffer
 
+
+
+namespace buffer
+{
+namespace data
+{
+
+template < typename Buffer >
+struct ReadGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : ReadGuardBase< Buffer >
+{
+    uint32_t area;
+    Mask directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< ReadGuard >;
+
+public:
+    ReadGuard( GuardBase< Buffer > const & base )
+        : ReadGuardBase< Buffer >( base )
+        , area{ CORE + BORDER + GUARD }
+        , directions(
+            Mask(TOP) + Mask(BOTTOM) +
+            Mask(LEFT) + Mask(RIGHT) +
+            Mask(FRONT) + Mask(BACK))
+    {}
+
+    ReadGuard read() const { return *this; }
+};
+
+template < typename Buffer >
+struct WriteGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : WriteGuardBase< Buffer >
+{
+public:
+    uint32_t area;
+    Mask directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< WriteGuard >;
+
+    WriteGuard( GuardBase< Buffer > const & base )
+        : WriteGuardBase< Buffer >( base )
+        , area{ CORE + BORDER + GUARD }
+        , directions(
+            Mask(TOP) + Mask(BOTTOM) +
+            Mask(LEFT) + Mask(RIGHT) +
+            Mask(FRONT) + Mask(BACK))
+    {}
+
+    ReadGuard< Buffer > read() const { return *this; }
+    WriteGuard write() const { return *this; }
+};
+
+} // namespace data
+} // namespace buffer
+
 } // namespace mem
 
 } // namespace pmacc
+
+
+
+namespace redGrapes
+{
+namespace trait
+{
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::data::ReadGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::ReadGuard< Buffer > const & buf
+    )
+    {
+        builder.add(
+            buf.data.make_access(
+                pmacc::mem::grid_buffer::data::Access{
+                    rg::access::IOAccess::read,
+                    buf.area,
+                    buf.directions
+                }));
+    }
+};
+
+template < typename Buffer >
+struct BuildProperties<
+    pmacc::mem::buffer::data::WriteGuard< Buffer >,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::buffer::data::WriteGuard< Buffer > const & buf
+    )
+    {
+        builder.add(
+            buf.data.make_access(
+                 pmacc::mem::grid_buffer::data::Access{
+                    rg::access::IOAccess::write,
+                    buf.area,
+                    buf.directions
+                }));
+    }
+};
+
+} // namespace trait
+
+} // namespace redGrapes
+
 

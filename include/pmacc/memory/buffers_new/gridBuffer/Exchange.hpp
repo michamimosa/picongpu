@@ -175,7 +175,7 @@ struct Exchange
     }
 
     template< typename BufferResource >
-    void recv( buffer::WriteGuard< BufferResource > messageBuffer )
+    void recvBuf( buffer::WriteGuard< BufferResource > const &  messageBuffer )
     {
         PMACC_ASSERT( messageBuffer.is1D() );
 
@@ -184,24 +184,26 @@ struct Exchange
         Environment<>::task(
             [=]( auto messageBuffer )
             {
-                size_t new_size = Environment<>::get()
+                size_t new_size = Environment<DIM2>::get()
                     .GridController()
                     .getCommunicator()
                     .recv(
                         exchangeType,
-                        ( char * ) messageBuffer.getPointer(),
+                        ( char * ) messageBuffer.data().getPointer(),
                         messageBuffer.getDataSpace().productOfComponents() * sizeof(typename BufferResource::Item),
                         communicationTag
                     );
 
-                messageBuffer.size().set( new_size );
+                std::cout << "received " << new_size << " elements" <<std::endl;
+                messageBuffer.size().set( new_size / sizeof(typename BufferResource::Item) );
             },
+            TaskProperties::Builder().label("Exchange::recv()").mpi_task(),
             messageBuffer.write()
         );
     }
 
     template< typename BufferResource >
-    void send( buffer::ReadGuard< BufferResource > messageBuffer )
+    void sendBuf( buffer::ReadGuard< BufferResource > messageBuffer )
     {
         PMACC_ASSERT( messageBuffer.is1D() );
 
@@ -210,18 +212,19 @@ struct Exchange
         Environment<>::task(
             [=]( auto messageBuffer )
             {
-                Environment<>::get()
+                Environment<DIM2>::get()
                     .GridController()
                     .getCommunicator()
                     .send(
                         exchangeType,
-                        ( char const* ) messageBuffer.getPointer(),
+                        ( char const* ) messageBuffer.data().getPointer(),
                         messageBuffer.size().get() * sizeof(typename BufferResource::Item),
                         communicationTag
                     );
             },
+            TaskProperties::Builder().label("Exchange::send()").mpi_task(),
             messageBuffer.read()
-        );        
+        );
     }
 };
 
@@ -239,13 +242,14 @@ struct ExchangeBuffer
         > const & deviceBuffer,
         uint32_t exchangeType,
         uint32_t communicationTag,
-        bool useMpiDirect = false
+        bool useMpiDirect,
+        bool sizeOnDevice
     ) :
         Exchange{ exchangeType, communicationTag },
         deviceBuffer( deviceBuffer )
     {
         if( T_dim > DIM1 )
-            deviceDoubleBuffer.emplace( deviceBuffer.getDataSpace(), false, true );
+            deviceDoubleBuffer.emplace( deviceBuffer.getDataSpace(), sizeOnDevice, true );
 
         if( ! useMpiDirect )
             hostBuffer.emplace( deviceBuffer.getDataSpace() );
@@ -253,40 +257,58 @@ struct ExchangeBuffer
 
     void send()
     {
-        auto devBuf = deviceBuffer.read();
         if( deviceDoubleBuffer )
         {
             buffer::copy( deviceDoubleBuffer->write(), deviceBuffer.read() );
-            devBuf = deviceDoubleBuffer->read();
-        }
 
-        if( hostBuffer )
-        {
-            // send over host memory
-            buffer::copy( hostBuffer->write(), devBuf.read() );
-            this->send( hostBuffer );
+            if( hostBuffer )
+            {
+                // send over host memory
+                buffer::copy( hostBuffer->write(), deviceDoubleBuffer->read() );
+                this->sendBuf( *hostBuffer );
+            }
+            else
+                // use mpi direct
+                this->sendBuf( *deviceDoubleBuffer );
         }
         else
-            // use mpi direct
-            this->send( devBuf );
+        {
+            if( hostBuffer )
+            {
+                // send over host memory
+                buffer::copy( hostBuffer->write(), deviceBuffer.read() );
+                this->sendBuf( *hostBuffer );
+            }
+            else
+                // use mpi direct
+                this->sendBuf( deviceBuffer );
+        }
     }
 
     void recv()
     {
-        auto devBuf = deviceBuffer.write();
         if( deviceDoubleBuffer )
-            devBuf = deviceDoubleBuffer->write();
-
-        if( hostBuffer )
         {
-            this->recv( hostBuffer );
-            buffer::copy( devBuf.write(), hostBuffer->read() );
+            if( hostBuffer )
+            {
+                this->recvBuf( *hostBuffer );
+                buffer::copy( deviceDoubleBuffer->write(), hostBuffer->read() );
+            }
+            else
+                this->recvBuf( *deviceDoubleBuffer );
+
+            buffer::copy( deviceBuffer.write(), deviceDoubleBuffer->read() );
         }
         else
-            this->recv( devBuf );
-
-        if( deviceDoubleBuffer )
-            buffer::copy( deviceBuffer.write(), deviceDoubleBuffer->read() );
+        {
+            if( hostBuffer )
+            {
+                this->recvBuf( *hostBuffer );
+                buffer::copy( deviceBuffer.write(), hostBuffer->read() );
+            }
+            else
+                this->recvBuf( deviceBuffer );
+        }
     }
 
 private:

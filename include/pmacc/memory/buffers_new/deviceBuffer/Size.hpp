@@ -61,7 +61,7 @@ struct DeviceBufferSize
                         cudaMemcpyDeviceToHost,
                         cuda_stream
                     ));
-                    cuda_stream->sync().get();
+                    cuda_stream.sync();
                 },
 
                 TaskProperties::Builder()
@@ -101,6 +101,7 @@ struct DeviceBufferSize
                         device_size.get(),
                         new_size
                     );
+                    cuda_stream.sync();
                 },
 
                 TaskProperties::Builder()

@@ -31,6 +31,9 @@
 #include "pmacc/types.hpp"
 #include "pmacc/assert.hpp"
 
+#include <redGrapes/resource/ioresource.hpp>
+namespace rg = redGrapes;
+
 #include <mpi.h>
 
 #include <vector>
@@ -198,19 +201,21 @@ public:
         uint32_t tag
     )
     {
+        if( ExchangeTypeToRank(ex) == -1 )
+            return;
+        
         Environment<DIM>::task(
-            [=]
+            [this, ex, send_data, send_data_count, tag]
             {
-                MPI_Request * request = new MPI_Request;
-
+                MPI_Request request;
                 MPI_CHECK(MPI_Isend(
                     send_data,
                     send_data_count,
                     MPI_CHAR,
                     ExchangeTypeToRank(ex),
                     gridExchangeTag + tag,
-                    topology,
-                    request));
+                    getMPIComm(),
+                    &request));
 
                 Environment<DIM>::get().mpi_request_pool().wait( request );
             },
@@ -229,41 +234,35 @@ public:
         uint32_t tag
     )
     {
-        return Environment<DIM>::task(
-            [=]
-            {
-                MPI_Request * request = new MPI_Request;
+        if( ExchangeTypeToRank(ex) == -1 )
+            return 0;
 
+        return Environment<DIM>::task(
+            [this, ex, recv_data, recv_data_max, tag]
+            {
+                MPI_Request request;
                 MPI_CHECK(MPI_Irecv(
                     recv_data,
                     recv_data_max,
                     MPI_CHAR,
                     ExchangeTypeToRank(ex),
                     gridExchangeTag + tag,
-                    topology,
-                    request));
+                    getMPIComm(),
+                    &request));
 
-                auto status = Environment<DIM>::get().mpi_request_pool().wait( request );
+                MPI_Status status = Environment<DIM>::get().mpi_request_pool().wait( request ).get();
 
-                return Environment<DIM>::task(
-                    []( auto status )
-                    {
-                        int recv_data_count;
-                        MPI_CHECK_NO_EXCEPT( MPI_Get_count( &(*status), MPI_CHAR, &recv_data_count ) );
+                int recv_data_count;
 
-                        if( recv_data_count == MPI_UNDEFINED )
-                            std::cerr << "CommunicatorMPI: undefined number of elements received" << std::endl;
+                MPI_CHECK_NO_EXCEPT( MPI_Get_count( &status, MPI_CHAR, &recv_data_count ) );
+                if( recv_data_count == MPI_UNDEFINED )
+                    std::cerr << "CommunicatorMPI: undefined number of elements received" << std::endl;
 
-                        return recv_data_count;
-                    },
-                    TaskProperties::Builder()
-                        .label("MPI_Get_count()")
-                        .mpi_task(),
-                    status.read()
-                ).get();
+                return recv_data_count;
             },
             TaskProperties::Builder()
                 .label("CommunicatorMPI::recv (ex = " + std::to_string(ex) + ", tag = " + std::to_string(tag) + ")")
+                .mpi_task()
         ).get();
     }
 
