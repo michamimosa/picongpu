@@ -145,7 +145,7 @@ copy(
             else
                 host2device_detail::copy(dst.data(), src.data(), devCurrentSize);
 
-            cuda_stream->sync();
+            cuda_stream.sync();
         },
         TaskProperties::Builder().label("pmacc::mem::copy(dst: Device, src: Host)"),
         dst.write(),

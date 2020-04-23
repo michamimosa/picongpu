@@ -38,7 +38,7 @@
 #include <pmacc/type/Scheduler.hpp>
 #include <redGrapes/manager.hpp>
 #include <redGrapes/helpers/cuda/stream.hpp>
-#include <redGrapes/helpers/cuda/synchronize_event.hpp>
+#include <redGrapes/helpers/cuda/synchronize.hpp>
 
 #include <mpi.h>
 
@@ -194,7 +194,7 @@ namespace detail
 
         auto & cuda_stream()
         {
-            static redGrapes::helpers::cuda::StreamResource< redGrapes::helpers::cuda::PollingEventStream<std::remove_reference<decltype(ResourceManager())>::type> > stream(ResourceManager(), cudaStream_t(0));
+            static redGrapes::helpers::cuda::StreamResource< std::remove_reference<decltype(ResourceManager())>::type > stream(ResourceManager(), cudaStream_t(0));
             return stream;
         }
 
@@ -509,7 +509,6 @@ namespace detail
     {
         if( m_isMpiInitialized )
         {
-            //pmacc::Environment<>::get().Manager().waitForAllTasks();
             // Required by scorep for flushing the buffers
             cuplaDeviceSynchronize();
             m_isMpiInitialized = false;
