@@ -31,11 +31,11 @@
 #include <pmacc/mappings/simulation/GridController.hpp>
 #include <pmacc/memory/dataTypes/Mask.hpp>
 
-#include <pmacc/memory/buffers_new/HostBuffer.hpp>
-#include <pmacc/memory/buffers_new/DeviceBuffer.hpp>
-#include <pmacc/memory/buffers_new/copy/DeviceToDevice.hpp>
-#include <pmacc/memory/buffers_new/copy/DeviceToHost.hpp>
-#include <pmacc/memory/buffers_new/copy/HostToDevice.hpp>
+#include <pmacc/memory/buffers/HostBuffer.hpp>
+#include <pmacc/memory/buffers/DeviceBuffer.hpp>
+#include <pmacc/memory/buffers/copy/DeviceToDevice.hpp>
+#include <pmacc/memory/buffers/copy/DeviceToHost.hpp>
+#include <pmacc/memory/buffers/copy/HostToDevice.hpp>
 
 namespace pmacc
 {

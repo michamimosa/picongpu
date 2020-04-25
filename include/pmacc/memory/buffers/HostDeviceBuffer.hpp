@@ -24,162 +24,162 @@
 #include <pmacc/types.hpp>
 #include <pmacc/memory/buffers/HostBuffer.hpp>
 #include <pmacc/memory/buffers/DeviceBuffer.hpp>
-#include <pmacc/memory/buffers/HostBufferIntern.hpp>
-#include <pmacc/memory/buffers/DeviceBufferIntern.hpp>
-#include <pmacc/memory/buffers/CopyDeviceToHost.hpp>
-#include <pmacc/memory/buffers/CopyHostToDevice.hpp>
 #include <boost/type_traits.hpp>
 
 namespace pmacc
 {
 namespace mem
 {
+namespace host_device_buffer
+{
 
-    /** Buffer that contains a host and device buffer and allows synchronizing those 2 */
-    template<typename T_Type, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess >
-    class HostDeviceBuffer
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct HostDeviceBufferGuard
+{
+    //! todo: currently the size is stored doubled, in host buffer and device buffer
+    //        and could possibly be shared (using only one DeviceBufferSize for both buffers)
+    host_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > host_buf;
+    device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > device_buf;
+};
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct HostDeviceBufferResource
+{
+    using Item = T_Item;
+    static constexpr std::size_t dim = T_dim;
+    using DataAccessPolicy = T_DataAccessPolicy;
+    using DataBoxType = DataBox< PitchedBox< Item, dim > >;
+
+    HostDeviceBufferResource(
+        DataSpace< dim > capacity,
+        bool use_vector_as_base = false
+    ) :
+        host( capacity ),
+        device( use_vector_as_base )
+    {}
+
+    auto make_guard( bool size_on_device = false )
     {
-        typedef HostBufferIntern<T_Type, T_dim, T_DataAccessPolicy> HostBufferType;
-        typedef DeviceBufferIntern<T_Type, T_dim, T_DataAccessPolicy> DeviceBufferType;
-
-    public:
-        using ValueType = T_Type;
-        typedef HostBuffer<T_Type, T_dim, T_DataAccessPolicy> HBuffer;
-        typedef DeviceBuffer<T_Type, T_dim, T_DataAccessPolicy> DBuffer;
-
-        typedef typename HostBufferType::DataBoxType DataBoxType;
-        PMACC_CASSERT_MSG(DataBoxTypes_must_match, boost::is_same<DataBoxType, typename DeviceBufferType::DataBoxType>::value);
-
-        /**
-         * Constructor that creates the buffers with the given size
-         *
-         * @param size DataSpace representing buffer size
-         * @param sizeOnDevice if true, internal buffers must store their
-         *        size additionally on the device
-         *        (as we keep this information coherent with the host, it influences
-         *        performance on host-device copies, but some algorithms on the device
-         *        might need to know the size of the buffer)
-         */
-        HostDeviceBuffer(DataSpace<T_dim> const & size, bool sizeOnDevice = false);
-
-        /**
-         * Constructor that reuses the given device buffer instead of creating an own one.
-         * Sizes should match. If size is smaller than the buffer size, then only the part near the origin is used.
-         * Passing a size bigger than the buffer is undefined.
-         */
-        HostDeviceBuffer(BufferResource<DBuffer> otherDeviceBuffer,
-                         DataSpace<T_dim> const & size,
-                         bool sizeOnDevice = false);
-
-
-        
-        /**
-         * Constructor that reuses the given buffers instead of creating own ones.
-         * The data from [offset, offset+size) is used
-         * Passing a size bigger than the buffer (minus the offset) is undefined.
-         */
-        HostDeviceBuffer(
-                   BufferResource<HBuffer> otherHostBuffer,
-                   DataSpace<T_dim> const & offsetHost,
-                   BufferResource<DBuffer> otherDeviceBuffer,
-                   DataSpace<T_dim> const & offsetDevice,
-                   GridLayout<T_dim> const size,
-                   bool sizeOnDevice = false);
-
-        HINLINE virtual ~HostDeviceBuffer();
-
-        /**
-         * Returns the internal data buffer on host side
-         *
-         * @return internal HBuffer
-         */
-        HINLINE BufferResource<HBuffer> getHostBuffer() const;
-
-        /**
-         * Returns the internal data buffer on device side
-         *
-         * @return internal DBuffer
-         */
-        HINLINE BufferResource<DBuffer> getDeviceBuffer() const;
-
-        /**
-         * Resets both internal buffers.
-         *
-         * See DeviceBuffer::reset and HostBuffer::reset for details.
-         *
-         * @param preserveData determines if data on internal buffers should not be erased
-         */
-        void reset(bool preserveData = true);
-
-        /**
-         * Asynchronously copies data from internal host to internal device buffer.
-         *
-         */
-        HINLINE void hostToDevice();
-
-        /**
-         * Asynchronously copies data from internal device to internal host buffer.
-         */
-        HINLINE void deviceToHost();
-
-    private:
-        BufferResource< HBuffer > hostBuffer;
-        BufferResource< DBuffer > deviceBuffer;
-    };
-
-    namespace host_device_buffer
-    {
-        template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-        struct ReadGuard : protected std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> >
-        {
-            auto read() { return *this; }
-            HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().read(); }
-            HINLINE auto getDeviceBuffer() const { return this->get()->getDeviceBuffer().read(); }
-
-        protected:
-            ReadGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > obj )
-                : std::shared_ptr< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > >( obj )
-            {}
+        return HostDeviceBufferGuard< Item, dim, DataAccessPolicy > {
+            host.make_guard(), device.make_guard( size_on_device )
         };
+    }
 
-        template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-        struct WriteGuard : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
-        {
-            auto write() { return *this; }
-            HINLINE auto getHostBuffer() const { return this->get()->getHostBuffer().write(); }
-            HINLINE auto getDeviceBuffer() const { return this->get()->getDeviceBuffer().write(); }
+protected:
+    host_buffer::HostBufferResource<
+        Item,
+        dim,
+        DataAccessPolicy
+    > host;
 
-            HINLINE void hostToDevice() { buffer::copy(getDeviceBuffer(), getHostBuffer()); }
-            HINLINE void deviceToHost() { buffer::copy(getHostBuffer(), getDeviceBuffer()); }
+    device_buffer::DeviceBufferResource<
+        Item,
+        dim,
+        DataAccessPolicy
+    > device;
+};
 
-            void reset(bool preserveData = true) { this->get()->reset(preserveData); }
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct ReadGuard
+    : protected HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy >
+{
+    auto read() const noexcept { return *this; }
 
-        protected:
-            WriteGuard( std::shared_ptr< HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy> > obj )
-                : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >( obj )
-            {}
-        };
-    } // namespace host_device_buffer
+    auto host() const noexcept { return this->host_buf.read(); }
+    auto device() const noexcept { return this->device_buf.read(); }
 
-
-    template< typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-    struct BufferResource< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > > : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
+    auto sub_area(
+        DataSpace< T_dim > offset,
+        DataSpace< T_dim > data_space
+    ) const
     {
-        template < typename... Args >
-        BufferResource( Args&&... args )
-            : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >( std::make_shared< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > >( std::forward<Args>(args)... ) )
-        {}
+        return ReadGuard(HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy >{
+                this->host_buf.sub_area( offset, data_space ),
+                this->device_buf.sub_area( offset, data_space )
+        });
+    }
 
-        BufferResource( std::shared_ptr< HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy > > obj )
-            : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >( obj )
-        {}
-    };
+protected:
+    ReadGuard( HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy > const & b )
+        : HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>( b ) {}
+};
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct WriteGuard
+    : protected ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
+{
+    operator ReadGuard< T_Item, T_dim, T_DataAccessPolicy >() const noexcept { return this->read(); }
+    auto write() const noexcept { return *this; }
+
+    auto host() const noexcept { return this->host_buf.write(); }
+    auto device() const noexcept { return this->device_buf.write(); }
+
+    auto sub_area(
+        DataSpace< T_dim > offset,
+        DataSpace< T_dim > data_space
+    ) const
+    {
+        return WriteGuard(HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy >{
+            this->host_buf.sub_area( offset, data_space ),
+            this->device_buf.sub_area( offset, data_space )
+        });
+    }
+
+protected:
+    WriteGuard( HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy> const & b )
+        : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >( b ) {}
+};
+
+} // namespace host_device_buffer
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct HostDeviceBuffer
+    : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
+{
+    HostDeviceBuffer(
+        DataSpace< T_dim > capacity,
+        bool size_on_device = false
+    ) :
+        host_device_buffer::WriteGuard<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >(
+            host_device_buffer::HostDeviceBufferGuard<
+                T_Item,
+                T_dim,
+                T_DataAccessPolicy
+            >{
+                HostBuffer< T_Item, T_dim, T_DataAccessPolicy >( capacity ),
+                DeviceBuffer< T_Item, T_dim, T_DataAccessPolicy >( capacity, size_on_device )
+            }
+        )
+    {}
+};
 
 } // namespace mem
 
 } // namespace pmacc
-
-#include "pmacc/memory/buffers/HostDeviceBuffer.tpp"
 
 namespace redGrapes
 {
@@ -196,10 +196,13 @@ struct BuildProperties<
 >
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
+    static void build(
+        Builder & builder,
+        pmacc::mem::host_device_buffer::ReadGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf
+    )
     {
-        BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
-        BuildProperties< decltype(buf.getDeviceBuffer()) >::build( builder, buf.getDeviceBuffer() );
+        builder.add( buf.host() );
+        builder.add( buf.device() );
     }
 };
 
@@ -213,10 +216,13 @@ struct BuildProperties<
 >
 {
     template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf)
+    static void build(
+        Builder & builder,
+        pmacc::mem::host_device_buffer::ReadGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf
+    )
     {
-        BuildProperties< decltype(buf.getHostBuffer()) >::build( builder, buf.getHostBuffer() );
-        BuildProperties< decltype(buf.getDeviceBuffer()) >::build( builder, buf.getDeviceBuffer() );
+        builder.add( buf.host() );
+        builder.add( buf.device() );
     }
 };
 

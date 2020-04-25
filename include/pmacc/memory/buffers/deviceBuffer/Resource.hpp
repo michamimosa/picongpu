@@ -4,8 +4,8 @@
 #include <redGrapes/access/io.hpp>
 #include <redGrapes/resource/resource.hpp>
 
-#include <pmacc/memory/buffers_new/deviceBuffer/Data.hpp>
-#include <pmacc/memory/buffers_new/deviceBuffer/Size.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Data.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Size.hpp>
 
 namespace pmacc
 {
