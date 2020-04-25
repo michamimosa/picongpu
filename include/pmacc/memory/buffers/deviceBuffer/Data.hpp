@@ -3,7 +3,7 @@
 #include <pmacc/dimensions/DataSpace.hpp>
 #include <pmacc/memory/boxes/DataBox.hpp>
 
-#include <pmacc/memory/buffers_new/common/Data.hpp>
+#include <pmacc/memory/buffers/common/Data.hpp>
 
 #pragma once
 

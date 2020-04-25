@@ -2,9 +2,9 @@
 #pragma once
 
 #include <redGrapes/property/trait.hpp>
-#include <pmacc/memory/buffers_new/common/Resource.hpp>
-#include <pmacc/memory/buffers_new/common/Size.hpp>
-#include <pmacc/memory/buffers_new/common/Data.hpp>
+#include <pmacc/memory/buffers/common/Resource.hpp>
+#include <pmacc/memory/buffers/common/Size.hpp>
+#include <pmacc/memory/buffers/common/Data.hpp>
 
 namespace redGrapes
 {

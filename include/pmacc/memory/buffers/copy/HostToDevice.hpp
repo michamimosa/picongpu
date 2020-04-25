@@ -3,8 +3,8 @@
 
 #include <pmacc/types.hpp>
 #include <pmacc/Environment.hpp>
-#include <pmacc/memory/buffers_new/HostBuffer.hpp>
-#include <pmacc/memory/buffers_new/DeviceBuffer.hpp>
+#include <pmacc/memory/buffers/HostBuffer.hpp>
+#include <pmacc/memory/buffers/DeviceBuffer.hpp>
 
 namespace pmacc
 {

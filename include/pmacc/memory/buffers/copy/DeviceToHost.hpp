@@ -26,8 +26,8 @@
 #include <pmacc/types.hpp>
 #include <pmacc/Environment.hpp>
 
-#include <pmacc/memory/buffers_new/HostBuffer.hpp>
-#include <pmacc/memory/buffers_new/DeviceBuffer.hpp>
+#include <pmacc/memory/buffers/HostBuffer.hpp>
+#include <pmacc/memory/buffers/DeviceBuffer.hpp>
 
 namespace pmacc
 {
@@ -149,12 +149,12 @@ template <
     typename T_DstDataAccessPolicy,
     typename T_SrcDataAccessPolicy
 >
-void copy(
+auto copy(
     host_buffer::WriteGuard< T_Item, T_dim, T_DstDataAccessPolicy > const & dst,
     device_buffer::ReadGuard< T_Item, T_dim, T_SrcDataAccessPolicy > const & src
 )
 {
-    Environment<>::task(
+    return Environment<>::task(
         []( auto dst, auto src, auto cuda_stream )
         {
             dst.size().set( src.size().get() );

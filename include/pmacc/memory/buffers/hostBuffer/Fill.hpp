@@ -4,7 +4,7 @@
 #include <pmacc/Environment.hpp>
 #include <pmacc/memory/boxes/DataBox.hpp>
 #include <pmacc/memory/boxes/DataBoxDim1Access.hpp>
-#include <pmacc/memory/buffers_new/hostBuffer/Resource.hpp>
+#include <pmacc/memory/buffers/hostBuffer/Resource.hpp>
 
 namespace pmacc
 {

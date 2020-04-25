@@ -3,9 +3,9 @@
 
 #include <pmacc/Environment.hpp>
 
-#include <pmacc/memory/buffers_new/hostBuffer/Fill.hpp>
-#include <pmacc/memory/buffers_new/deviceBuffer/Fill.hpp>
-#include <pmacc/memory/buffers_new/Buffer.hpp>
+#include <pmacc/memory/buffers/hostBuffer/Fill.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Fill.hpp>
+#include <pmacc/memory/buffers/Buffer.hpp>
 
 namespace pmacc
 {
