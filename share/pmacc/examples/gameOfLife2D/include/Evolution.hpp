@@ -35,6 +35,8 @@
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
 #include <pmacc/Environment.hpp>
+#include <pmacc/memory/buffers/DeviceBuffer.hpp>
+#include <pmacc/exec/kernelEvents.hpp>
 
 #include <memory>
 
@@ -250,12 +252,12 @@ namespace kernel
         }
 
         void initEvolution(
-            Buffer & writeBuffer,
+            pmacc::mem::device_buffer::WriteGuard< uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access > buf,
             float const fraction
         )
         {
-            Environment<>::get().ResourceManager().emplace_task(
-                [this, &writeBuffer, fraction]
+            Environment<>::task(
+                [this, fraction]( auto buf, auto cuda_stream )
                 {
                     AreaMapping <
                         CORE + BORDER,
@@ -273,19 +275,16 @@ namespace kernel
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-                        writeBuffer.getDeviceBuffer().getDataBox(),
+                        buf.data().getDataBox(),
                         seed,
                         fraction,
                         mapper
                     );
                 },
                 TaskProperties::Builder()
-                    .label("Evolution::initEvolution()")
-                    .resources({
-                        writeBuffer.getDeviceBuffer().write(),
-                        writeBuffer.getDeviceBuffer().size_resource.write(),
-                        cuda_resources::streams[0].write()
-                    })
+                    .label("Evolution::initEvolution()"),
+                buf.write(),
+                Environment<>::get().cuda_stream()
             );
         }
 
@@ -293,8 +292,8 @@ namespace kernel
             uint32_t T_Area
         >
         void run(
-	    Buffer const & readBuffer,
-            Buffer & writeBuffer
+            pmacc::mem::device_buffer::ReadGuard< uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access > readBuffer,
+            pmacc::mem::device_buffer::WriteGuard< uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access > writeBuffer
         )
         {
             std::string l("run ()");
@@ -308,8 +307,8 @@ namespace kernel
                 break;
             }
 
-            Environment<>::get().ResourceManager().emplace_task(
-     	        [this, &readBuffer, &writeBuffer ]
+            Environment<>::task(
+                [this]( auto readBuffer, auto writeBuffer, auto cuda_stream )
                 {
                     AreaMapping <
                         T_Area,
@@ -323,21 +322,17 @@ namespace kernel
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-     		        readBuffer.getDeviceBuffer().getDataBox(),
-                        writeBuffer.getDeviceBuffer().getDataBox(),
+                        readBuffer.data().getDataBox(),
+                        writeBuffer.data().getDataBox(),
                         rule,
                         mapper
                     );
                 },
                 TaskProperties::Builder()
-                .label( std::move(l) )
-                    .resources({
-                        writeBuffer.getDeviceBuffer().write(),
-                        writeBuffer.getDeviceBuffer().size_resource.write(),
-                        readBuffer.getDeviceBuffer().read(),
-                        readBuffer.getDeviceBuffer().size_resource.read(),
-                        cuda_resources::streams[0].write(),
-                    })
+                    .label( std::move(l) ),
+                readBuffer.read(),
+                writeBuffer.write(),
+                Environment<>::get().cuda_stream()
             );
         }
     };

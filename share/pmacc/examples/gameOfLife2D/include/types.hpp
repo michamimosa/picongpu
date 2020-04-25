@@ -30,7 +30,7 @@ namespace gol
 
     typedef DataSpace<DIM2> Space;
     typedef GridController<DIM2> GC;
-    typedef GridBuffer<uint8_t, DIM2 > Buffer;
+    typedef mem::GridBuffer< uint8_t, DIM2 > Buffer;
 
     enum CommunicationTags
     {

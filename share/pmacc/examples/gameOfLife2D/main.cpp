@@ -143,7 +143,7 @@ int main( int argc, char **argv )
     catch( std::exception const & e )
     {
         std::cerr << "RUNTIME ERROR: " << e.what() << std::endl;
-        pmacc::functor_backtrace(std::cerr);
+        //pmacc::functor_backtrace(std::cerr);
     }
 
     return 0;
