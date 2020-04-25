@@ -2,6 +2,7 @@
 #pragma once
 
 #include <redGrapes/resource/ioresource.hpp>
+#include <pmacc/Environment.hpp>
 
 namespace rg = redGrapes;
 

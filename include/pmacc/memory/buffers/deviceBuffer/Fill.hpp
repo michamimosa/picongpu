@@ -15,7 +15,7 @@
 #include <pmacc/types.hpp>
 
 #include <pmacc/Environment.hpp>
-#include <pmacc/memory/buffers_new/deviceBuffer/Resource.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Resource.hpp>
 
 namespace pmacc
 {

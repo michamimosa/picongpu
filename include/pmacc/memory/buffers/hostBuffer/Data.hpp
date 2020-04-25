@@ -5,8 +5,8 @@
 #include <pmacc/dimensions/DataSpace.hpp>
 #include <pmacc/memory/boxes/DataBox.hpp>
 
-#include <pmacc/memory/buffers_new/Buffer.hpp>
-#include <pmacc/memory/buffers_new/common/Size.hpp>
+#include <pmacc/memory/buffers/Buffer.hpp>
+#include <pmacc/memory/buffers/common/Size.hpp>
 
 namespace pmacc
 {

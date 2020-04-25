@@ -2,8 +2,8 @@
 #pragma once
 
 #include <redGrapes/access/io.hpp>
-#include <pmacc/memory/buffers_new/hostBuffer/Data.hpp>
-#include <pmacc/memory/buffers_new/common/Size.hpp>
+#include <pmacc/memory/buffers/hostBuffer/Data.hpp>
+#include <pmacc/memory/buffers/common/Size.hpp>
 
 namespace pmacc
 {
