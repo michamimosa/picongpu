@@ -1,4 +1,5 @@
-/* Copyright 2013-2020 Rene Widera, Maximilian Knespel, Alexander Grund
+/* Copyright 2013-2020 Rene Widera, Maximilian Knespel, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -30,8 +31,6 @@
 #include <pmacc/memory/dataTypes/Mask.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 
-#include <pmacc/communication/MPIWait.hpp>
-
 #include "Evolution.hpp"
 
 #include "GatherSlice.hpp"
@@ -56,20 +55,28 @@ private:
     GatherSlice gather;
 
     /* for storing black (dead) and white (alive) data for gol */
-    Buffer* buff1; /* Buffer(\see types.h) for swapping between old and new world */
-    Buffer* buff2; /* like evolve(buff2 &, const buff1) would work internally */
+    std::optional< Buffer > buff1; /* Buffer(\see types.h) for swapping between old and new world */
+    std::optional< Buffer > buff2; /* like evolve(buff2 &, const buff1) would work internally */
     uint32_t steps;
 
     bool isMaster;
 
 public:
 
-    Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic, size_t n_threads) :
-    evo(rule), steps(steps), gridSize(gridSize), isMaster(false), buff1(nullptr), buff2(nullptr)
+    Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic, size_t n_threads)
+        : evo(rule), steps(steps), gridSize(gridSize), isMaster(false)
     {
         // initialize Resource Manager
         pmacc::Environment<>::get().initScheduler( n_threads + 1 );
-        pmacc::Environment<>::get().ResourceManager().getScheduler().schedule[1].set_wait_hook( []{ pmacc::communication::MPIRequestPool::get().poll(); } );
+        pmacc::Environment<>::get()
+            .ResourceManager()
+            .getScheduler()
+            .schedule[1]
+            .set_wait_hook(
+                [] {
+                    pmacc::Environment<>::get().mpi_request_pool().poll();
+                    pmacc::Environment<>::get().cuda_stream().poll();
+                });
 
         /* -First this initializes the GridController with number of 'devices'*
          *  and 'periodic'ity. The init-routine will then create and manage   *
@@ -97,8 +104,6 @@ public:
          *                      PluginConnector, nvidia::memory::MemoryInfo   */
         Environment<DIM2>::get().initGrids( gridSize, localGridSize,
                                             gc.getPosition() * localGridSize);
-
-        pmacc::waitfordevice::setup();
     }
 
     virtual ~Simulation()
@@ -108,8 +113,6 @@ public:
     void finalize()
     {
         std::cout << "finalize simulation..." << std::endl;
-        delete buff1;
-        delete buff2;
 	gather.finalize();
     }
 
@@ -161,8 +164,8 @@ public:
          * This is saved by init to be used by the kernel to identify itself. */
         evo.init(layout.getDataSpace(), Space::create(1));
 
-        buff1 = new Buffer(layout, false);
-        buff2 = new Buffer(layout, false);
+        buff1 = Buffer(layout, false);
+        buff2 = Buffer(layout, false);
 
         /* Set up the future data exchange. In this case we need to copy the
          * border cells of our neighbors to our guard cells, since we only read
@@ -198,63 +201,60 @@ public:
         /* Calls kernel to initialize random generator. Game of Life is then  *
          * initialized using uniform random numbers. With 10% (second arg)    *
          * white points. World will be written to buffer in first argument    */
-        evo.initEvolution(*buff1, 0.1f);
+        evo.initEvolution(buff1->device(), 0.1f);
     }
 
     void start()
     {
-        Buffer* read = buff1;
-        Buffer* write = buff2;
+        Buffer & read = *buff1;
+        Buffer & write = *buff2;
+
         for (uint32_t i = 0; i < steps; ++i)
         {
-            oneStep(i, *read, *write);
+            oneStep(i, read, write);
             std::swap(read, write);
         }
     }
 
 private:
-    redGrapes::IOResource gatherbuf;
-
-    void oneStep(uint32_t currentStep, Buffer& read, Buffer& write)
+    void oneStep(
+        uint32_t currentStep,
+        Buffer & current,
+        Buffer & next
+    )
     {
-        read.communication();
+        current.communication();
 
-        evo.run<CORE>( read, write );
-        evo.run<BORDER>( read, write );
+        evo.run<CORE>( current.device().read(), next.device().write() );
+        evo.run<BORDER>( current.device().read(), next.device().write() );
 
-        write.deviceToHost();
-        //pmacc::memory::buffers::copy( write.getHostBuffer(), write.getDeviceBuffer() );
+        // copy Device -> Host
+        pmacc::mem::buffer::copy( next.host().write(), next.device().read() );
 
-        auto picture = Environment<>::get().ResourceManager().emplace_task(
-            [this, &write]
-	    {
+        auto pic = Environment<>::task(
+            [this]( auto data )
+            {
                 /* gather::operator() gathers all the buffers and assembles those to  *
                  * a complete picture discarding the guards.                          */
-                return gather(write.getHostBuffer().getDataBox());
+
+                return gather( data.getDataBox() );
             },
             pmacc::TaskProperties::Builder()
-                .label("Gather")
-                .resources({
-                    write.getHostBuffer().read(),
-                    write.getHostBuffer().size_resource.read(),
-                    gatherbuf.write()
-                })
-        );
+                .label("Gather"),
+            next.host().data().read()
+        ).get();
 
         if( isMaster )
         {
-            Environment<>::get().ResourceManager().emplace_task(
-                [this, picture{std::move(picture)}, currentStep] () mutable
+            Environment<>::task(
+                [this, currentStep, pic]
                 {
-                    std::cout << "Step " << currentStep << std::endl;
-
                     PngCreator png;
-                    png( currentStep, picture.get(), gridSize );
+                    png( currentStep, pic, gridSize );
                 },
-                TaskProperties::Builder()
-                .resources({write.getHostBuffer().read(), gatherbuf.read()})
-                .label("Write PNG")
-            );
+                pmacc::TaskProperties::Builder()
+                    .label("Write Png")
+            ).get();
         }
     }
 }; // class Simulation
