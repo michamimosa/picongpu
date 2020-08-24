@@ -34,7 +34,7 @@ struct DeviceBufferSize
     void create_size_on_device()
     {
         size_t * device_size_ptr;
-        CUDA_CHECK(cudaMalloc( (void**)&device_size_ptr, sizeof(size_t) ));
+        CUDA_CHECK(cuplaMalloc( (void**)&device_size_ptr, sizeof(size_t) ));
 
         this->device_current_size =
             rg::IOResource< size_t >(
@@ -42,7 +42,7 @@ struct DeviceBufferSize
                     device_size_ptr,
                     []( size_t * ptr )
                     {
-                        CUDA_CHECK_NO_EXCEPT(cudaFree(ptr));
+                        CUDA_CHECK_NO_EXCEPT(cuplaFree(ptr));
                     }));
 
         this->reset();
@@ -54,11 +54,11 @@ struct DeviceBufferSize
             Environment<>::task(
                 []( auto host_size, auto device_size, auto cuda_stream )
                 {
-                    CUDA_CHECK(cudaMemcpyAsync(
+                    CUDA_CHECK(cuplaMemcpyAsync(
                         host_size.get(),
                         device_size.get(),
                         sizeof( std::size_t ),
-                        cudaMemcpyDeviceToHost,
+                        cuplaMemcpyDeviceToHost,
                         cuda_stream
                     ));
                     cuda_stream.sync();

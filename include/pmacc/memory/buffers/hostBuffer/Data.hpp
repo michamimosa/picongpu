@@ -29,7 +29,7 @@ struct HostBufferData
     HostBufferData( DataSpace< dim > capacity )
         : capacity( capacity )
     {
-        CUDA_CHECK(cudaMallocHost(
+        CUDA_CHECK(cuplaMallocHost(
             (void**) &ptr,
             capacity.productOfComponents() * sizeof( Item )
         ));
@@ -37,7 +37,7 @@ struct HostBufferData
 
     ~HostBufferData()
     {
-        CUDA_CHECK_NO_EXCEPT(cudaFreeHost(this->ptr));
+        CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(this->ptr));
     }
 
     DataSpace< dim > get_capacity() const noexcept

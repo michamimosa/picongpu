@@ -40,7 +40,7 @@ public:
 
     ~DeviceBufferData()
     {
-        CUDA_CHECK_NO_EXCEPT(cudaFree(pitched_ptr.ptr));
+        CUDA_CHECK_NO_EXCEPT(cuplaFree(pitched_ptr.ptr));
     }
 
     DataSpace< dim > get_capacity() const noexcept
@@ -48,7 +48,7 @@ public:
         return capacity;
     }
 
-    cudaPitchedPtr get_cuda_pitched() const noexcept
+    cuplaPitchedPtr get_cuda_pitched() const noexcept
     {
         return pitched_ptr;
     }
@@ -107,13 +107,13 @@ private:
         if (dim == DIM1)
         {
             log<ggLog::MEMORY >("Create device 1D data: %1% MiB") % (pitched_ptr.xsize / 1024 / 1024);
-            CUDA_CHECK(cudaMallocPitch(&pitched_ptr.ptr, &pitched_ptr.pitch, pitched_ptr.xsize, 1));
+            CUDA_CHECK(cuplaMallocPitch(&pitched_ptr.ptr, &pitched_ptr.pitch, pitched_ptr.xsize, 1));
         }
         if (dim == DIM2)
         {
             pitched_ptr.ysize = capacity[1];
             log<ggLog::MEMORY >("Create device 2D data: %1% MiB") % (pitched_ptr.xsize * pitched_ptr.ysize / 1024 / 1024);
-            CUDA_CHECK(cudaMallocPitch(
+            CUDA_CHECK(cuplaMallocPitch(
                 &pitched_ptr.ptr,
                 &pitched_ptr.pitch,
                 pitched_ptr.xsize,
@@ -121,13 +121,13 @@ private:
         }
         if (dim == DIM3)
         {
-            cudaExtent extent;
+            cuplaExtent extent;
             extent.width = capacity[0] * sizeof (Item);
             extent.height = capacity[1];
             extent.depth = capacity[2];
 
             log<ggLog::MEMORY >("Create device 3D data: %1% MiB") % (capacity.productOfComponents() * sizeof(Item) / 1024 / 1024);
-            CUDA_CHECK(cudaMalloc3D(&pitched_ptr, extent));
+            CUDA_CHECK(cuplaMalloc3D(&pitched_ptr, extent));
         }
     }
 
@@ -139,7 +139,7 @@ private:
         pitched_ptr.ysize = 1;
 
         log< ggLog::MEMORY >("Create device fake data: %1% MiB") % (capacity.productOfComponents() * sizeof(Item) / 1024 / 1024);
-        CUDA_CHECK(cudaMallocPitch(&pitched_ptr.ptr, &pitched_ptr.pitch, capacity.productOfComponents() * sizeof(Item), 1));
+        CUDA_CHECK(cuplaMallocPitch(&pitched_ptr.ptr, &pitched_ptr.pitch, capacity.productOfComponents() * sizeof(Item), 1));
 
         //fake the pitch, thus we can use this 1D Buffer as 2D or 3D
         pitched_ptr.pitch = capacity[0] * sizeof(Item);
@@ -148,7 +148,7 @@ private:
             pitched_ptr.ysize = capacity[1];
     }
 
-    cudaPitchedPtr pitched_ptr;
+    cuplaPitchedPtr pitched_ptr;
     DataSpace< dim > capacity;
 };
 

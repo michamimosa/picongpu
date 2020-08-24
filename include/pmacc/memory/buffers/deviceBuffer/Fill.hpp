@@ -108,12 +108,12 @@ struct KernelSetValue
         using namespace mappings::threads;
         using SizeVecType = T_SizeVecType;
 
-        SizeVecType const blockIndex( blockIdx );
+        SizeVecType const blockIndex( cupla::blockIdx( acc ) );
         SizeVecType blockSize( SizeVecType::create( 1 ) );
         blockSize.x( ) = T_xChunkSize;
 
         constexpr uint32_t numWorkers = T_numWorkers;
-        uint32_t const workerIdx = threadIdx.x;
+        uint32_t const workerIdx = cupla::threadIdx( acc ).x;
 
         ForEachIdx<
             IdxConfig<
@@ -247,17 +247,17 @@ device_set_value_big(
                 T_Item * devicePtr = dst.data().getPointer();
                 T_Item * valuePointer_host;
 
-                CUDA_CHECK(cudaMallocHost(
+                CUDA_CHECK(cuplaMallocHost(
                     (void**)&valuePointer_host,
                     sizeof(T_Item)));
 
                 *valuePointer_host = value; //copy value to new place
 
-                CUDA_CHECK(cudaMemcpyAsync(
+                CUDA_CHECK(cuplaMemcpyAsync(
                     devicePtr,
                     valuePointer_host,
                     sizeof(T_Item),
-                    cudaMemcpyHostToDevice,
+                    cuplaMemcpyHostToDevice,
                     cuda_stream));
 
                 auto destBox = dst.data().getDataBox( );
@@ -279,7 +279,7 @@ device_set_value_big(
 
                 if (valuePointer_host != nullptr)
                 {
-                    CUDA_CHECK_NO_EXCEPT(cudaFreeHost(valuePointer_host));
+                    CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(valuePointer_host));
                     valuePointer_host = nullptr;
                 }
             }

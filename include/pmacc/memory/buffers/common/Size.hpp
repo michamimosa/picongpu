@@ -22,14 +22,14 @@ public:
     BufferSize()
     {
         size_t * host_size_ptr;
-        CUDA_CHECK(cudaMallocHost( (void**)&host_size_ptr, sizeof(size_t) ));
+        CUDA_CHECK(cuplaMallocHost( (void**)&host_size_ptr, sizeof(size_t) ));
         this->host_current_size =
             rg::IOResource< size_t >(
                 std::shared_ptr< size_t >(
                     host_size_ptr,
                     []( size_t * ptr )
                     {
-                        CUDA_CHECK_NO_EXCEPT(cudaFreeHost(ptr));
+                        CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(ptr));
                     }));
     }
 

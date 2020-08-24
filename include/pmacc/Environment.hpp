@@ -194,7 +194,7 @@ namespace detail
 
         auto & cuda_stream()
         {
-            static redGrapes::helpers::cuda::StreamResource< std::remove_reference<decltype(ResourceManager())>::type > stream(ResourceManager(), cudaStream_t(0));
+            static redGrapes::helpers::cuda::StreamResource< std::remove_reference<decltype(ResourceManager())>::type > stream(ResourceManager(), cuplaStream_t(0));
             return stream;
         }
 
