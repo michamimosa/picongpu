@@ -20,11 +20,11 @@ void fast_copy(
     size_t size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpyAsync(dst,
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpyAsync(dst,
                                src,
                                size * sizeof (T),
-                               cudaMemcpyDeviceToDevice,
+                               cuplaMemcpyDeviceToDevice,
                                cuda_stream));
 }
 
@@ -39,11 +39,11 @@ void copy(
     DataSpace<DIM1> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpyAsync(dst.getPointer(),
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpyAsync(dst.getPointer(),
                                src.getPointer(),
                                size[0] * sizeof (T),
-                               cudaMemcpyDeviceToDevice,
+                               cuplaMemcpyDeviceToDevice,
                                cuda_stream));
 }
 
@@ -58,14 +58,14 @@ void copy(
     DataSpace<DIM2> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpy2DAsync(dst.getPointer(),
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpy2DAsync(dst.getPointer(),
                                  dst.getPitch(),
                                  src.getPointer(),
                                  src.getPitch(),
                                  size[0] * sizeof (T),
                                  size[1],
-                                 cudaMemcpyDeviceToDevice,
+                                 cuplaMemcpyDeviceToDevice,
                                  cuda_stream));
 
 }
@@ -81,9 +81,9 @@ void copy(
     DataSpace<DIM3> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
+    cuplaStream_t cuda_stream = 0;
 
-    cudaMemcpy3DParms params;
+    cuplaMemcpy3DParms params;
     params.srcArray = nullptr;
     params.srcPos = make_cudaPos(src.getOffset()[0] * sizeof (T),
                                  src.getOffset()[1],
@@ -96,12 +96,12 @@ void copy(
                                  dst.getOffset()[2]);
     params.dstPtr = dst.getCudaPitched();
 
-    params.extent = make_cudaExtent(size[0] * sizeof (T),
+    params.extent = make_cuplaExtent(size[0] * sizeof (T),
                                     size[1],
                                     size[2]);
 
-    params.kind = cudaMemcpyDeviceToDevice;
-    CUDA_CHECK(cudaMemcpy3DAsync(&params, cuda_stream));
+    params.kind = cuplaMemcpyDeviceToDevice;
+    CUDA_CHECK(cuplaMemcpy3DAsync(&params, cuda_stream));
 }
 
 } // namespace device2device_detail

@@ -46,11 +46,11 @@ void fast_copy(
     size_t size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpyAsync(dst,
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpyAsync(dst,
                                src,
                                size * sizeof (T),
-                               cudaMemcpyDeviceToHost,
+                               cuplaMemcpyDeviceToHost,
                                cuda_stream));
 }
 
@@ -65,11 +65,11 @@ void copy(
     DataSpace<DIM1> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpyAsync(dst.getPointer(),
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpyAsync(dst.getPointer(),
                                src.getPointer(),
                                size[0] * sizeof (T),
-                               cudaMemcpyDeviceToHost,
+                               cuplaMemcpyDeviceToHost,
                                cuda_stream));
 }
 
@@ -84,15 +84,15 @@ void copy(
     DataSpace<DIM2> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
-    CUDA_CHECK(cudaMemcpy2DAsync(
+    cuplaStream_t cuda_stream = 0;
+    CUDA_CHECK(cuplaMemcpy2DAsync(
         dst.getPointer(),
         dst.getPitch(),
         src.getPointer(),
         src.getPitch(),
         size[0] * sizeof (T),
         size[1],
-        cudaMemcpyDeviceToHost,
+        cuplaMemcpyDeviceToHost,
         cuda_stream));
 }
 
@@ -107,17 +107,17 @@ void copy(
     DataSpace<DIM3> const & size
 )
 {
-    cudaStream_t cuda_stream = 0;
+    cuplaStream_t cuda_stream = 0;
 
-    cudaPitchedPtr hostPtr;
+    cuplaPitchedPtr hostPtr;
     hostPtr.ptr = dst.getBasePointer();
     hostPtr.pitch = src.getPitch();
     hostPtr.xsize = src.getDataSpace()[0] * sizeof(T);
     hostPtr.ysize = src.getDataSpace()[1];
 
-    cudaMemcpy3DParms params;
+    cuplaMemcpy3DParms params;
     params.srcArray = nullptr;
-    params.srcPos = make_cudaPos(
+    params.srcPos = make_cuplaPos(
         src.getOffset()[0] * sizeof(T),
         src.getOffset()[1],
         src.getOffset()[2]
@@ -125,20 +125,20 @@ void copy(
     params.srcPtr = src.getCudaPitched();
 
     params.dstArray = nullptr;
-    params.srcPos = make_cudaPos(
+    params.srcPos = make_cuplaPos(
         dst.getOffset()[0] * sizeof(T),
         dst.getOffset()[1],
         dst.getOffset()[2]
     );
     params.dstPtr = hostPtr;
 
-    params.extent = make_cudaExtent(
+    params.extent = make_cuplaExtent(
         size[0] * sizeof(T),
         size[1],
         size[2]);
-    params.kind = cudaMemcpyDeviceToHost;
+    params.kind = cuplaMemcpyDeviceToHost;
 
-    CUDA_CHECK(cudaMemcpy3DAsync(&params, cuda_stream))
+    CUDA_CHECK(cuplaMemcpy3DAsync(&params, cuda_stream))
 }
 
 } // namespace device2host_detail

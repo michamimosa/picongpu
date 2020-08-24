@@ -177,7 +177,7 @@ namespace exec
             T_Args const & ... args
         ) const
         {
-            cudaStream_t cuda_stream = 0;
+            cuplaStream_t cuda_stream = 0;
 
             std::string const kernelName = typeid( m_kernel.m_kernelFunctor ).name();
             std::string const kernelInfo = kernelName +
