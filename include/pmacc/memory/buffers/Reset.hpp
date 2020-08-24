@@ -49,8 +49,6 @@ auto reset(
             }
         },
         TaskProperties::Builder()
-            // fixme
-            .resources({ Environment<>::get().cuda_stream() })
             .label("reset Buffer"),
         buffer.write()
     );

@@ -257,7 +257,7 @@ namespace kernel
         )
         {
             Environment<>::task(
-                [this, fraction]( auto buf, auto cuda_stream )
+                [this, fraction]( auto buf )
                 {
                     AreaMapping <
                         CORE + BORDER,
@@ -283,8 +283,7 @@ namespace kernel
                 },
                 TaskProperties::Builder()
                     .label("Evolution::initEvolution()"),
-                buf.write(),
-                Environment<>::get().cuda_stream()
+                buf.write()
             );
         }
 
@@ -308,7 +307,7 @@ namespace kernel
             }
 
             Environment<>::task(
-                [this]( auto readBuffer, auto writeBuffer, auto cuda_stream )
+                [this]( auto readBuffer, auto writeBuffer )
                 {
                     AreaMapping <
                         T_Area,
@@ -331,8 +330,7 @@ namespace kernel
                 TaskProperties::Builder()
                     .label( std::move(l) ),
                 readBuffer.read(),
-                writeBuffer.write(),
-                Environment<>::get().cuda_stream()
+                writeBuffer.write()
             );
         }
     };

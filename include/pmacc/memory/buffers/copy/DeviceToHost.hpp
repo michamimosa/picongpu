@@ -46,12 +46,11 @@ void fast_copy(
     size_t size
 )
 {
-    cuplaStream_t cuda_stream = 0;
     CUDA_CHECK(cuplaMemcpyAsync(dst,
                                src,
                                size * sizeof (T),
                                cuplaMemcpyDeviceToHost,
-                               cuda_stream));
+                               redGrapes::thread::current_cupla_stream));
 }
 
 template <
@@ -65,12 +64,11 @@ void copy(
     DataSpace<DIM1> const & size
 )
 {
-    cuplaStream_t cuda_stream = 0;
     CUDA_CHECK(cuplaMemcpyAsync(dst.getPointer(),
                                src.getPointer(),
                                size[0] * sizeof (T),
                                cuplaMemcpyDeviceToHost,
-                               cuda_stream));
+                               redGrapes::thread::current_cupla_stream));
 }
 
 template <
@@ -84,7 +82,6 @@ void copy(
     DataSpace<DIM2> const & size
 )
 {
-    cuplaStream_t cuda_stream = 0;
     CUDA_CHECK(cuplaMemcpy2DAsync(
         dst.getPointer(),
         dst.getPitch(),
@@ -93,7 +90,7 @@ void copy(
         size[0] * sizeof (T),
         size[1],
         cuplaMemcpyDeviceToHost,
-        cuda_stream));
+        redGrapes::thread::current_cupla_stream));
 }
 
 template <
@@ -107,8 +104,6 @@ void copy(
     DataSpace<DIM3> const & size
 )
 {
-    cuplaStream_t cuda_stream = 0;
-
     cuplaPitchedPtr hostPtr;
     hostPtr.ptr = dst.getBasePointer();
     hostPtr.pitch = src.getPitch();
@@ -138,7 +133,7 @@ void copy(
         size[2]);
     params.kind = cuplaMemcpyDeviceToHost;
 
-    CUDA_CHECK(cuplaMemcpy3DAsync(&params, cuda_stream))
+    CUDA_CHECK(cuplaMemcpy3DAsync(&params, redGrapes::thread::current_cupla_stream))
 }
 
 } // namespace device2host_detail
@@ -155,26 +150,31 @@ auto copy(
 )
 {
     return Environment<>::task(
-        []( auto dst, auto src, auto cuda_stream )
+        []( auto dst, auto src )
         {
             dst.size().set( src.size().get() );
             DataSpace< T_dim > devCurrentSize = src.size().getCurrentDataSpace();
 
-            if( src.is1D() && dst.is1D() )
-                device2host_detail::fast_copy(
-                    dst.data().getPointer(),
-                    src.data().getPointer(),
-                    devCurrentSize.productOfComponents()
-                );
-            else
-                device2host_detail::copy(dst.data(), src.data(), devCurrentSize);
-
-            cuda_stream.sync();
+            Environment<>::task(
+                [devCurrentSize]( auto dst, auto src )
+                {
+                    if( src.is1D() && dst.is1D() )
+                        device2host_detail::fast_copy(
+                            dst.data().getPointer(),
+                            src.data().getPointer(),
+                            devCurrentSize.productOfComponents()
+                        );
+                    else
+                        device2host_detail::copy(dst.data(), src.data(), devCurrentSize);
+                },
+                TaskProperties::Builder().scheduling_tags({ SCHED_CUPLA }),
+                dst.write(),
+                src.read()
+            );
         },
         TaskProperties::Builder().label("pmacc::mem::copy(dst: Host, src: Device)"),
         dst.write(),
-        src.read(),
-        Environment<>::get().cuda_stream()
+        src.read()
     );
 }
 

@@ -217,11 +217,11 @@ public:
                     getMPIComm(),
                     &request));
 
-                Environment<DIM>::get().mpi_request_pool().wait( request );
+                Environment<DIM>::get().mpi_request_pool()->get_status( request );
             },
             TaskProperties::Builder()
                 .label("CommunicatorMPI::send (ex = " + std::to_string(ex) + ", tag = " + std::to_string(tag) + ")")
-                .mpi_task()
+                .scheduling_tags({ SCHED_MPI })
         ).get();
     }
 
@@ -250,7 +250,7 @@ public:
                     getMPIComm(),
                     &request));
 
-                MPI_Status status = Environment<DIM>::get().mpi_request_pool().wait( request ).get();
+                MPI_Status status = Environment<DIM>::get().mpi_request_pool()->get_status( request );
 
                 int recv_data_count;
 
@@ -262,7 +262,7 @@ public:
             },
             TaskProperties::Builder()
                 .label("CommunicatorMPI::recv (ex = " + std::to_string(ex) + ", tag = " + std::to_string(tag) + ")")
-                .mpi_task()
+                .scheduling_tags({ SCHED_MPI })
         ).get();
     }
 

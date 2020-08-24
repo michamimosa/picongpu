@@ -37,8 +37,6 @@
 
 #include <pmacc/type/Scheduler.hpp>
 #include <redGrapes/manager.hpp>
-#include <redGrapes/helpers/cuda/stream.hpp>
-#include <redGrapes/helpers/cuda/synchronize.hpp>
 
 #include <mpi.h>
 
@@ -163,11 +161,27 @@ namespace detail
         {
             static redGrapes::Manager<
                 TaskProperties,
-                EnqueuePolicy,
-                Scheduler
+                EnqueuePolicy
             > * mgr_ptr;
             return mgr_ptr;
         }
+
+        auto & ResourceManager()
+        {
+            return *ResourceManager_ptr();
+        }
+
+        auto & mpi_scheduler()
+        {
+            static redGrapes::helpers::mpi::MPIScheduler< std::remove_reference<decltype(ResourceManager())>::type > mpi_sched;
+            return mpi_sched;
+        }
+
+        auto mpi_request_pool()
+        {
+            return mpi_scheduler().request_pool;
+        }
+
 
         /** cleanup the environment */
         void finalize()
@@ -178,7 +192,28 @@ namespace detail
 
         void initScheduler( int n_threads )
         {
-            ResourceManager_ptr() = new redGrapes::Manager< TaskProperties, EnqueuePolicy, Scheduler >( n_threads );
+            ResourceManager_ptr() = new redGrapes::Manager< TaskProperties, EnqueuePolicy >();
+
+            auto & mgr = ResourceManager();
+            auto default_scheduler = redGrapes::scheduler::make_default_scheduler( mgr, n_threads );
+            auto cupla_scheduler = redGrapes::helpers::cupla::make_cupla_scheduler( mgr, 8 /* number of cupla streams */ );
+            mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler( mgr, TaskProperties::Builder().scheduling_tags({ SCHED_MPI }) );
+
+            
+            redGrapes::thread::idle =
+                [this, cupla_scheduler]
+                {
+                    mpi_scheduler().fifo->consume();
+                    mpi_scheduler().request_pool->poll();
+                    cupla_scheduler->poll();
+                };
+
+            mgr.set_scheduler(
+                redGrapes::scheduler::make_tag_match_scheduler( mgr )
+                    .add({}, default_scheduler)
+                    .add({ SCHED_CUPLA }, cupla_scheduler)
+                    .add({ SCHED_MPI }, mpi_scheduler().fifo)
+            );
         }
 
         template <typename... Args>
@@ -187,21 +222,10 @@ namespace detail
             return ResourceManager().emplace_task( std::forward<Args>(args)... );
         }
 
-        auto & ResourceManager()
+        template <typename... Args>
+        auto mpi_task(Args&&... args)
         {
-            return *ResourceManager_ptr();
-        }
-
-        auto & cuda_stream()
-        {
-            static redGrapes::helpers::cuda::StreamResource< std::remove_reference<decltype(ResourceManager())>::type > stream(ResourceManager(), cuplaStream_t(0));
-            return stream;
-        }
-
-        auto & mpi_request_pool()
-        {
-            static redGrapes::helpers::mpi::RequestPool<std::remove_reference<decltype(ResourceManager())>::type> request_pool( ResourceManager() );
-            return request_pool;
+            return mpi_scheduler().emplace_mpi_task( std::forward<Args>(args)... );
         }
 
         /** get the singleton StreamController
