@@ -130,7 +130,6 @@ struct GuardBase
         DataSpace< Buffer::dim > data_space
     )
     {
-        std::cout << "create sub area wtih offset " << offset << std::endl;
         return GuardBase( this->data, this->offset + offset, data_space );
     }
 

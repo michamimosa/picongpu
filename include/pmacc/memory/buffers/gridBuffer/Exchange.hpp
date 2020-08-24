@@ -194,7 +194,6 @@ struct Exchange
                         communicationTag
                     );
 
-                std::cout << "received " << new_size << " elements" <<std::endl;
                 messageBuffer.size().set( new_size / sizeof(typename BufferResource::Item) );
             },
             TaskProperties::Builder().label("Exchange::recv()").mpi_task(),
