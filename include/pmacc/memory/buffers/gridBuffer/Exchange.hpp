@@ -196,7 +196,7 @@ struct Exchange
 
                 messageBuffer.size().set( new_size / sizeof(typename BufferResource::Item) );
             },
-            TaskProperties::Builder().label("Exchange::recv()").mpi_task(),
+            TaskProperties::Builder().label("Exchange::recv()"),
             messageBuffer.write()
         );
     }
@@ -221,7 +221,7 @@ struct Exchange
                         communicationTag
                     );
             },
-            TaskProperties::Builder().label("Exchange::send()").mpi_task(),
+            TaskProperties::Builder().label("Exchange::send()"),
             messageBuffer.read()
         );
     }

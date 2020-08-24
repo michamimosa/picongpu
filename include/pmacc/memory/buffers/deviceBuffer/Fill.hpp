@@ -153,7 +153,7 @@ device_set_value_small(
 )
 {
     Environment<>::task(
-        [value]( auto dst, auto cuda_stream )
+        [value]( auto dst )
         {
             // n-dimensional size of destination
             auto const area_size = dst.size().getCurrentDataSpace();
@@ -187,7 +187,7 @@ device_set_value_small(
                     gridSize,
                     numWorkers,
                     0,
-                    cuda_stream
+                    redGrapes::thread::current_cupla_stream
                 )(
                     destBox,
                     value,
@@ -196,9 +196,10 @@ device_set_value_small(
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_small(" + std::to_string(value) + ")"),
-        dst.write(),
-        Environment<>::get().cuda_stream()
+            .label("device_set_value_small(" + std::to_string(value) + ")")
+            .scheduling_tags({ SCHED_CUPLA }),
+
+        dst.write()
     );
 }
 
@@ -223,7 +224,7 @@ device_set_value_big(
 )
 {
     Environment<>::task(
-        [value]( auto dst, auto cuda_stream )
+        [value]( auto dst )
         {
             auto const area_size = dst.size().getCurrentDataSpace();
             if(area_size.productOfComponents() != 0)
@@ -258,7 +259,7 @@ device_set_value_big(
                     valuePointer_host,
                     sizeof(T_Item),
                     cuplaMemcpyHostToDevice,
-                    cuda_stream));
+                    redGrapes::thread::current_cupla_stream));
 
                 auto destBox = dst.data().getDataBox( );
                 CUPLA_KERNEL(
@@ -270,13 +271,14 @@ device_set_value_big(
                     gridSize,
                     numWorkers,
                     0,
-                    cuda_stream
+                    redGrapes::thread::current_cupla_stream
                 )(
                     destBox,
                     devicePtr,
                     area_size
                 );
 
+                // the free seems a bit early..
                 if (valuePointer_host != nullptr)
                 {
                     CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(valuePointer_host));
@@ -285,9 +287,9 @@ device_set_value_big(
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_big(" + std::to_string(value) + ")"),
-        dst.write(),
-        Environment<>::get().cuda_stream()
+            .label("device_set_value_big(" + std::to_string(value) + ")")
+            .scheduling_tags({ SCHED_CUPLA }),
+        dst.write()
     );
 }
 

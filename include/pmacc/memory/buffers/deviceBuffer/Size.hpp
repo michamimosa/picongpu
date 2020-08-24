@@ -9,17 +9,6 @@
 
 #include <akrzemi/optional.hpp>
 
-//! todo move elsewhere
-namespace std
-{
-
-template < typename T >
-using optional = experimental::optional< T >;
-auto nullopt = experimental::nullopt;
-
-} // namespace std
-
-
 namespace pmacc
 {
 namespace mem
@@ -52,24 +41,23 @@ struct DeviceBufferSize
     {
         if( device_current_size )
             Environment<>::task(
-                []( auto host_size, auto device_size, auto cuda_stream )
+                []( auto host_size, auto device_size )
                 {
                     CUDA_CHECK(cuplaMemcpyAsync(
                         host_size.get(),
                         device_size.get(),
                         sizeof( std::size_t ),
                         cuplaMemcpyDeviceToHost,
-                        cuda_stream
+                        redGrapes::thread::current_cupla_stream
                     ));
-                    cuda_stream.sync();
                 },
 
                 TaskProperties::Builder()
-                    .label("DeviceBufferSize: sync host size"),
+                    .label("DeviceBufferSize: sync host size")
+                    .scheduling_tags({ SCHED_CUPLA }),
 
                 this->host_current_size.write(),
-                this->device_current_size->read(),
-                Environment<>::get().cuda_stream()
+                this->device_current_size->read()
             );
 
         return buffer::BufferSize< T_dim >::get_current_size();
@@ -90,26 +78,25 @@ struct DeviceBufferSize
 
         if( device_current_size )
             Environment<>::task(
-                [new_size]( auto host_size, auto device_size, auto cuda_stream )
+                [new_size]( auto host_size, auto device_size )
                 {
                     CUPLA_KERNEL( KernelSetValueOnDeviceMemory )(
                         1,
                         1,
                         0,
-                        cuda_stream
+                        redGrapes::thread::current_cupla_stream
                     )(
                         device_size.get(),
                         new_size
                     );
-                    cuda_stream.sync();
                 },
 
                 TaskProperties::Builder()
-                    .label("DeviceBufferSize: sync device size"),
+                    .label("DeviceBufferSize: sync device size")
+                    .scheduling_tags({ SCHED_CUPLA }),
 
                 this->host_current_size.read(),
-                this->device_current_size->write(),
-                Environment<>::get().cuda_stream()                
+                this->device_current_size->write()
             );
     }
 

@@ -68,15 +68,6 @@ public:
     {
         // initialize Resource Manager
         pmacc::Environment<>::get().initScheduler( n_threads + 1 );
-        pmacc::Environment<>::get()
-            .ResourceManager()
-            .getScheduler()
-            .schedule[1]
-            .set_wait_hook(
-                [] {
-                    pmacc::Environment<>::get().mpi_request_pool().poll();
-                    pmacc::Environment<>::get().cuda_stream().poll();
-                });
 
         /* -First this initializes the GridController with number of 'devices'*
          *  and 'periodic'ity. The init-routine will then create and manage   *

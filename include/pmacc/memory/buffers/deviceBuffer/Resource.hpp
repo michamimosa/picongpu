@@ -210,9 +210,6 @@ struct BuildProperties<
         {
             builder.add( buf.size.host_current_size.write() );
             builder.add( buf.size.device_current_size->read() );
-
-            // fixme
-            builder.add( pmacc::Environment<>::get().cuda_stream() );
         }
         else
             builder.add( buf.size.host_current_size.read() );
@@ -230,12 +227,7 @@ struct BuildProperties<
         builder.add( buf.size.host_current_size.write() );
 
         if( buf.size.device_current_size )
-        {
             builder.add( buf.size.device_current_size->write() );
-
-            // fixme
-            builder.add( pmacc::Environment<>::get().cuda_stream() );
-        }
     }
 };
 

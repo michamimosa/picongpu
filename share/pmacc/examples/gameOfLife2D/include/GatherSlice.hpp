@@ -134,7 +134,7 @@ struct GatherSlice
 	    },
             TaskProperties::Builder()
                .label("Gather init")
-               .mpi_task()
+               .scheduling_tags({ SCHED_MPI })
         ).get();
     }
 
@@ -173,7 +173,7 @@ struct GatherSlice
 	    },
             TaskProperties::Builder()
                 .label("MPI_Gather()")
-                .mpi_task()
+                .scheduling_tags({ SCHED_MPI })
         ).get();
 
         if (mpiRank == 0)
