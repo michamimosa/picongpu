@@ -275,15 +275,16 @@ namespace kernel
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-                        buf.data().getDataBox(),
+                        buf.getDataBox(),
                         seed,
                         fraction,
                         mapper
                     );
                 },
                 TaskProperties::Builder()
-                    .label("Evolution::initEvolution()"),
-                buf.write()
+                    .label("Evolution::initEvolution()")
+                    .scheduling_tags({ SCHED_CUPLA }),
+                buf.write().data().sub_area( CORE + BORDER )
             );
         }
 
@@ -321,16 +322,17 @@ namespace kernel
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-                        readBuffer.data().getDataBox(),
-                        writeBuffer.data().getDataBox(),
+                        readBuffer.getDataBox(),
+                        writeBuffer.getDataBox(),
                         rule,
                         mapper
                     );
                 },
                 TaskProperties::Builder()
-                    .label( std::move(l) ),
-                readBuffer.read(),
-                writeBuffer.write()
+                    .label( std::move(l) )
+                    .scheduling_tags({ SCHED_CUPLA }),
+                readBuffer.read().data().sub_area( (uint32_t)(T_Area == CORE) ? (CORE + BORDER) : (CORE + BORDER + GUARD) ),
+                writeBuffer.write().data().sub_area( T_Area )
             );
         }
     };

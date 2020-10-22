@@ -131,18 +131,29 @@ copy(
         {
             dst.size().set( src.size().get() );
 
-            DataSpace<T_Dim> devCurrentSize = src.size().getCurrentDataSpace();
+            DataSpace< T_Dim > devCurrentSize = src.size().getCurrentDataSpace();
 
-            if (src.data().is1D() && dst.data().is1D())
-                host2device_detail::fast_copy(dst.data().getPointer(),
-                                              src.data().getPointer(),
-                                              devCurrentSize.productOfComponents());
-            else
-                host2device_detail::copy(dst.data(), src.data(), devCurrentSize);
+            Environment<>::task(
+                [ devCurrentSize ]( auto dst, auto src )
+                {
+                    if ( src.is1D() && dst.is1D() )
+                        host2device_detail::fast_copy(
+                            dst.getPointer(),
+                            src.getPointer(),
+                            devCurrentSize.productOfComponents()
+                        );
+                    else
+                        host2device_detail::copy(dst, src, devCurrentSize);
+                },
+                TaskProperties::Builder()
+                    .label("cuplaMemcpyAsync(dst: Device, src: Host)")
+                    .scheduling_tags({ SCHED_CUPLA }),
+                dst.data(),
+                src.data()
+            );
         },
         TaskProperties::Builder()
-            .label("pmacc::mem::copy(dst: Device, src: Host)")
-            .scheduling_tags({ SCHED_CUPLA }),
+            .label("pmacc::mem::copy(dst: Device, src: Host)"),
         dst.write(),
         src.read()
     );

@@ -192,14 +192,26 @@ namespace detail
 
         void initScheduler( int n_threads )
         {
-            ResourceManager_ptr() = new redGrapes::Manager< TaskProperties, EnqueuePolicy >();
+            ResourceManager_ptr()
+                = new redGrapes::Manager<TaskProperties, EnqueuePolicy>();
 
-            auto & mgr = ResourceManager();
-            auto default_scheduler = redGrapes::scheduler::make_default_scheduler( mgr, n_threads );
-            auto cupla_scheduler = redGrapes::helpers::cupla::make_cupla_scheduler( mgr, 8 /* number of cupla streams */ );
-            mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler( mgr, TaskProperties::Builder().scheduling_tags({ SCHED_MPI }) );
+            auto& mgr = ResourceManager();
+            auto default_scheduler
+                = redGrapes::scheduler::make_default_scheduler(mgr, n_threads);
+            auto cupla_scheduler
+                = redGrapes::helpers::cupla::make_cupla_scheduler(
+                    mgr,
+                    [](auto t) {
+                        return t.get().required_scheduler_tags.test(
+                            SCHED_CUPLA);
+                    },
+                    1 /* number of cupla streams */
+                );
+            mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler(
+                mgr,
+                TaskProperties::Builder().scheduling_tags({SCHED_MPI}));
 
-            
+
             redGrapes::thread::idle =
                 [this, cupla_scheduler]
                 {
