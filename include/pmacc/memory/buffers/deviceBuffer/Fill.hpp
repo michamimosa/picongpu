@@ -176,29 +176,34 @@ device_set_value_small(
                     static_cast< double >( xChunkSize )
                 );
 
-                auto destBox = dst.data().getDataBox( );
-
-                CUPLA_KERNEL(
-                    KernelSetValue<
-                        numWorkers,
-                        xChunkSize
-                    >
-                )(
-                    gridSize,
-                    numWorkers,
-                    0,
-                    redGrapes::thread::current_cupla_stream
-                )(
-                    destBox,
-                    value,
-                    area_size
+                Environment<>::task(
+                    [ numWorkers, xChunkSize, gridSize, area_size, value ]( auto dst )
+                    {
+                        CUPLA_KERNEL(
+                            KernelSetValue<
+                                numWorkers,
+                                xChunkSize
+                            >
+                        )(
+                            gridSize,
+                            numWorkers,
+                            0,
+                            redGrapes::thread::current_cupla_stream
+                        )(
+                            dst.getDataBox(),
+                            value,
+                            area_size
+                        );
+                    },
+                    TaskProperties::Builder()
+                        .label("DeviceSetValueSmall: cupla kernel")
+                        .scheduling_tags({ SCHED_CUPLA }),
+                    dst.data()
                 );
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_small(" + std::to_string(value) + ")")
-            .scheduling_tags({ SCHED_CUPLA }),
-
+            .label("device_set_value_small(" + std::to_string(value) + ")"),
         dst.write()
     );
 }

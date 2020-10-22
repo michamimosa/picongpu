@@ -42,10 +42,20 @@ enum SchedulingTags
     SCHED_CUPLA
 };
 
+std::ostream & operator<< ( std::ostream & out, SchedulingTags tag )
+{
+    switch( tag )
+    {
+    case SCHED_MPI: out << "MPI"; break;
+    case SCHED_CUPLA: out << "CUPLA"; break;
+    }
+    return out;
+}
+
 using TaskProperties = redGrapes::TaskProperties<
-    redGrapes::ResourceProperty,
     redGrapes::LabelProperty,
-    redGrapes::scheduler::SchedulingTagProperties<>,
+    redGrapes::ResourceProperty,
+    redGrapes::scheduler::SchedulingTagProperties< SchedulingTags >,
     redGrapes::helpers::cupla::CuplaTaskProperties
 >;
 
@@ -63,11 +73,8 @@ struct EnqueuePolicy
         if(! redGrapes::ResourceUser::is_superset( super, sub ))
         {
             std::stringstream stream;
-            stream << "Not allowed: " << super.label << "is no superset of " << sub.label << std::endl
-                   << super.label << " has access: " << std::endl
-                   << (redGrapes::ResourceUser)super << std::endl << std::endl
-                   << sub.label << " has access: " << std::endl
-	           << (redGrapes::ResourceUser)sub << std::endl;
+            stream << "Not allowed: " << super << std::endl
+                   << "is no superset of " << sub << std::endl;
             throw std::runtime_error(stream.str());
         }
     }
