@@ -197,7 +197,7 @@ struct ReadGuardBase : GuardBase< Buffer >
     using Item = typename Buffer::Item;
     using DataBox = typename Buffer::DataBoxType;
 
-    Item const * getBasePointer() const { return this->data.obj->get_base_pointer(); }
+    Item const * getBasePointer() const { return this->data.obj->get_base_ptr(); }
     Item const * getPointer() const { return this->data.obj->get_pointer( this->offset ); }
     DataBox const getDataBox() const { return this->data.obj->get_data_box( this->offset ); }
 
@@ -211,7 +211,7 @@ struct WriteGuardBase : ReadGuardBase< Buffer >
     using Item = typename Buffer::Item;
     using DataBox = typename Buffer::DataBoxType;
 
-    Item * getBasePointer() const { return this->data.obj->get_base_pointer(); }
+    Item * getBasePointer() const { return this->data.obj->get_base_ptr(); }
     Item * getPointer() const { return this->data.obj->get_pointer( this->offset ); }
     DataBox getDataBox() const { return this->data.obj->get_data_box( this->offset ); }
 
