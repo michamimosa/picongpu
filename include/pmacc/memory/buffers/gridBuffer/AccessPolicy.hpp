@@ -23,6 +23,9 @@
 
 #include <redGrapes/access/io.hpp>
 
+#include <termcolor/termcolor.hpp>
+#include <ostream_indenter/indent_facet.hpp>
+
 namespace pmacc
 {
 namespace mem
@@ -79,7 +82,7 @@ struct Access
             // (e.g. CORE+BORDER+GUARD & GUARD )
             ( a.area & b.area )
             &&
-            // two reads area always parallel,
+            // two reads are always parallel,
             // regardless of direction or area
             rg::access::IOAccess::is_serial(a.mode, b.mode)
         )
@@ -153,14 +156,23 @@ struct Access
     {
         pmacc::type::ExchangeTypeNames names;
 
-        out << "GridAccess { mode = " << a.mode << ", area = {";
+        out << termcolor::italic << termcolor::cyan << "GridAccess {" << std::endl
+            << indent_manip::push
+            << termcolor::reset
+            << "mode = " << a.mode << std::endl
+            << "area = { ";
+
         if( a.area & CORE )
             out << "CORE;";
         if( a.area & BORDER )
             out << "BORDER;";
         if( a.area & GUARD )
             out << "GUARD;";
-        out << "}, direction = " << names[a.direction] << " }";
+
+        out << " }" << std::endl
+            << "direction = " << names[a.direction] << std::endl
+            << indent_manip::pop
+            << "}";
 
         return out;
     }
@@ -206,6 +218,20 @@ public:
     {}
 
     ReadGuard read() const { return *this; }
+    
+    ReadGuard sub_area( uint32_t area ) const
+    {
+        ReadGuard n = *this;
+        n.area = area;
+        return n;
+    }
+
+    ReadGuard sub_directions( Mask directions ) const
+    {
+        ReadGuard n = *this;
+        n.directions = directions;
+        return n;
+    }
 };
 
 template < typename Buffer >
@@ -238,6 +264,20 @@ public:
 
     ReadGuard< Buffer > read() const { return *this; }
     WriteGuard write() const { return *this; }
+
+    WriteGuard sub_area( uint32_t area ) const
+    {
+        WriteGuard n = *this;
+        n.area = area;
+        return n;
+    }
+
+    WriteGuard sub_directions( Mask directions ) const
+    {
+        WriteGuard n = *this;
+        n.directions = directions;
+        return n;
+    }
 };
 
 } // namespace data
