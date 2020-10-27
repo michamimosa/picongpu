@@ -177,8 +177,6 @@ namespace exec
             T_Args const & ... args
         ) const
         {
-            cuplaStream_t cuda_stream = 0;
-
             std::string const kernelName = typeid( m_kernel.m_kernelFunctor ).name();
             std::string const kernelInfo = kernelName +
                 std::string( " [" ) + m_kernel.m_file + std::string( ":" ) +
@@ -209,7 +207,7 @@ namespace exec
                 gridExtent.toDim3(),
                 blockExtent.toDim3(),
                 m_sharedMemByte,
-		cuda_stream
+                redGrapes::thread::current_cupla_stream
             )(
                 args ...
             );
