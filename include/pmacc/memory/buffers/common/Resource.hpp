@@ -18,7 +18,7 @@ namespace buffer
 {
 
 /*!
- * Base class for accessing a buffer (both host and device).
+ * Base class for accessing a buffer (both host or device).
  * It defines a subdomain that is accessed with
  * the vectors offset and data_space.
  *

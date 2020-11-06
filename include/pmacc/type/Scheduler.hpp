@@ -21,6 +21,7 @@
 
 #pragma once
 
+// todo: cleanup includes
 #include <redGrapes/resource/ioresource.hpp>
 #include <redGrapes/property/inherit.hpp>
 #include <redGrapes/property/resource.hpp>
@@ -33,6 +34,8 @@
 #include <redGrapes/helpers/mpi/scheduler.hpp>
 #include <redGrapes/manager.hpp>
 
+#include <fmt/format.h>
+
 namespace pmacc
 {
 
@@ -42,43 +45,36 @@ enum SchedulingTags
     SCHED_CUPLA
 };
 
-std::ostream & operator<< ( std::ostream & out, SchedulingTags tag )
-{
-    switch( tag )
-    {
-    case SCHED_MPI: out << "MPI"; break;
-    case SCHED_CUPLA: out << "CUPLA"; break;
-    }
-    return out;
-}
-
-using TaskProperties = redGrapes::TaskProperties<
+using RedGrapesManager = redGrapes::Manager<
     redGrapes::LabelProperty,
-    redGrapes::ResourceProperty,
     redGrapes::scheduler::SchedulingTagProperties< SchedulingTags >,
     redGrapes::helpers::cupla::CuplaTaskProperties
 >;
 
-std::ostream& functor_backtrace(std::ostream& out);
+using TaskProperties = typename RedGrapesManager::TaskProps;
+    
+} // namespace pmacc
 
-struct EnqueuePolicy
+template <>
+struct fmt::formatter< pmacc::SchedulingTags >
 {
-    static bool is_serial(TaskProperties const & a, TaskProperties const & b)
+    constexpr auto parse( format_parse_context& ctx )
     {
-        return redGrapes::ResourceUser::is_serial( a, b );
+        return ctx.begin();
     }
 
-    static void assert_superset(TaskProperties const & super, TaskProperties const & sub)
+    template < typename FormatContext >
+    auto format(
+        pmacc::SchedulingTags const & tag,
+        FormatContext & ctx
+    )
     {
-        if(! redGrapes::ResourceUser::is_superset( super, sub ))
+        switch(tag)
         {
-            std::stringstream stream;
-            stream << "Not allowed: " << super << std::endl
-                   << "is no superset of " << sub << std::endl;
-            throw std::runtime_error(stream.str());
+        case pmacc::SCHED_MPI: return fmt::format_to(ctx.out(), "\"MPI\"");
+        case pmacc::SCHED_CUPLA: return fmt::format_to(ctx.out(), "\"Cupla\"");
+        default: return fmt::format_to(ctx.out(), "\"undefined\"");
         }
     }
 };
-    
-} // namespace pmacc
 

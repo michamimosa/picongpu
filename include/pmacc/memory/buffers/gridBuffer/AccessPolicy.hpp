@@ -23,8 +23,8 @@
 
 #include <redGrapes/access/io.hpp>
 
-#include <termcolor/termcolor.hpp>
-#include <ostream_indenter/indent_facet.hpp>
+#include <sstream>
+#include <fmt/format.h>
 
 namespace pmacc
 {
@@ -151,31 +151,6 @@ struct Access
             a.area == b.area &&
             a.direction == b.direction;
     }
-
-    friend std::ostream & operator<<(std::ostream & out, Access const & a)
-    {
-        pmacc::type::ExchangeTypeNames names;
-
-        out << termcolor::italic << termcolor::cyan << "GridAccess {" << std::endl
-            << indent_manip::push
-            << termcolor::reset
-            << "mode = " << a.mode << std::endl
-            << "area = { ";
-
-        if( a.area & CORE )
-            out << "CORE;";
-        if( a.area & BORDER )
-            out << "BORDER;";
-        if( a.area & GUARD )
-            out << "GUARD;";
-
-        out << " }" << std::endl
-            << "direction = " << names[a.direction] << std::endl
-            << indent_manip::pop
-            << "}";
-
-        return out;
-    }
 };
 
 } // namespace data
@@ -289,6 +264,8 @@ public:
 
 
 
+
+
 namespace redGrapes
 {
 namespace trait
@@ -351,5 +328,62 @@ struct BuildProperties<
 } // namespace trait
 
 } // namespace redGrapes
+
+
+template <>
+struct fmt::formatter< pmacc::mem::grid_buffer::data::Access >
+{
+    constexpr auto parse( format_parse_context& ctx )
+    {
+        return ctx.begin();
+    }
+
+    template < typename FormatContext >
+    auto format(
+        pmacc::mem::grid_buffer::data::Access const & a,
+        FormatContext & ctx
+    )
+    {
+        pmacc::type::ExchangeTypeNames names;
+
+        bool first = true;
+        std::stringstream area_str;
+        area_str << "[ ";
+
+        if( a.area & pmacc::CORE )
+        {
+            first = false;
+            area_str << " \"Core\"";
+        }
+
+        if( a.area & pmacc::BORDER )
+        {
+            if( ! first)
+                area_str << ", ";
+
+            first = false;
+            area_str << "\"Border\"";
+        }
+
+        if( a.area & pmacc::GUARD )
+        {
+            if( ! first)
+                area_str << ", ";
+
+            first = false;
+            area_str << "\"Guard\"";
+        }
+
+
+        return format_to(
+                   ctx.out(),
+                   "{{ \"GridAccess\" : {{ \"mode\" : {}, \"area\" : {}, \"direction\" : \"{}\" }} }}",
+                   a.mode,
+                   area_str.str(),
+                   names[a.direction]
+               );
+    }
+};
+
 
 
