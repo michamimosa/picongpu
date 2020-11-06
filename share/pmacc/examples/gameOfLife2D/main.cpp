@@ -18,6 +18,8 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
+
 #include "types.hpp"
 #include <pmacc/Environment.hpp>
 #include "Simulation.hpp"
@@ -109,6 +111,7 @@ int main( int argc, char **argv )
     std::string stayAliveIf = rule.substr( 0, gPoint );
     std::string newBornIf = rule.substr( gPoint + 1, strLen - gPoint - 1 );
 
+    spdlog::set_pattern("[thread %t] [%l] %v");
 
     for ( unsigned int i = 0; i < newBornIf.length( ); ++i )
     {
@@ -128,6 +131,8 @@ int main( int argc, char **argv )
     }
     std::cout << "newborn if=" << newBornIf << " stay alive if=" << stayAliveIf << " mask=" << ruleMask << std::endl;
 
+    spdlog::set_level(spdlog::level::trace);
+
     try
     {
     /* start game of life simulation */
@@ -142,7 +147,7 @@ int main( int argc, char **argv )
     }
     catch( std::exception const & e )
     {
-        std::cerr << "RUNTIME ERROR: " << e.what() << std::endl;
+        spdlog::error(e.what());
         //pmacc::functor_backtrace(std::cerr);
     }
 
