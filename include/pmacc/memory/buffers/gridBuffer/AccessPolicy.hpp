@@ -374,6 +374,7 @@ struct fmt::formatter< pmacc::mem::grid_buffer::data::Access >
             area_str << "\"Guard\"";
         }
 
+        area_str << " ]";
 
         return format_to(
                    ctx.out(),
