@@ -36,7 +36,6 @@
 #include "pmacc/assert.hpp"
 
 #include <pmacc/type/Scheduler.hpp>
-#include <redGrapes/manager.hpp>
 
 #include <mpi.h>
 
@@ -159,10 +158,7 @@ namespace detail
 
         auto & ResourceManager_ptr()
         {
-            static redGrapes::Manager<
-                TaskProperties,
-                EnqueuePolicy
-            > * mgr_ptr;
+            static RedGrapesManager * mgr_ptr;
             return mgr_ptr;
         }
 
@@ -173,7 +169,7 @@ namespace detail
 
         auto & mpi_scheduler()
         {
-            static redGrapes::helpers::mpi::MPIScheduler< std::remove_reference<decltype(ResourceManager())>::type > mpi_sched;
+            static redGrapes::helpers::mpi::MPIScheduler< RedGrapesManager > mpi_sched;
             return mpi_sched;
         }
 
@@ -181,7 +177,6 @@ namespace detail
         {
             return mpi_scheduler().request_pool;
         }
-
 
         /** cleanup the environment */
         void finalize()
@@ -192,12 +187,12 @@ namespace detail
 
         void initScheduler( int n_threads )
         {
-            ResourceManager_ptr()
-                = new redGrapes::Manager<TaskProperties, EnqueuePolicy>();
-
+            ResourceManager_ptr() = new RedGrapesManager();
             auto& mgr = ResourceManager();
+
             auto default_scheduler
                 = redGrapes::scheduler::make_default_scheduler(mgr, n_threads);
+
             auto cupla_scheduler
                 = redGrapes::helpers::cupla::make_cupla_scheduler(
                     mgr,
@@ -205,12 +200,13 @@ namespace detail
                         return t.get().required_scheduler_tags.test(
                             SCHED_CUPLA);
                     },
-                    1 /* number of cupla streams */
+                    8 /* number of cupla streams */
                 );
+
             mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler(
                 mgr,
-                TaskProperties::Builder().scheduling_tags({SCHED_MPI}));
-
+                TaskProperties::Builder().scheduling_tags({SCHED_MPI})
+            );
 
             redGrapes::thread::idle =
                 [this, cupla_scheduler]
