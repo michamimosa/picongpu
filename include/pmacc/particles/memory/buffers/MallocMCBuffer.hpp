@@ -26,6 +26,8 @@
 
 #include <mallocMC/mallocMC.hpp>
 
+#include <redGrapes/resource/ioresource.hpp>
+
 #include <string>
 #include <memory>
 
@@ -40,7 +42,7 @@ namespace pmacc
 
         MallocMCBuffer( const std::shared_ptr<DeviceHeap>& deviceHeap );
 
-        virtual ~MallocMCBuffer();
+        virtual ~MallocMCBuffer() {}
 
         SimulationDataId getUniqueId() override
         {
@@ -60,13 +62,13 @@ namespace pmacc
         void synchronize() override;
 
     private:
-
-        char* hostPtr;
-        int64_t hostBufferOffset;
-        mallocMC::HeapInfo deviceHeapInfo;
+        rg::IOResource< char > hostData; // is a shared_ptr< char >
+        rg::IOResource< int64_t > hostBufferOffset;
+        rg::IOResource< mallocMC::HeapInfo > deviceHeapInfo;
     };
 
 
 } // namespace pmacc
 
 #include "pmacc/particles/memory/buffers/MallocMCBuffer.tpp"
+

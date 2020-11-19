@@ -1,4 +1,4 @@
-/* Copyright 2015-2020 Rene Widera, Alexander Grund
+/* Copyright 2015-2020 Rene Widera, Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -30,9 +30,10 @@
 
 namespace pmacc
 {
+
 template< typename T_DeviceHeap >
 MallocMCBuffer< T_DeviceHeap >::MallocMCBuffer( const std::shared_ptr<DeviceHeap>& deviceHeap ) :
-    hostPtr( nullptr ),
+    hostData( std::shared_ptr< char >( nullptr ) )
     /* currently mallocMC has only one heap */
     deviceHeapInfo( deviceHeap->getHeapLocations( )[ 0 ] ),
     hostBufferOffset( 0 )
@@ -40,39 +41,72 @@ MallocMCBuffer< T_DeviceHeap >::MallocMCBuffer( const std::shared_ptr<DeviceHeap
 }
 
 template< typename T_DeviceHeap >
-MallocMCBuffer< T_DeviceHeap >::~MallocMCBuffer( )
-{
-    if ( hostPtr != nullptr )
-        cudaHostUnregister(hostPtr);
-
-    __deleteArray(hostPtr);
-
-}
-
-template< typename T_DeviceHeap >
 void MallocMCBuffer< T_DeviceHeap >::synchronize( )
 {
-    /** \todo: we had no abstraction to create a host buffer and a pseudo
-     *         device buffer (out of the mallocMC ptr) and copy both with our event
-     *         system.
-     *         WORKAROUND: use native cuda calls :-(
-     */
-    if ( hostPtr == nullptr )
-    {
-        /* use `new` and than `cudaHostRegister` is faster than `cudaMallocHost`
-         * but with the some result (create page-locked memory)
-         */
-        hostPtr = new char[deviceHeapInfo.size];
-        CUDA_CHECK((cuplaError_t)cudaHostRegister(hostPtr, deviceHeapInfo.size, cudaHostRegisterDefault));
+    Environment<>::task(
+        []( auto hostData, auto hostBufferOffset, auto deviceHeapInfo )
+        {
+            /** \todo: we had no abstraction to create a host buffer and a pseudo
+             *         device buffer (out of the mallocMC ptr) and copy both with our event
+             *         system.
+             *         WORKAROUND: use native cuda calls :-(
+             */
+            if ( hostData.get() == nullptr )
+            {
+                /* use `new` and than `cudaHostRegister` is faster than `cudaMallocHost`
+                 * but with the some result (create page-locked memory)
+                 */
+                char * hostPtr = new char[ deviceHeapInfo->size ];
+                CUDA_CHECK((cuplaError_t)
+                    cudaHostRegister(
+                        hostPtr,
+                        deviceHeapInfo->size,
+                        cudaHostRegisterDefault
+                    ));
 
+		// this member access doesn't look good...
+		hostData.obj
+		    .reset(
+                        hostPtr,
+                        []( char * hostPtr )
+                        {
+                            cudaHostUnregister( hostPtr );
+                            delete[] hostPtr;
+                        }
+                    );
 
-        this->hostBufferOffset = static_cast<int64_t>(reinterpret_cast<char*>(deviceHeapInfo.p) - hostPtr);
-    }
-    /* add event system hints */
-    __startOperation(ITask::TASK_DEVICE);
-    __startOperation(ITask::TASK_HOST);
-    CUDA_CHECK(cuplaMemcpy(hostPtr, deviceHeapInfo.p, deviceHeapInfo.size, cuplaMemcpyDeviceToHost));
+                *hostBufferOffset = static_cast<int64_t>(reinterpret_cast<char*>(deviceHeapInfo->p) - hostPtr);
+            }
 
+            Environment<>::task(
+                []( auto hostData, auto deviceHeapInfo )
+                {
+                    CUDA_CHECK(cuplaMemcpyAsync(
+                        hostData.get(),
+                        deviceHeapInfo->p,
+                        deviceHeapInfo->size,
+                        cuplaMemcpyDeviceToHost,
+                        redGrapes::thread::current_cupla_stream
+                    ));
+                },
+
+                TaskProperties::Builder()
+                    .label("cuplaMemcpy")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                hostData.write(),
+		deviceHeapInfo.read()
+           );
+	},
+
+        TaskProperties::Builder()
+            .label("MallocMCBuffer::synchronize()"),
+
+	hostData.write(),
+	hostBufferOffset.write(),
+	deviceHeapInfo.read()
+    );
 }
 
-} //namespace pmacc
+} // namespace pmacc
+
