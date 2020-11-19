@@ -100,6 +100,18 @@ struct DeviceBufferSize
             );
     }
 
+    // unsafe
+    size_t * get_device_pointer()
+    {
+        if( device_current_size )
+            return device_current_size->get();
+    }
+
+    bool is_on_device()
+    {
+        return (bool)device_current_size;
+    }
+
 protected:
     template < typename, typename >
     friend class rg::trait::BuildProperties;

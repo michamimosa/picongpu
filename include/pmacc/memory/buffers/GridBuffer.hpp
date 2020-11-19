@@ -358,6 +358,11 @@ struct GridBuffer
         return (Environment<T_dim>::get().EnvironmentController().getCommunicationMask() & receiveMask);
     }
 
+    GridLayout< T_dim > getGridLayout()
+    {
+        return gridLayout;
+    }
+    
 private:
     GridLayout< T_dim > gridLayout;
 

@@ -135,6 +135,12 @@ public:
         return tmp;
     }
 
+    // unsafe
+    size_t * get_host_pointer()
+    {
+        return host_current_size.get();
+    }
+
 protected:
     
     template < typename, typename >
