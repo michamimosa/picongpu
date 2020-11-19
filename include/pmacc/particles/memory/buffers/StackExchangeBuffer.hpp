@@ -232,8 +232,24 @@ struct redGrapes::trait::BuildProperties<
         pmacc::StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const& buf
     )
     {
-        builder.add(buf.stack.write());
-        builder.add(buf.stackIndexer.write());
+        builder.add( buf.stack );
+        builder.add( buf.stackIndexer );
+    }
+};
+
+template <class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<
+    pmacc::stack_exchange_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>
+>
+{
+    template <typename Builder>
+    static void build(
+        Builder& builder,
+        pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
+    )
+    {
+        builder.add( buf.stack.host() );
+        builder.add( buf.stackIndexer.host() );
     }
 };
 
@@ -248,8 +264,8 @@ struct redGrapes::trait::BuildProperties<
         pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
     )
     {
-        builder.add(buf.stack.device().write());
-        builder.add(buf.stackIndexer.device().write());
+        builder.add( buf.stack.device() );
+        builder.add( buf.stackIndexer.device() );
     }
 };
 
