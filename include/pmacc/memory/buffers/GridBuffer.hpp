@@ -243,6 +243,91 @@ struct GridBuffer
         }
     }
 
+
+    /**
+     * Add Exchange in dedicated memory space.
+     *
+     * An Exchange is added to this GridBuffer. The exchange buffers use
+     * the their own memory instead of using the GridBuffer's memory space.
+     *
+     * @param receive a Mask which describes the directions for the exchange
+     * @param dataSpace size of the newly created exchange buffer in each dimension
+     * @param communicationTag unique tag/id for communication
+     * @param sizeOnDeviceSend if true, internal send buffers must store their
+     *        size additionally on the device
+     *        (as we keep this information coherent with the host, it influences
+     *        performance on host-device copies, but some algorithms on the device
+     *        might need to know the size of the buffer)
+     * @param sizeOnDeviceReceive if true, internal receive buffers must store their
+     *        size additionally on the device
+     */
+    void addExchangeBuffer(
+        Mask const & receive,
+        DataSpace< T_dim > const & dataSpace,
+        uint32_t communicationTag,
+        bool sizeOnDeviceSend,
+        bool sizeOnDeviceReceive
+    )
+    {
+        if (hasOneExchange && (communicationTag != lastUsedCommunicationTag))
+            throw std::runtime_error("It is not allowed to give the same GridBuffer different communicationTags");
+        lastUsedCommunicationTag = communicationTag;
+
+        /*don't create buffer with 0 (zero) elements*/
+        if (dataSpace.productOfComponents() != 0)
+        {
+            receiveMask = receiveMask + receive;
+            sendMask = this->receiveMask.getMirroredMask();
+            Mask send = receive.getMirroredMask();
+
+            for (uint32_t ex = 1; ex < 27; ++ex)
+            {
+                if (send.isSet(ex))
+                {
+                    uint32_t uniqCommunicationTag = (communicationTag << 5) | ex;
+                    if (!hasOneExchange && !privateGridBuffer::UniquTag::getInstance().isTagUniqu(uniqCommunicationTag))
+                    {
+                        std::stringstream message;
+                        message << "unique exchange communication tag ("
+                            << uniqCommunicationTag << ") which is created from communicationTag ("
+                            << communicationTag << ") already used for other GridBuffer exchange";
+                        throw std::runtime_error(message.str());
+                    }
+                    hasOneExchange = true;
+
+                    if (sendExchanges[ex] != nullptr)
+                    {
+                        throw std::runtime_error("Exchange already added!");
+                    }
+
+                    //GridLayout<DIM> memoryLayout(size);
+                    //maxExchange = std::max(maxExchange, ex + 1u);
+
+
+                    auto sendex = ex;
+                    sendExchanges[sendex].emplace(
+                        DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceSend ),
+                        sendex,
+                        uniqCommunicationTag,
+                        useMpiDirect,
+                        sizeOnDeviceSend
+                    );
+
+                    ExchangeType recvex = Mask::getMirroredExchangeType(ex);
+                    //maxExchange = std::max(maxExchange, recvex + 1u);
+
+                    recvExchanges[recvex].emplace(
+                        DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceReceive ),
+                        recvex,
+                        uniqCommunicationTag,
+                        useMpiDirect,
+                        sizeOnDeviceReceive
+                    );
+                }
+            }
+        }
+    }
+
     device_buffer::WriteGuard<
         T_Item,
         T_dim,
