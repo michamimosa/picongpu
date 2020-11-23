@@ -1,4 +1,5 @@
-/* Copyright 2013-2020 Axel Huebl, Felix Schmitt, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Axel Huebl, Felix Schmitt, Rene Widera,
+ *                     Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -27,7 +28,6 @@
 #include "pmacc/dimensions/GridLayout.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/particles/memory/buffers/StackExchangeBuffer.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/particles/memory/dataTypes/SuperCell.hpp"
 
 #include "pmacc/math/Vector.hpp"
@@ -179,27 +179,29 @@ public:
      * @param gpuMemory how many memory on device is used for this instance (in byte)
      */
     ParticlesBuffer(const std::shared_ptr<DeviceHeap>& deviceHeap, DataSpace<DIM> layout, DataSpace<DIM> superCellSize) :
-        m_deviceHeap(deviceHeap), superCellSize(superCellSize), gridSize(layout), framesExchanges(nullptr)
+        m_deviceHeap(deviceHeap),
+        superCellSize(superCellSize),
+        gridSize(layout),
+        exchangeMemoryIndexer( DataSpace< DIM1 >( 0 ) ),
+        framesExchanges( DataSpace< DIM1 >( 0 ) ),
+        superCells( DataSpace< DIM >( gridSize / superCellSize ) )
     {
-
-        exchangeMemoryIndexer = new GridBuffer<BorderFrameIndex, DIM1 > (DataSpace<DIM1 > (0));
-        framesExchanges = new GridBuffer< FrameType, DIM1, FrameTypeBorder > (DataSpace<DIM1 > (0));
-
-        DataSpace<DIM> superCellsCount = gridSize / superCellSize;
-
-        superCells = new GridBuffer<SuperCellType, DIM > (superCellsCount);
-
         reset();
     }
 
     /**
      * Destructor.
      */
-    virtual ~ParticlesBuffer()
+    virtual ~ParticlesBuffer() {}
+
+    auto host()
     {
-        __delete(superCells);
-        __delete(framesExchanges);
-        __delete(exchangeMemoryIndexer);
+        return particles_buffer::HostGuard( *this );
+    }
+
+    auto device()
+    {
+        return particles_buffer::DeviceGuard( *this );
     }
 
     /**
@@ -207,9 +209,8 @@ public:
      */
     void reset()
     {
-
-        superCells->getDeviceBuffer().setValue(SuperCellType ());
-        superCells->getHostBuffer().setValue(SuperCellType ());
+        mem::buffer::fill( superCells.device(), SuperCellType() );
+        mem::buffer::fill( superCells.host(), SuperCellType() );
     }
 
     /**
@@ -220,40 +221,22 @@ public:
      */
     void addExchange(Mask receive, size_t usedMemory, uint32_t communicationTag)
     {
-
         size_t numFrameTypeBorders = usedMemory / SizeOfOneBorderElement;
 
-        framesExchanges->addExchangeBuffer(receive, DataSpace<DIM1 > (numFrameTypeBorders), communicationTag, true, false);
-
-        exchangeMemoryIndexer->addExchangeBuffer(receive, DataSpace<DIM1 > (numFrameTypeBorders), communicationTag | (1u << (20 - 5)), true, false);
-    }
-
-    /**
-     * Returns a ParticlesBox for device frame data.
-     *
-     * @return device frames ParticlesBox
-     */
-    ParticlesBoxType getDeviceParticleBox()
-    {
-
-        return ParticlesBoxType(
-            superCells->getDeviceBuffer().getDataBox(),
-            m_deviceHeap->getAllocatorHandle()
+        framesExchanges.addExchangeBuffer(
+            receive,
+            DataSpace< DIM1 >( numFrameTypeBorders ),
+            communicationTag,
+            true,
+            false
         );
-    }
 
-    /**
-     * Returns a ParticlesBox for host frame data.
-     *
-     * @return host frames ParticlesBox
-     */
-    ParticlesBoxType getHostParticleBox(int64_t memoryOffset)
-    {
-
-        return ParticlesBoxType (
-            superCells->getHostBuffer().getDataBox(),
-            m_deviceHeap->getAllocatorHandle(),
-            memoryOffset
+        exchangeMemoryIndexer.addExchangeBuffer(
+            receive,
+            DataSpace< DIM1 >( numFrameTypeBorders ),
+            communicationTag | ( 1u << (20 - 5) ),
+            true,
+            false
         );
     }
 
@@ -265,8 +248,7 @@ public:
      */
     bool hasSendExchange(uint32_t ex)
     {
-
-        return framesExchanges->hasSendExchange(ex);
+        return framesExchanges.hasSendExchange(ex);
     }
 
     /**
@@ -277,53 +259,25 @@ public:
      */
     bool hasReceiveExchange(uint32_t ex)
     {
-
-        return framesExchanges->hasReceiveExchange(ex);
+        return framesExchanges.hasReceiveExchange(ex);
     }
 
     StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 > getSendExchangeStack(uint32_t ex)
     {
-
         return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 >
-            (framesExchanges->getSendExchange(ex), exchangeMemoryIndexer->getSendExchange(ex));
+            (framesExchanges.getSendExchange(ex), exchangeMemoryIndexer.getSendExchange(ex));
     }
 
     StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 > getReceiveExchangeStack(uint32_t ex)
     {
-
         return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 >
-            (framesExchanges->getReceiveExchange(ex), exchangeMemoryIndexer->getReceiveExchange(ex));
+            (framesExchanges.getReceiveExchange(ex), exchangeMemoryIndexer.getReceiveExchange(ex));
     }
 
-    /**
-     * Starts sync data from own device buffer to neighbor device buffer.
-     *
-     * GridBuffer
-     *
-     */
-    EventTask asyncCommunication(EventTask serialEvent)
+    void communication()
     {
-
-        return framesExchanges->asyncCommunication(serialEvent) +
-               exchangeMemoryIndexer->asyncCommunication(serialEvent);
-    }
-
-    EventTask asyncSendParticles(EventTask serialEvent, uint32_t ex)
-    {
-        /* store each gpu-free event separately to avoid race conditions */
-        EventTask framesExchangesGPUEvent;
-        EventTask exchangeMemoryIndexerGPUEvent;
-        EventTask returnEvent = framesExchanges->asyncSend(serialEvent, ex) +
-            exchangeMemoryIndexer->asyncSend(serialEvent, ex);
-
-        return returnEvent;
-    }
-
-    EventTask asyncReceiveParticles(EventTask serialEvent, uint32_t ex)
-    {
-
-        return framesExchanges->asyncReceive(serialEvent, ex) +
-            exchangeMemoryIndexer->asyncReceive(serialEvent, ex);
+        framesExchanges.communication();
+        exchangeMemoryIndexer.communication();
     }
 
     /**
@@ -333,9 +287,7 @@ public:
      */
     DataSpace<DIM> getSuperCellsCount()
     {
-
-        PMACC_ASSERT(superCells != nullptr);
-        return superCells->getGridLayout().getDataSpace();
+        return superCells.getGridLayout().getDataSpace();
     }
 
     /**
@@ -345,9 +297,7 @@ public:
      */
     GridLayout<DIM> getSuperCellsLayout()
     {
-
-        PMACC_ASSERT(superCells != nullptr);
-        return superCells->getGridLayout();
+        return superCells.getGridLayout();
     }
 
     /**
@@ -357,26 +307,101 @@ public:
      */
     DataSpace<DIM> getSuperCellSize()
     {
-
         return superCellSize;
     }
 
     void deviceToHost()
     {
-        superCells->deviceToHost();
+        mem::buffer::copy( superCells.host().write(), superCells.device().read() );
     }
 
-
 private:
-    GridBuffer<BorderFrameIndex, DIM1> *exchangeMemoryIndexer;
+    mem::GridBuffer<BorderFrameIndex, DIM1> exchangeMemoryIndexer;
 
-    GridBuffer<SuperCellType, DIM> *superCells;
+    mem::GridBuffer<SuperCellType, DIM> superCells;
     /*GridBuffer for hold borderFrames, we need a own buffer to create first exchanges without core memory*/
-    GridBuffer< FrameType, DIM1, FrameTypeBorder> *framesExchanges;
+    mem::GridBuffer< FrameType, DIM1, FrameTypeBorder> framesExchanges;
 
     DataSpace<DIM> superCellSize;
     DataSpace<DIM> gridSize;
     std::shared_ptr<DeviceHeap> m_deviceHeap;
 
+}; // class ParticlesBuffer
+
+
+namespace particles_buffer
+{
+
+template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+struct HostGuard
+    : private ParticlesBuffer<T_ParticleDescription, SuperCellSize_, T_DeviceHeap, DIM>
+{
+    /**
+     * Returns a ParticlesBox for host frame data.
+     *
+     * @return host frames ParticlesBox
+     */
+    ParticlesBoxType getParticleBox( int64_t memoryOffset )
+    {
+        return ParticlesBoxType(
+            superCells.host().data().getDataBox(),
+            m_deviceHeap->getAllocatorHandle(),
+            memoryOffset
+        );
+    }
 };
-}
+
+template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+struct DeviceGuard
+    : private ParticlesBuffer<T_ParticleDescription, SuperCellSize_, T_DeviceHeap, DIM>
+{
+    /**
+     * Returns a ParticlesBox for device frame data.
+     *
+     * @return device frames ParticlesBox
+     */
+    ParticlesBoxType getParticleBox()
+    {
+        return ParticlesBoxType(
+            superCells.device().data().getDataBox(),
+            m_deviceHeap->getAllocatorHandle()
+        );
+    }    
+};
+
+} // namespace particles_buffer
+
+} // namespace pmacc
+
+
+template <class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<
+    pmacc::particles_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>
+>
+{
+    template <typename Builder>
+    static void build(
+        Builder& builder,
+        pmacc::particles_buffer::HostGuard<FRAME, FRAMEINDEX, DIM> const & buf
+    )
+    {
+        builder.add( buf.superCells.host().data() );
+    }
+};
+
+template <class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<
+    pmacc::particles_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>
+>
+{
+    template <typename Builder>
+    static void build(
+        Builder& builder,
+        pmacc::particles_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
+    )
+    {
+        builder.add( buf.superCells.device().data() );
+    }
+};
+
+
