@@ -46,8 +46,8 @@ namespace pmacc
          *
          * @param stack Exchange
          */
-        StackExchangeBuffer(mem::ExchangeBuffer<FRAME, DIM1>& stack,
-                            mem::ExchangeBuffer<FRAMEINDEX, DIM1>& stackIndexer)
+        StackExchangeBuffer(mem::ExchangeBuffer<FRAME, DIM1> stack,
+                            mem::ExchangeBuffer<FRAMEINDEX, DIM1> stackIndexer)
             : stack(stack)
             , stackIndexer(stackIndexer)
         {
@@ -59,22 +59,6 @@ namespace pmacc
             stack.getDeviceBuffer().size().set(size);
             stackIndexer.getHostBuffer().size().set(size);
             stackIndexer.getDeviceBuffer().size().set(size);
-        }
-
-        size_t getHostCurrentSize()
-        {
-            if (Environment<>::get().isMpiDirectEnabled())
-                return stackIndexer.getDeviceBuffer().size().get();
-            else
-                return stackIndexer.getDeviceBuffer().size().get();
-        }
-
-        size_t getHostParticlesCurrentSize()
-        {
-            if (Environment<>::get().isMpiDirectEnabled())
-                return stack.getDeviceBuffer().size().get();
-            else
-                return stack.getHostBuffer().size().get();
         }
 
         size_t getMaxParticlesCount()
@@ -89,14 +73,6 @@ namespace pmacc
                     .productOfComponents();
         }
 
-        size_t getHostParticlesCurrentSize()
-        {
-            if (Environment<>::get().isMpiDirectEnabled())
-                return stack.getDeviceBuffer().size().get();
-            else
-                return stack.getHostBuffer().size().get();
-        }
-
         auto host()
         {
             return stack_exchange_buffer::HostGuard(*this);
@@ -108,13 +84,13 @@ namespace pmacc
         }
 
     private:
-        mem::ExchangeBuffer<FRAME, DIM1>& getExchangeBuffer()
+        mem::ExchangeBuffer<FRAME, DIM1> getExchangeBuffer()
         {
             return stack;
         }
 
-        mem::ExchangeBuffer<FRAME, DIM1>& stack;
-        mem::ExchangeBuffer<FRAMEINDEX, DIM1>& stackIndexer;
+        mem::ExchangeBuffer<FRAME, DIM1> stack;
+        mem::ExchangeBuffer<FRAMEINDEX, DIM1> stackIndexer;
     };
 
 
@@ -123,15 +99,33 @@ namespace pmacc
         /*
          * Acces Guard that only allows access to host side databoxes
          */
-        struct HostGuard : StackExchangeBuffer
+        struct HostGuard : private StackExchangeBuffer
         {
+            friend class redGrapes::trait::BuildProperties< HostGuard >;
+
+            size_t getCurrentSize()
+            {
+                if (Environment<>::get().isMpiDirectEnabled())
+                    return stackIndexer.getDeviceBuffer().size().get();
+                else
+                    return stackIndexer.getHostBuffer().size().get();
+            }
+
+            size_t getParticlesCurrentSize()
+            {
+                if (Environment<>::get().isMpiDirectEnabled())
+                    return stack.getDeviceBuffer().size().get();
+                else
+                    return stack.getHostBuffer().size().get();
+            }
+
             /**
              * Returns a PushDataBox for the internal HostBuffer.
              *
              * @return PushDataBox for host buffer
              */
             ExchangePushDataBox<vint_t, FRAME, DIM>
-            getHostExchangePushDataBox()
+            getPushDataBox()
             {
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
                     stack.getHostBuffer().data().getBasePointer(),
@@ -149,7 +143,7 @@ namespace pmacc
              *
              * @return PopDataBox for host buffer
              */
-            ExchangePopDataBox<vint_t, FRAME, DIM> getHostExchangePopDataBox()
+            ExchangePopDataBox<vint_t, FRAME, DIM> getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
                     stack.getHostBuffer().data().getDataBox(),
@@ -160,12 +154,9 @@ namespace pmacc
         /*
          * Acces Guard that only allows access to device side databoxes
          */
-        struct DeviceGuard : StackExchangeBuffer
+        struct DeviceGuard : private StackExchangeBuffer
         {
-            size_t getParticlesCurrentSize()
-            {
-                return stack.getDeviceBuffer().size().get();
-            }
+            friend class redGrapes::trait::BuildProperties< DeviceGuard >;
 
             size_t getCurrentSize()
             {
@@ -182,7 +173,7 @@ namespace pmacc
              *
              * @return PushDataBox for device buffer
              */
-            ExchangePushDataBox<vint_t, FRAME, DIM> getExchangePushDataBox()
+            ExchangePushDataBox<vint_t, FRAME, DIM> getPushDataBox()
             {
                 PMACC_ASSERT(stack.getDeviceBuffer().size().is_on_device());
                 PMACC_ASSERT(stackIndexer.getDeviceBuffer().size().is_on_device());
@@ -209,7 +200,7 @@ namespace pmacc
              * @return PopDataBox for device buffer
              */
             ExchangePopDataBox<vint_t, FRAME, DIM>
-            getDeviceExchangePopDataBox()
+            getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
                     stack.getDeviceBuffer().data().getDataBox(),
@@ -229,7 +220,7 @@ struct redGrapes::trait::BuildProperties<
     template <typename Builder>
     static void build(
         Builder& builder,
-        pmacc::StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const& buf
+        pmacc::StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const & buf
     )
     {
         builder.add( buf.stack );
@@ -245,7 +236,7 @@ struct redGrapes::trait::BuildProperties<
     template <typename Builder>
     static void build(
         Builder& builder,
-        pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
+        pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const & buf
     )
     {
         builder.add( buf.stack.host() );
@@ -261,7 +252,7 @@ struct redGrapes::trait::BuildProperties<
     template <typename Builder>
     static void build(
         Builder& builder,
-        pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
+        pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const & buf
     )
     {
         builder.add( buf.stack.device() );
