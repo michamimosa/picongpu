@@ -280,6 +280,18 @@ public:
         exchangeMemoryIndexer.communication();
     }
 
+    void send( uint32_t direction )
+    {
+        framesExchanges.send( direction );
+        exchangeMemoryIndexer.send( direction );
+    }
+
+    void recv( uint32_t ex )
+    {
+        framesExchanges.recv( direction );
+        exchangeMemoryIndexer.recv( direction );
+    }
+    
     /**
      * Returns number of supercells in each dimension.
      *

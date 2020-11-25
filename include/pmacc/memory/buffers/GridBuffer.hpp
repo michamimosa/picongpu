@@ -371,6 +371,18 @@ struct GridBuffer
                 exchangeBuffer->recv();
     }
 
+    void send( uint32_t direction )
+    {
+        if( auto ex = sendExchanges[ direction ] )
+            ex->send();
+    }
+
+    void recv( uint32_t direction )
+    {
+        if( auto ex = recvExchanges[ direction ] )
+            ex->recv();
+    }
+
     /*!
      * Returns whether this GridBuffer has an Exchange for sending in ex direction.
      *
