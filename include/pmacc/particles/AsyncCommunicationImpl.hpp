@@ -44,18 +44,28 @@ namespace pmacc{
         struct AsyncCommunicationImpl<T_Data, Bool2Type<IsParticleSpecies<T_Data>::value> >
         {
             template<class T_Particles>
-            EventTask
-            operator()(T_Particles& par, EventTask event) const
+            void
+            operator()( T_Particles & particles ) const
             {
-                EventTask ret;
-                __startTransaction(event);
-                Environment<>::get().ParticleFactory().createTaskParticlesReceive(par);
-                ret = __endTransaction();
+                typename T_Particles::HandleGuardRegion::HandleExchanged handleExchanged;
+                typename T_Particles::HandleGuardRegion::HandleNotExchanged handleNotExchanged;
 
-                __startTransaction(event);
-                Environment<>::get().ParticleFactory().createTaskParticlesSend(par);
-                ret += __endTransaction();
-                return ret;
+                size_t n_exchanges = traits::NumberOfExchanges< T_Particles::Dim >::value;
+
+                for(int i = 1; i < n_exchanges; ++i)
+                {
+                    if( particles.getParticlesBuffer().hasReceiveExchange( i ) )
+                        handleExchanged.handleIncoming( particles, i );
+                    else
+                        handleNotExchanged.handleIncoming( particles, i );
+
+                    if( parBase.getParticlesBuffer().hasSendExchange( i ) )
+                        handleExchanged.handleOutgoing( particles, i );
+                    else
+                        handleNotExchanged.handleOutgoing( particles, i );
+                }
+
+                particles.fillBorderGaps();
             }
         };
 

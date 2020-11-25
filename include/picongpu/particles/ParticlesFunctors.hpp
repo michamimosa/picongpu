@@ -242,19 +242,14 @@ struct PushSpecies
 
     template<typename T_EventList>
     HINLINE void operator()(
-        const uint32_t currentStep,
-        const EventTask& eventInt,
-        T_EventList& updateEvent
+        const uint32_t currentStep
     ) const
     {
         DataConnector &dc = Environment<>::get().DataConnector();
         auto species = dc.get< SpeciesType >( FrameType::getName(), true );
 
-        __startTransaction(eventInt);
         species->update(currentStep);
         dc.releaseData( FrameType::getName() );
-        EventTask ev = __endTransaction();
-        updateEvent.push_back(ev);
     }
 };
 
@@ -274,18 +269,12 @@ struct CommunicateSpecies
     using FrameType = typename SpeciesType::FrameType;
 
     template<typename T_EventList>
-    HINLINE void operator()(
-        T_EventList& updateEventList,
-        T_EventList& commEventList
-    ) const
+    HINLINE void operator() () const
     {
         DataConnector &dc = Environment<>::get().DataConnector();
         auto species = dc.get< SpeciesType >( FrameType::getName(), true );
 
-        EventTask updateEvent(*(updateEventList.begin()));
-
-        updateEventList.pop_front();
-        commEventList.push_back( communication::asyncCommunication(*species, updateEvent) );
+        communication::asyncCommunication( *species );
 
         dc.releaseData( FrameType::getName() );
     }
@@ -301,44 +290,22 @@ struct PushAllSpecies
      * @param commEvent[out] grouped event that marks the end of the species communication
      */
     HINLINE void operator()(
-        const uint32_t currentStep,
-        const EventTask& eventInt,
-        EventTask& pushEvent,
-        EventTask& commEvent
+        const uint32_t currentStep
     ) const
     {
-        using EventList = std::list<EventTask>;
-        EventList updateEventList;
-        EventList commEventList;
-
         /* push all species */
         using VectorSpeciesWithPusher = typename pmacc::particles::traits::FilterByFlag
         <
             VectorAllSpecies,
             particlePusher<>
         >::type;
-        meta::ForEach< VectorSpeciesWithPusher, particles::PushSpecies< bmpl::_1 > > pushSpecies;
-        pushSpecies( currentStep, eventInt, updateEventList );
 
-        /* join all push events */
-        for (typename EventList::iterator iter = updateEventList.begin();
-             iter != updateEventList.end();
-             ++iter)
-        {
-            pushEvent += *iter;
-        }
+        meta::ForEach< VectorSpeciesWithPusher, particles::PushSpecies< bmpl::_1 > > pushSpecies;
+        pushSpecies( currentStep );
 
         /* call communication for all species */
         meta::ForEach< VectorSpeciesWithPusher, particles::CommunicateSpecies< bmpl::_1> > communicateSpecies;
-        communicateSpecies( updateEventList, commEventList );
-
-        /* join all communication events */
-        for (typename EventList::iterator iter = commEventList.begin();
-             iter != commEventList.end();
-             ++iter)
-        {
-            commEvent += *iter;
-        }
+        communicateSpecies();
     }
 };
 
