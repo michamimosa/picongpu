@@ -111,41 +111,29 @@ protected:
      */
     template< uint32_t AREA >
     void shiftParticles()
-    {
-        StrideMapping<AREA, 3, MappingDesc> mapper(this->cellDescription);
+    {        
+        Environment<>::task(
+            [ cellDescription ]( auto particlesBuffer )
+            {
+                StrideMapping< AREA, 3, MappingDesc > mapper( cellDescription );
 
-        constexpr uint32_t numWorkers = traits::GetNumWorkers<
-            math::CT::volume<typename FrameType::SuperCellSize>::type::value
-        >::value;
+                constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                    math::CT::volume<typename FrameType::SuperCellSize>::type::value
+                >::value;
 
-        do
-        {
-            /* TODO: transform into something like:
-
-            Environment<>::cupla_task(
-                KernelShiftParticles< numWorkers >{},
-                mapper.getGridDim(),
-                numWorkers,
-                TaskProperties::Builder().label("shiftParticles"),
-                particlesBuffer.write()
-            );
-
-            */
-
-            Environment<>::task(
-                []( auto particlesBuffer )
+                do
                 {
                     PMACC_KERNEL(KernelShiftParticles< numWorkers >{})
                         (mapper.getGridDim(), numWorkers)
                         (particlesBuffer->getDeviceParticleBox(), mapper);
-                },
-                TaskProperties::Builder()
-                    .label("shiftParticles")
-                    .scheduling_tags({ SCHED_CUPLA }),
-                particlesBuffer.write()
-            );
-        }
-        while (mapper.next());
+                }
+                while (mapper.next());
+            },
+            TaskProperties::Builder()
+               .label("shiftParticles")
+               .scheduling_tags({ SCHED_CUPLA }),
+           particlesBuffer.write()
+        );
     }
 
     /* fill gaps in a AREA
@@ -154,15 +142,15 @@ protected:
     template< uint32_t AREA >
     void fillGaps()
     {
-        AreaMapping<AREA, MappingDesc> mapper(this->cellDescription);
-
-        constexpr uint32_t numWorkers = traits::GetNumWorkers<
-            math::CT::volume<typename FrameType::SuperCellSize>::type::value
-        >::value;
-
         Environment<>::task(
-            []( auto particlesBuffer )
+            [ cellDescription ]( auto particlesBuffer )
             {
+                AreaMapping< AREA, MappingDesc > mapper( cellDescription );
+
+                constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                    math::CT::volume<typename FrameType::SuperCellSize>::type::value
+                >::value;
+
                 PMACC_KERNEL(KernelFillGaps< numWorkers >{})
                     (mapper.getGridDim(), numWorkers)
                     (particlesBuffer->getDeviceParticleBox(), mapper);
@@ -170,7 +158,7 @@ protected:
             TaskProperties::Builder()
                 .label("fillGaps")
                 .scheduling_tags({ SCHED_CUPLA }),
-            particlesBuilder.write()
+            particlesBuffer.write()
         );
     }
 
