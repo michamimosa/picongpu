@@ -22,7 +22,6 @@
 #pragma once
 
 #include "pmacc/Environment.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 
 #include "pmacc/fields/SimulationFieldHelper.hpp"
@@ -37,41 +36,56 @@ namespace pmacc
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::deleteGuardParticles(uint32_t exchangeType)
     {
+	Environment<>::task(
+            [cellDescription, exchangeType] ( auto particlesBufferDev )
+	    {
+                ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, exchangeType);
 
-        ExchangeMapping<GUARD, MappingDesc> mapper(this->cellDescription, exchangeType);
+                constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                     math::CT::volume< typename FrameType::SuperCellSize >::type::value
+                >::value;
 
-        constexpr uint32_t numWorkers = traits::GetNumWorkers<
-            math::CT::volume< typename FrameType::SuperCellSize >::type::value
-        >::value;
-
-        PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
-            mapper.getGridDim( ),
-            numWorkers
-        )(
-            particlesBuffer->getDeviceParticleBox( ),
-            mapper
-        );
+                PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
+                    mapper.getGridDim( ),
+		    numWorkers
+                )(
+                    particlesBufferDev->getParticleBox( ),
+                    mapper
+                );
+	    },
+	    TaskProperties::Builder()
+                .label("ParticlesBase::deleteGuardParticles")
+                .schedulingTags({ SCHED_CUPLA }),
+	    particlesBuffer.device()
+	);
     }
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     template<uint32_t T_area>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::deleteParticlesInArea()
     {
-
         AreaMapping<T_area, MappingDesc> mapper(this->cellDescription);
 
         constexpr uint32_t numWorkers = traits::GetNumWorkers<
             math::CT::volume< typename FrameType::SuperCellSize >::type::value
         >::value;
 
-        PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
-            mapper.getGridDim( ),
-            numWorkers
-        )(
-            particlesBuffer->getDeviceParticleBox( ),
-            mapper
-        );
-    }
+	Environment<>::task(
+             []( auto particlesBuffer )
+	     {
+	        PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
+	            mapper.getGridDim( ),
+                    numWorkers
+                )(
+                    particlesBuffer->getDeviceParticleBox( ),
+                    mapper
+                );
+	     },
+             TaskProperties::Builder()
+                .label("deleteParticlesInArea")
+                .schedulingTags({ SCHED_CUPLA }),
+             particlesBuffer.device()
+	);
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::reset(uint32_t )
@@ -85,29 +99,38 @@ namespace pmacc
     {
         if( particlesBuffer->hasSendExchange( exchangeType ) )
         {
-            ExchangeMapping<
-                GUARD,
-                MappingDesc
-            > mapper(
-                this->cellDescription,
-                exchangeType
-            );
-
             particlesBuffer->getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
 
-            constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                math::CT::volume< typename FrameType::SuperCellSize >::type::value
-            >::value;
+            Environment<>::task(
+                [cellDescription, exchangeType] ( auto particlesBuffer )
+                {
+                    ExchangeMapping<
+                        GUARD,
+                        MappingDesc
+                    > mapper(
+                        cellDescription,
+                        exchangeType
+                    );
 
-            PMACC_KERNEL( KernelCopyGuardToExchange< numWorkers >{ } )(
-                mapper.getGridDim( ),
-                numWorkers
-            )(
-                particlesBuffer->getDeviceParticleBox( ),
-                particlesBuffer->getSendExchangeStack( exchangeType ).getDeviceExchangePushDataBox( ),
-                mapper
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume< typename FrameType::SuperCellSize >::type::value
+                    >::value;
+
+                    PMACC_KERNEL( KernelCopyGuardToExchange< numWorkers >{ } )(
+                        mapper.getGridDim( ),
+                        numWorkers
+                    )(
+                        particlesBuffer->getDeviceParticleBox( ),
+                        particlesBuffer->getSendExchangeStack( exchangeType ).getDeviceExchangePushDataBox( ),
+                        mapper
+                    );
+                },
+		TaskProperties::Builder()
+                    .label("KernelCopyGuardToExchange")
+                    .scheduling_tags({ SCHED_CUPLA }),
+                particlesBuffer.write()
             );
-        }
+	}	
     }
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
@@ -117,33 +140,48 @@ namespace pmacc
         {
             size_t numParticles = 0u;
             if( Environment<>::get().isMpiDirectEnabled() )
-                numParticles = particlesBuffer->getReceiveExchangeStack( exchangeType ).getDeviceCurrentSize( );
+                numParticles = particlesBuffer.getReceiveExchangeStack( exchangeType ).device().getCurrentSize();
             else
-                numParticles = particlesBuffer->getReceiveExchangeStack( exchangeType ).getHostCurrentSize( );
+                numParticles = particlesBuffer.getReceiveExchangeStack( exchangeType ).host().getCurrentSize();
 
             if( numParticles != 0u )
             {
-                ExchangeMapping<
-                    GUARD,
-                    MappingDesc
-                > mapper(
-                    this->cellDescription,
-                    exchangeType
-                );
+                Environment<>::task(
+                    [ cellDescription, exchangeType ] (
+                        auto particlesBuffer,
+                        auto exchangeStack
+                    )
+                    {
+                        ExchangeMapping<
+                            GUARD,
+                            MappingDesc
+                        > mapper(
+                            cellDescription,
+                            exchangeType
+                        );
 
-                constexpr uint32_t numWorkers = traits::GetNumWorkers<
-                    math::CT::volume< typename FrameType::SuperCellSize >::type::value
-                >::value;
+                        constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                            math::CT::volume< typename FrameType::SuperCellSize >::type::value
+                        >::value;
 
-                PMACC_KERNEL( KernelInsertParticles< numWorkers >{ } )(
-                    numParticles,
-                    numWorkers
-                )(
-                    particlesBuffer->getDeviceParticleBox( ),
-                    particlesBuffer->getReceiveExchangeStack( exchangeType ).getDeviceExchangePopDataBox( ),
-                    mapper
-                );
-            }
+                        PMACC_KERNEL( KernelInsertParticles< numWorkers >{ } )(
+                            numParticles,
+                            numWorkers
+                        )(
+                            particlesBuffer->getParticleBox( ),
+                            exchangeStack->getPopDataBox( ),
+                            mapper
+                        );
+		    },
+
+                    TaskProperties::Builder()
+                        .label("ParticlesBase::insertParticles()")
+                        .scheduling_tags({ SCHED_CUPLA }),
+
+                    particlesBuffer.device(),
+                    particlesBuffer.getReceiveExchangeStack( exchangeType ).device()
+		);
+	    }
         }
     }
 
