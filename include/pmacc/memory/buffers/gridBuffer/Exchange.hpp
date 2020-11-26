@@ -310,16 +310,12 @@ struct ExchangeBuffer
         }
     }
 
-    auto getHostBuffer()
-    {
-        return hostBuffer;
-    }
+    auto host() { return hostBuffer; }
+    auto getHostBuffer() { return hostBuffer; }
 
-    auto getDeviceBuffer()
-    {
-        return deviceBuffer;
-    }
-    
+    auto device() { return deviceBuffer; }
+    auto getDeviceBuffer() { return deviceBuffer; }
+
 private:
 
     //! access to device data (from GridBuffer)

@@ -113,7 +113,7 @@ protected:
     void shiftParticles()
     {        
         Environment<>::task(
-            [ cellDescription ]( auto particlesBuffer )
+            [ cellDescription ]( auto parDevice )
             {
                 StrideMapping< AREA, 3, MappingDesc > mapper( cellDescription );
 
@@ -125,14 +125,14 @@ protected:
                 {
                     PMACC_KERNEL(KernelShiftParticles< numWorkers >{})
                         (mapper.getGridDim(), numWorkers)
-                        (particlesBuffer->getDeviceParticleBox(), mapper);
+                        (parDevice->getParticlesBox(), mapper);
                 }
-                while (mapper.next());
+                while ( mapper.next() );
             },
             TaskProperties::Builder()
                .label("shiftParticles")
                .scheduling_tags({ SCHED_CUPLA }),
-           particlesBuffer.write()
+           particlesBuffer.device()
         );
     }
 
@@ -143,7 +143,7 @@ protected:
     void fillGaps()
     {
         Environment<>::task(
-            [ cellDescription ]( auto particlesBuffer )
+            [ cellDescription ]( auto parDevice )
             {
                 AreaMapping< AREA, MappingDesc > mapper( cellDescription );
 
@@ -153,12 +153,12 @@ protected:
 
                 PMACC_KERNEL(KernelFillGaps< numWorkers >{})
                     (mapper.getGridDim(), numWorkers)
-                    (particlesBuffer->getDeviceParticleBox(), mapper);
+                    (parDevice.getParticlesBox(), mapper);
             },
             TaskProperties::Builder()
                 .label("fillGaps")
                 .scheduling_tags({ SCHED_CUPLA }),
-            particlesBuffer.write()
+            particlesBuffer.device()
         );
     }
 

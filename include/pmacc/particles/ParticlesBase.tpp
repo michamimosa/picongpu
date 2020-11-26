@@ -37,7 +37,7 @@ namespace pmacc
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::deleteGuardParticles(uint32_t exchangeType)
     {
 	Environment<>::task(
-            [cellDescription, exchangeType] ( auto particlesBufferDev )
+            [cellDescription, exchangeType] ( auto parDevice )
 	    {
                 ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, exchangeType);
 
@@ -49,7 +49,7 @@ namespace pmacc
                     mapper.getGridDim( ),
 		    numWorkers
                 )(
-                    particlesBufferDev->getParticleBox( ),
+                    parDevice->getParticlesBox( ),
                     mapper
                 );
 	    },
@@ -71,13 +71,13 @@ namespace pmacc
         >::value;
 
 	Environment<>::task(
-             []( auto particlesBuffer )
+             []( auto parDevice )
 	     {
 	        PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
 	            mapper.getGridDim( ),
                     numWorkers
                 )(
-                    particlesBuffer->getDeviceParticleBox( ),
+                    parDevice->getParticlesBox( ),
                     mapper
                 );
 	     },
@@ -102,7 +102,8 @@ namespace pmacc
             particlesBuffer->getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
 
             Environment<>::task(
-                [cellDescription, exchangeType] ( auto particlesBuffer )
+                [ cellDescription, exchangeType ]
+                ( auto parDevice, auto parExchangeDevice )
                 {
                     ExchangeMapping<
                         GUARD,
@@ -120,15 +121,18 @@ namespace pmacc
                         mapper.getGridDim( ),
                         numWorkers
                     )(
-                        particlesBuffer->getDeviceParticleBox( ),
-                        particlesBuffer->getSendExchangeStack( exchangeType ).getDeviceExchangePushDataBox( ),
+                        parDevice.getParticlesBox( ),
+                        parExchangeDevice.getPushDataBox( ),
                         mapper
                     );
                 },
+
 		TaskProperties::Builder()
                     .label("KernelCopyGuardToExchange")
                     .scheduling_tags({ SCHED_CUPLA }),
-                particlesBuffer.write()
+
+                particlesBuffer.device(),
+		particlesBuffer.getSendExchangeStack( exchangeType ).device()
             );
 	}	
     }
@@ -148,8 +152,8 @@ namespace pmacc
             {
                 Environment<>::task(
                     [ cellDescription, exchangeType ] (
-                        auto particlesBuffer,
-                        auto exchangeStack
+                        auto parDevice,
+                        auto parExchangeDevice
                     )
                     {
                         ExchangeMapping<
@@ -168,8 +172,8 @@ namespace pmacc
                             numParticles,
                             numWorkers
                         )(
-                            particlesBuffer->getParticleBox( ),
-                            exchangeStack->getPopDataBox( ),
+                            parDevice->getParticlesBox( ),
+                            parExchangeDevice->getPopDataBox( ),
                             mapper
                         );
 		    },

@@ -1,4 +1,5 @@
-/* Copyright 2013-2020 Heiko Burau, Rene Widera, Alexander Grund
+/* Copyright 2013-2020 Heiko Burau, Rene Widera, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *

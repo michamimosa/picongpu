@@ -353,7 +353,7 @@ struct HostGuard
      *
      * @return host frames ParticlesBox
      */
-    ParticlesBoxType getParticleBox( int64_t memoryOffset )
+    ParticlesBoxType getParticlesBox( int64_t memoryOffset )
     {
         return ParticlesBoxType(
             superCells.host().data().getDataBox(),
@@ -372,7 +372,7 @@ struct DeviceGuard
      *
      * @return device frames ParticlesBox
      */
-    ParticlesBoxType getParticleBox()
+    ParticlesBoxType getParticlesBox()
     {
         return ParticlesBoxType(
             superCells.device().data().getDataBox(),
