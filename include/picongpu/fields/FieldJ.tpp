@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
- *                     Richard Pausch, Benjamin Worpitz
+ *                     Richard Pausch, Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -157,24 +157,29 @@ GridLayout<simDim> FieldJ::getGridLayout( )
     return cellDescription.getGridLayout( );
 }
 
-EventTask FieldJ::asyncCommunication( EventTask serialEvent )
+void FieldJ::communication( )
 {
-    EventTask ret;
-    __startTransaction( serialEvent );
-    FieldFactory::getInstance( ).createTaskFieldReceiveAndInsert( *this );
-    ret = __endTransaction( );
+    for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
+    {
+        if ( buffer.hasSendExchange(i) )
+	{
+            FieldFactory::getInstance().createTaskFieldSendExchange(m_buffer, i);
+	}
+    }
 
-    __startTransaction( serialEvent );
-    FieldFactory::getInstance( ).createTaskFieldSend( *this );
-    ret += __endTransaction( );
+    for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
+    {
+        if ( buffer.hasReceiveExchange( i ) )
+        {
+            FieldFactory::getInstance().createTaskFieldReceiveAndInsertExchange(m_buffer, i);
+	    buffer.insertField( i );
+        }
+    }
+    
+    FieldFactory::getInstance().createTaskFieldReceiveAndInsert( *this );
 
     if( fieldJrecv != nullptr )
-    {
-        EventTask eJ = fieldJrecv->asyncCommunication( ret );
-        return eJ;
-    }
-    else
-        return ret;
+        EventTask eJ = fieldJrecv->communication();
 }
 
 void FieldJ::reset( uint32_t )

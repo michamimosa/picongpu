@@ -1,5 +1,6 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
- *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov
+ *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov,
+ *                     Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -30,7 +31,6 @@
 
 #include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/dimensions/SuperCellDescription.hpp>
-#include <pmacc/eventSystem/EventSystem.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 #include <pmacc/mappings/kernel/ExchangeMapping.hpp>
 #include <pmacc/math/Vector.hpp>
@@ -148,10 +148,9 @@ namespace fields
         return buffer->getDeviceBuffer( ).getDataBox( );
     }
 
-    EventTask EMFieldBase::asyncCommunication( EventTask serialEvent )
+    void EMFieldBase::communication( )
     {
-        EventTask eB = buffer->asyncCommunication( serialEvent );
-        return eB;
+        buffer->communication();
     }
 
     void EMFieldBase::reset( uint32_t )

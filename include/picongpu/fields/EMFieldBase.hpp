@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch,
- *                     Benjamin Worpitz, Sergei Bastrakov
+ *                     Benjamin Worpitz, Sergei Bastrakov, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -105,7 +105,7 @@ namespace fields
          *
          * @param serialEvent event to depend on
          */
-        HINLINE EventTask asyncCommunication( EventTask serialEvent );
+        HINLINE void communication( );
 
         /** Reset the host-device buffer for field values
          *
