@@ -85,21 +85,13 @@ namespace picongpu
         //! Get the grid layout
         HINLINE GridLayout<simDim> getGridLayout( );
 
-        //! Get the host data box for the field values
-        HINLINE DataBoxType getHostDataBox( );
-
-        //! Get the device data box for the field values
-        HINLINE DataBoxType getDeviceDataBox( );
-
         /** Start asynchronous send of field values
          *
          * Add data from the local guard of the GPU to the border of the neighboring GPUs.
-         * This method can be called before or after asyncCommunicationGather without
+         * This method can be called before or after communicationGather without
          * explicit handling to avoid race conditions between both methods.
-         *
-         * @param serialEvent event to depend on
          */
-        HINLINE virtual EventTask asyncCommunication( EventTask serialEvent );
+        HINLINE virtual void communication();
 
         /** Reset the host-device buffer for field values
          *
@@ -151,7 +143,7 @@ namespace picongpu
          * This method can be called before or after asyncCommunication without
          * explicit handling to avoid race conditions between both methods.
          */
-        HINLINE EventTask asyncCommunicationGather( EventTask serialEvent );
+        HINLINE void communicationGather( );
 
         /** Compute current density created by a species in an area
          *
@@ -176,6 +168,9 @@ namespace picongpu
          * @param exchangeType exchange type
          */
         HINLINE void insertField( uint32_t exchangeType );
+
+        auto host() { return fieldTmp->host(); }
+        auto device() { return fieldTmp->device(); }
 
     private:
 

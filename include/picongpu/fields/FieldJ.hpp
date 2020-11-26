@@ -110,7 +110,7 @@ namespace picongpu
         void syncToDevice() override
         {
             ValueType tmp = float3_X(0., 0., 0.);
-            buffer.getDeviceBuffer().setValue(tmp);
+            pmacc::mem::buffers::fill( buffer.device(), tmp );
         }
 
         //! Synchronize host data with device data

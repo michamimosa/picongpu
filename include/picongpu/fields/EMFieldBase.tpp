@@ -138,16 +138,6 @@ namespace fields
         return cellDescription.getGridLayout( );
     }
 
-    EMFieldBase::DataBoxType EMFieldBase::getHostDataBox( )
-    {
-        return buffer->getHostBuffer( ).getDataBox( );
-    }
-
-    EMFieldBase::DataBoxType EMFieldBase::getDeviceDataBox( )
-    {
-        return buffer->getDeviceBuffer( ).getDataBox( );
-    }
-
     void EMFieldBase::communication( )
     {
         buffer->communication();
@@ -155,18 +145,18 @@ namespace fields
 
     void EMFieldBase::reset( uint32_t )
     {
-        buffer->getHostBuffer( ).reset( true );
-        buffer->getDeviceBuffer( ).reset( false );
+        pmacc::mem::buffer::reset( buffer->host(), true );
+        pmacc::mem::buffer::reset( buffer->device(), false );
     }
 
     void EMFieldBase::syncToDevice( )
     {
-        buffer->hostToDevice( );
+        pmacc::mem::buffer::copy( device().write(), host().read() );
     }
 
     void EMFieldBase::synchronize( )
     {
-        buffer->deviceToHost( );
+        pmacc::mem::buffer::copy( host().write(), device().read() );
     }
 
     pmacc::SimulationDataId EMFieldBase::getUniqueId( )

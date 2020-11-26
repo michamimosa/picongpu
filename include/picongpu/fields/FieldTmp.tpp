@@ -26,12 +26,11 @@
 #include "picongpu/traits/GetMargin.hpp"
 #include "picongpu/particles/traits/GetInterpolation.hpp"
 
+#include <pmacc/Environment.hpp>
 #include <pmacc/memory/buffers/GridBuffer.hpp>
 #include <pmacc/mappings/simulation/GridController.hpp>
 #include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
-#include <pmacc/eventSystem/EventSystem.hpp>
-#include <pmacc/fields/tasks/FieldFactory.hpp>
 #include <pmacc/dimensions/SuperCellDescription.hpp>
 #include <pmacc/math/Vector.hpp>
 #include <pmacc/fields/operations/CopyGuardToExchange.hpp>
@@ -189,37 +188,49 @@ namespace picongpu
     template<uint32_t AREA, class FrameSolver, class ParticlesClass>
     void FieldTmp::computeValue( ParticlesClass& parClass, uint32_t )
     {
-        typedef SuperCellDescription<
-            typename MappingDesc::SuperCellSize,
-            typename FrameSolver::LowerMargin,
-            typename FrameSolver::UpperMargin
-            > BlockArea;
+        Environment<>::task(
+            [ cellDescription ]( auto tmpData, auto parDevice )
+            {
+                typedef SuperCellDescription<
+                    typename MappingDesc::SuperCellSize,
+                    typename FrameSolver::LowerMargin,
+                    typename FrameSolver::UpperMargin
+                > BlockArea;
 
-        StrideMapping<AREA, 3, MappingDesc> mapper( cellDescription );
-        typename ParticlesClass::ParticlesBoxType pBox = parClass.getDeviceParticlesBox( );
-        FieldTmp::DataBoxType tmpBox = this->fieldTmp->getDeviceBuffer( ).getDataBox( );
-        FrameSolver solver;
-        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-            pmacc::math::CT::volume< SuperCellSize >::type::value
-        >::value;
+                StrideMapping<AREA, 3, MappingDesc> mapper( cellDescription );
 
-        do
-        {
-            PMACC_KERNEL( KernelComputeSupercells<
-                numWorkers,
-                BlockArea
-            >{ } )(
-                mapper.getGridDim( ),
-                numWorkers
-            )(
-                tmpBox,
-                pBox,
-                solver,
-                mapper
-            );
-        } while( mapper.next( ) );
+                FrameSolver solver;
+                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                    pmacc::math::CT::volume< SuperCellSize >::type::value
+                >::value;
+
+                do
+                {
+                    PMACC_KERNEL(
+                        KernelComputeSupercells<
+                            numWorkers,
+                            BlockArea
+                        >{ }
+                    )(
+                        mapper.getGridDim( ),
+        		numWorkers
+                    )(
+                        tmpData.getDataBox(),
+                        parDevice.getParticlesBox(),
+                        solver,
+                        mapper
+                    );
+                } while( mapper.next( ) );
+	    },
+
+            TaskProperties::Builder()
+                .label("FieldTmp::computeValue()")
+                .scheduling_tags({ SCHED_CUPLA }),
+
+	    this->device().data(),
+	    parClass.device()
+        );
     }
-
 
     SimulationDataId
     FieldTmp::getUniqueId( uint32_t slotId )
@@ -235,29 +246,39 @@ namespace picongpu
 
     void FieldTmp::synchronize( )
     {
-        fieldTmp->deviceToHost( );
+        pmacc::mem::buffer::copy(
+            fieldTmp.host().write(),
+            fieldTmp.device().read()
+        );
     }
 
     void FieldTmp::syncToDevice( )
     {
-        fieldTmp->hostToDevice( );
+        pmacc::mem::buffer::copy(
+            fieldTmp.device().write(),
+            fieldTmp.host().read()
+        );
     }
 
-    EventTask FieldTmp::asyncCommunication( EventTask serialEvent )
+    void FieldTmp::communication( )
     {
-        EventTask ret;
-        __startTransaction( serialEvent + m_gatherEv + m_scatterEv );
-        FieldFactory::getInstance( ).createTaskFieldReceiveAndInsert( *this );
-        ret = __endTransaction( );
+        for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
+        {
+            if ( fieldTmp.hasSendExchange( i ) )
+            {
+                bashField( i );
+                fieldTmp.send( i );
+            }
 
-        __startTransaction( serialEvent + m_gatherEv + m_scatterEv);
-        FieldFactory::getInstance( ).createTaskFieldSend( *this );
-        ret += __endTransaction( );
-        m_scatterEv = ret;
-        return ret;
+            if ( fieldTmp.hasReceiveExchange( i ) )
+            {
+                fieldTmp.recv( i );
+                insertField( i );
+            }
+        }
     }
 
-    EventTask FieldTmp::asyncCommunicationGather( EventTask serialEvent )
+    void FieldTmp::communicationGather( )
     {
         PMACC_VERIFY_MSG(
             fieldTmpSupportGatherCommunication == true,
@@ -265,36 +286,47 @@ namespace picongpu
         );
 
         if( fieldTmpRecv != nullptr )
-            m_gatherEv = fieldTmpRecv->asyncCommunication( serialEvent + m_scatterEv + m_gatherEv );
-        return m_gatherEv;
+            fieldTmpRecv->communication( );
     }
 
     void FieldTmp::bashField( uint32_t exchangeType )
     {
-        pmacc::fields::operations::CopyGuardToExchange{ }(
-            *fieldTmp,
-            SuperCellSize{ },
-            exchangeType
+        Environment<>::task(
+            [ exchangeType ]( auto bufferData )
+            {
+                pmacc::fields::operations::CopyGuardToExchange{ }(
+                    bufferData,
+                    SuperCellSize{ },
+                    exchangeType
+                );
+            },
+
+            TaskProperties::Builder()
+                .label("FieldTmp::bashField()")
+                .scheduling_tags({ SCHED_CUPLA }),
+
+            fieldTmp->device().data()
         );
     }
 
     void FieldTmp::insertField( uint32_t exchangeType )
     {
-        pmacc::fields::operations::AddExchangeToBorder{ }(
-            *fieldTmp,
-            SuperCellSize{ },
-            exchangeType
+        Environment<>::task(
+            [ exchangeType ]( auto bufferData )
+	    {
+                pmacc::fields::operations::AddExchangeToBorder{ }(
+                    bufferData,
+                    SuperCellSize{ },
+                    exchangeType
+                );
+            },
+
+            TaskProperties::Builder()
+                .label("FieldTmpa::insertField()")
+                .scheduling_tags({ SCHED_CUPLA }),
+
+            fieldTmp->device().data()
         );
-    }
-
-    FieldTmp::DataBoxType FieldTmp::getDeviceDataBox( )
-    {
-        return fieldTmp->getDeviceBuffer( ).getDataBox( );
-    }
-
-    FieldTmp::DataBoxType FieldTmp::getHostDataBox( )
-    {
-        return fieldTmp->getHostBuffer( ).getDataBox( );
     }
 
     GridBuffer<typename FieldTmp::ValueType, simDim> &FieldTmp::getGridBuffer( )
@@ -309,8 +341,8 @@ namespace picongpu
 
     void FieldTmp::reset( uint32_t )
     {
-        fieldTmp->getHostBuffer( ).reset( true );
-        fieldTmp->getDeviceBuffer( ).reset( false );
+        pmacc::mem::buffer::reset( fieldTmp->host(), true );
+        pmacc::mem::buffer::reset( fieldTmp->device(), false );
     }
 
     template<class FrameSolver >

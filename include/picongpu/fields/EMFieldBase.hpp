@@ -95,16 +95,7 @@ namespace fields
         //! Get the grid layout
         HINLINE GridLayout< simDim > getGridLayout( );
 
-        //! Get the host data box for the field values
-        HINLINE DataBoxType getHostDataBox( );
-
-        //! Get the device data box for the field values
-        HINLINE DataBoxType getDeviceDataBox( );
-
-        /** Start asynchronous communication of field values
-         *
-         * @param serialEvent event to depend on
-         */
+        //! Start asynchronous communication of field values
         HINLINE void communication( );
 
         /** Reset the host-device buffer for field values
@@ -121,6 +112,10 @@ namespace fields
 
         //! Get id
         HINLINE SimulationDataId getUniqueId( ) override;
+
+        //! buffer access guards
+        auto device() { return buffer->device(); }
+        auto host() { return buffer->host(); }
 
     private:
 

@@ -31,7 +31,6 @@
 #include <pmacc/particles/memory/boxes/ParticlesBox.hpp>
 #include <pmacc/Environment.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
-#include <pmacc/fields/tasks/FieldFactory.hpp>
 #include <pmacc/math/Vector.hpp>
 #include <pmacc/fields/operations/CopyGuardToExchange.hpp>
 #include <pmacc/fields/operations/AddExchangeToBorder.hpp>
@@ -161,25 +160,21 @@ void FieldJ::communication( )
 {
     for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
     {
-        if ( buffer.hasSendExchange(i) )
-	{
-            FieldFactory::getInstance().createTaskFieldSendExchange(m_buffer, i);
-	}
-    }
+        if ( buffer.hasSendExchange( i ) )
+        {
+            bashField( i );
+            buffer.send( i );
+        }
 
-    for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
-    {
         if ( buffer.hasReceiveExchange( i ) )
         {
-            FieldFactory::getInstance().createTaskFieldReceiveAndInsertExchange(m_buffer, i);
-	    buffer.insertField( i );
+            buffer.recv( i );
+            insertField( i );
         }
     }
-    
-    FieldFactory::getInstance().createTaskFieldReceiveAndInsert( *this );
 
     if( fieldJrecv != nullptr )
-        EventTask eJ = fieldJrecv->communication();
+        fieldJrecv->communication();
 }
 
 void FieldJ::reset( uint32_t )
@@ -188,7 +183,10 @@ void FieldJ::reset( uint32_t )
 
 void FieldJ::synchronize( )
 {
-    buffer.deviceToHost( );
+    pmacc::mem::copy(
+        this->host().write(),
+        this->device().read()
+    );
 }
 
 SimulationDataId FieldJ::getUniqueId( )
@@ -228,7 +226,7 @@ FieldJ::getName( )
 
 void FieldJ::assign( ValueType value )
 {
-    buffer.getDeviceBuffer( ).setValue( value );
+    pmacc::mem::buffer::fill( this->device(), value );
     //fieldJ.reset(false);
 }
 
@@ -284,49 +282,89 @@ void FieldJ::computeCurrent( T_Species & species, uint32_t )
 template<uint32_t T_area, class T_CurrentInterpolation>
 void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
 {
-    DataConnector &dc = Environment<>::get().DataConnector();
-    auto fieldE = dc.get< FieldE >( FieldE::getName(), true );
-    auto fieldB = dc.get< FieldB >( FieldB::getName(), true );
+    DataConnector & dc = Environment<>::get().DataConnector();
 
-    AreaMapping<
-        T_area,
-        MappingDesc
-    > mapper(cellDescription);
+    Environment<>::task(
+        [
+            cellDescription,
+            myCurrentInterpolation
+        ]
+        (
+            auto fieldE,
+            auto fieldB,
+            auto buffer
+        )
+        {
+            AreaMapping<
+                T_area,
+                MappingDesc
+            > mapper( cellDescription );
 
-    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-        pmacc::math::CT::volume< SuperCellSize >::type::value
-    >::value;
+            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                pmacc::math::CT::volume< SuperCellSize >::type::value
+            >::value;
 
-    PMACC_KERNEL( currentSolver::KernelAddCurrentToEMF< numWorkers >{} )(
-        mapper.getGridDim(),
-        numWorkers
-        )(
-            fieldE->getDeviceDataBox( ),
-            fieldB->getDeviceDataBox( ),
-            buffer.getDeviceBuffer( ).getDataBox( ),
-            myCurrentInterpolation,
-            mapper
+            PMACC_KERNEL( currentSolver::KernelAddCurrentToEMF< numWorkers >{} )(
+                mapper.getGridDim(),
+                numWorkers
+            )(
+                fieldE->getDataBox( ),
+                fieldB->getDataBox( ),
+                buffer.getDataBox( ),
+                myCurrentInterpolation,
+                mapper
             );
-    dc.releaseData( FieldE::getName() );
-    dc.releaseData( FieldB::getName() );
+        },
+
+        TaskProperties::Builder()
+            .label("FieldJ::addCurrentToEMF()")
+            .scheduling_tags({ SCHED_CUPLA }),
+
+        dc.get< FieldE >( FieldE::getName(), true ).device().data(),
+        dc.get< FieldB >( FieldB::getName(), true ).device().data(),
+        this->device().data()
+    );
 }
 
 void FieldJ::bashField( uint32_t exchangeType )
 {
-    pmacc::fields::operations::CopyGuardToExchange{ }(
-        buffer,
-        SuperCellSize{ },
-        exchangeType
+    Environment<>::task(
+        [ exchangeType ]( auto bufferData )
+	{
+            pmacc::fields::operations::CopyGuardToExchange{ }(
+                bufferData,
+                SuperCellSize{ },
+                exchangeType
+            );
+	},
+
+        TaskProperties::Builder()
+            .label("FieldJ::bashField()")
+            .scheduling_tags({ SCHED_CUPLA }),
+
+        this->device().data()
     );
 }
 
 void FieldJ::insertField( uint32_t exchangeType )
 {
-    pmacc::fields::operations::AddExchangeToBorder{ }(
-        buffer,
-        SuperCellSize{ },
-        exchangeType
+    Environment<>::task(
+        [ exchangeType ]( auto bufferData )
+	{
+            pmacc::fields::operations::AddExchangeToBorder{ }(
+                bufferData,
+                SuperCellSize{ },
+                exchangeType
+            );
+	},
+
+        TaskProperties::Builder()
+            .label("FieldJ::insertField()")
+            .scheduling_tags({ SCHED_CUPLA }),
+
+        this->device().data()
     );
 }
 
 } // namespace picongpu
+
