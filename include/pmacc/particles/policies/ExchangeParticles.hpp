@@ -38,18 +38,19 @@ namespace policies {
         void
         handleOutgoing(T_Particles& par, int32_t direction) const
         {
+            size_t size, max_size;
             do
             {
                 par.copyGuardToExchange( direction );
                 par.getParticlesBuffer().send( direction );
 
-                size_t size = par
+                size = par
                     .getParticlesBuffer()
                     .getSendExchangeStack( direction )
-                    .device().
+                    .device()
                     .getParticlesCurrentSize();
 
-                size_t max_size = par
+                max_size = par
                     .getParticlesBuffer()
                     .getSendExchangeStack( direction )
                     .getMaxParticlesCount();
@@ -63,18 +64,19 @@ namespace policies {
         void
         handleIncoming(T_Particles& par, int32_t direction) const
         {
+            size_t size, max_size;
             do
             {
                 par.getParticlesBuffer().recv( direction );
                 par.insertParticles( direction );
 
-                size_t size = par
+                size = par
                     .getParticlesBuffer()
                     .getReceiveExchangeStack( direction )
                     .host()
                     .getParticlesCurrentSize();
 
-                size_t max_size = par
+                max_size = par
                     .getParticlesBuffer()
                     .getReceiveExchangeStack( direction )
                     .getMaxParticlesCount();
