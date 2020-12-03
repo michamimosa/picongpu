@@ -29,6 +29,16 @@
 
 namespace pmacc
 {
+
+namespace stack_exchange_buffer
+{
+template <class FRAME, class FRAMEINDEX, unsigned DIM>
+struct HostGuard;
+
+template <class FRAME, class FRAMEINDEX, unsigned DIM>
+struct DeviceGuard;
+}
+
     /**
      * Can be used for creating several DataBox types from an Exchange.
      *
@@ -46,12 +56,13 @@ namespace pmacc
          *
          * @param stack Exchange
          */
-        StackExchangeBuffer(mem::ExchangeBuffer<FRAME, DIM1> stack,
-                            mem::ExchangeBuffer<FRAMEINDEX, DIM1> stackIndexer)
-            : stack(stack)
-            , stackIndexer(stackIndexer)
-        {
-        }
+        StackExchangeBuffer(
+            mem::ExchangeBuffer< FRAME, DIM1, mem::grid_buffer::data::Access > stack,
+            mem::ExchangeBuffer< FRAMEINDEX, DIM1, mem::grid_buffer::data::Access > stackIndexer
+        ) :
+            stack(stack),
+            stackIndexer(stackIndexer)
+        {}
 
         void setCurrentSize(const size_t size)
         {
@@ -75,48 +86,48 @@ namespace pmacc
 
         auto host()
         {
-            return stack_exchange_buffer::HostGuard(*this);
+            return stack_exchange_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>(*this);
         }
 
         auto device()
         {
-            return stack_exchange_buffer::DeviceGuard(*this);
+            return stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>(*this);
         }
 
-    private:
-        mem::ExchangeBuffer<FRAME, DIM1> getExchangeBuffer()
+    protected:
+        auto getExchangeBuffer()
         {
             return stack;
         }
 
-        mem::ExchangeBuffer<FRAME, DIM1> stack;
-        mem::ExchangeBuffer<FRAMEINDEX, DIM1> stackIndexer;
+        mem::ExchangeBuffer< FRAME, DIM1, mem::grid_buffer::data::Access > stack;
+        mem::ExchangeBuffer< FRAMEINDEX, DIM1, mem::grid_buffer::data::Access > stackIndexer;
     };
-
 
     namespace stack_exchange_buffer
     {
         /*
          * Acces Guard that only allows access to host side databoxes
          */
-        struct HostGuard : private StackExchangeBuffer
+        template <class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct HostGuard : private StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>
         {
             friend class redGrapes::trait::BuildProperties< HostGuard >;
 
             size_t getCurrentSize()
             {
                 if (Environment<>::get().isMpiDirectEnabled())
-                    return stackIndexer.getDeviceBuffer().size().get();
+                    return this->stackIndexer.getDeviceBuffer().size().get();
                 else
-                    return stackIndexer.getHostBuffer().size().get();
+                    return this->stackIndexer.getHostBuffer().size().get();
             }
 
             size_t getParticlesCurrentSize()
             {
                 if (Environment<>::get().isMpiDirectEnabled())
-                    return stack.getDeviceBuffer().size().get();
+                    return this->stack.getDeviceBuffer().size().get();
                 else
-                    return stack.getHostBuffer().size().get();
+                    return this->stack.getHostBuffer().size().get();
             }
 
             /**
@@ -128,12 +139,12 @@ namespace pmacc
             getPushDataBox()
             {
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                    stack.getHostBuffer().data().getBasePointer(),
-                    stack.getHostBuffer().size().get_host_pointer(),
-                    stack.getHostBuffer().getDataSpace().productOfComponents(),
+                    this->stack.getHostBuffer().data().getBasePointer(),
+                    this->stack.getHostBuffer().size().get_host_pointer(),
+                    this->stack.getHostBuffer().getDataSpace().productOfComponents(),
                     PushDataBox<vint_t, FRAMEINDEX>(
-                        stackIndexer.getHostBuffer().data().getBasePointer(),
-                        stackIndexer.getHostBuffer()
+                        this->stackIndexer.getHostBuffer().data().getBasePointer(),
+                        this->stackIndexer.getHostBuffer()
                             .size()
                             .get_host_pointer()));
             }
@@ -146,26 +157,27 @@ namespace pmacc
             ExchangePopDataBox<vint_t, FRAME, DIM> getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                    stack.getHostBuffer().data().getDataBox(),
-                    stackIndexer.getHostBuffer().data().getDataBox());
+                    this->stack.getHostBuffer().data().getDataBox(),
+                    this->stackIndexer.getHostBuffer().data().getDataBox());
             }
-        }
+        };
 
         /*
          * Acces Guard that only allows access to device side databoxes
          */
-        struct DeviceGuard : private StackExchangeBuffer
+        template <class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct DeviceGuard : private StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>
         {
             friend class redGrapes::trait::BuildProperties< DeviceGuard >;
 
             size_t getCurrentSize()
             {
-                return stackIndexer.getDeviceBuffer().size().get();
+                return this->stackIndexer.getDeviceBuffer().size().get();
             }
 
             size_t getParticlesCurrentSize()
             {
-                return stack.getDeviceBuffer().size().get();
+                return this->stack.getDeviceBuffer().size().get();
             }
 
             /**
@@ -175,21 +187,21 @@ namespace pmacc
              */
             ExchangePushDataBox<vint_t, FRAME, DIM> getPushDataBox()
             {
-                PMACC_ASSERT(stack.getDeviceBuffer().size().is_on_device());
-                PMACC_ASSERT(stackIndexer.getDeviceBuffer().size().is_on_device());
+                PMACC_ASSERT(this->stack.getDeviceBuffer().size().is_on_device());
+                PMACC_ASSERT(this->stackIndexer.getDeviceBuffer().size().is_on_device());
 
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                    stack.getDeviceBuffer().data().getBasePointer(),
-                    (vint_t*) stack.getDeviceBuffer()
+                    this->stack.getDeviceBuffer().data().getBasePointer(),
+                    (vint_t*) this->stack.getDeviceBuffer()
                         .size()
                         .get_device_pointer(),
-                    stack.getDeviceBuffer()
+                    this->stack.getDeviceBuffer()
                         .data()
                         .getDataSpace()
                         .productOfComponents(),
                     PushDataBox<vint_t, FRAMEINDEX>(
-                        stackIndexer.getDeviceBuffer().data().getBasePointer(),
-                        (vint_t*) stackIndexer.getDeviceBuffer()
+                        this->stackIndexer.getDeviceBuffer().data().getBasePointer(),
+                        (vint_t*) this->stackIndexer.getDeviceBuffer()
                             .size()
                             .get_device_pointer()));
             }
@@ -203,8 +215,8 @@ namespace pmacc
             getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                    stack.getDeviceBuffer().data().getDataBox(),
-                    stackIndexer.getDeviceBuffer().data().getDataBox());
+                    this->stack.getDeviceBuffer().data().getDataBox(),
+                    this->stackIndexer.getDeviceBuffer().data().getDataBox());
             }
         };
 

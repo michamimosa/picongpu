@@ -53,6 +53,15 @@
 namespace pmacc
 {
 
+namespace particles_buffer
+{
+template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+struct HostGuard;
+
+template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+struct DeviceGuard;
+}
+
 /**
  * Describes DIM-dimensional buffer for particles data on the host.
  *
@@ -157,8 +166,9 @@ public:
     typedef SuperCell<FrameType> SuperCellType;
 
     typedef T_DeviceHeap DeviceHeap;
+
     /* Type of the particle box which particle buffer create */
-    typedef ParticlesBox< FrameType, typename DeviceHeap::AllocatorHandle, DIM> ParticlesBoxType;
+    typedef ParticlesBox< FrameType, typename DeviceHeap::AllocatorHandle, DIM > ParticlesBoxType;
 
 private:
 
@@ -196,12 +206,12 @@ public:
 
     auto host()
     {
-        return particles_buffer::HostGuard( *this );
+        return particles_buffer::HostGuard<T_ParticleDescription, SuperCellSize, DeviceHeap, DIM>( *this );
     }
 
     auto device()
     {
-        return particles_buffer::DeviceGuard( *this );
+        return particles_buffer::DeviceGuard<T_ParticleDescription, SuperCellSize, DeviceHeap, DIM>( *this );
     }
 
     /**
@@ -286,7 +296,7 @@ public:
         exchangeMemoryIndexer.send( direction );
     }
 
-    void recv( uint32_t ex )
+    void recv( uint32_t direction )
     {
         framesExchanges.recv( direction );
         exchangeMemoryIndexer.recv( direction );
@@ -327,7 +337,7 @@ public:
         mem::buffer::copy( superCells.host().write(), superCells.device().read() );
     }
 
-private:
+protected:
     mem::GridBuffer<BorderFrameIndex, DIM1> exchangeMemoryIndexer;
 
     mem::GridBuffer<SuperCellType, DIM> superCells;
@@ -344,10 +354,12 @@ private:
 namespace particles_buffer
 {
 
-template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
 struct HostGuard
-    : private ParticlesBuffer<T_ParticleDescription, SuperCellSize_, T_DeviceHeap, DIM>
+    : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 {
+    using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::ParticlesBoxType;
+
     /**
      * Returns a ParticlesBox for host frame data.
      *
@@ -356,17 +368,19 @@ struct HostGuard
     ParticlesBoxType getParticlesBox( int64_t memoryOffset )
     {
         return ParticlesBoxType(
-            superCells.host().data().getDataBox(),
-            m_deviceHeap->getAllocatorHandle(),
+            this->superCells.host().data().getDataBox(),
+            this->m_deviceHeap->getAllocatorHandle(),
             memoryOffset
         );
     }
 };
 
-template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
 struct DeviceGuard
-    : private ParticlesBuffer<T_ParticleDescription, SuperCellSize_, T_DeviceHeap, DIM>
+    : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 {
+    using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::ParticlesBoxType;
+
     /**
      * Returns a ParticlesBox for device frame data.
      *
@@ -375,8 +389,8 @@ struct DeviceGuard
     ParticlesBoxType getParticlesBox()
     {
         return ParticlesBoxType(
-            superCells.device().data().getDataBox(),
-            m_deviceHeap->getAllocatorHandle()
+            this->superCells.device().data().getDataBox(),
+            this->m_deviceHeap->getAllocatorHandle()
         );
     }    
 };
@@ -386,30 +400,30 @@ struct DeviceGuard
 } // namespace pmacc
 
 
-template <class FRAME, class FRAMEINDEX, unsigned DIM>
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
 struct redGrapes::trait::BuildProperties<
-    pmacc::particles_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>
+    pmacc::particles_buffer::HostGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 >
 {
     template <typename Builder>
     static void build(
         Builder& builder,
-        pmacc::particles_buffer::HostGuard<FRAME, FRAMEINDEX, DIM> const & buf
+        pmacc::particles_buffer::HostGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const & buf
     )
     {
         builder.add( buf.superCells.host().data() );
     }
 };
 
-template <class FRAME, class FRAMEINDEX, unsigned DIM>
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
 struct redGrapes::trait::BuildProperties<
-    pmacc::particles_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>
+    pmacc::particles_buffer::DeviceGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 >
 {
     template <typename Builder>
     static void build(
         Builder& builder,
-        pmacc::particles_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf
+        pmacc::particles_buffer::DeviceGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& buf
     )
     {
         builder.add( buf.superCells.device().data() );
