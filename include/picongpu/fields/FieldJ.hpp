@@ -29,6 +29,7 @@
 #include <pmacc/fields/SimulationFieldHelper.hpp>
 #include <pmacc/dataManagement/ISimulationData.hpp>
 #include <pmacc/memory/buffers/GridBuffer.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Fill.hpp>
 #include <pmacc/mappings/simulation/GridController.hpp>
 #include <pmacc/memory/boxes/DataBox.hpp>
 #include <pmacc/memory/boxes/PitchedBox.hpp>
@@ -77,22 +78,13 @@ namespace picongpu
         HINLINE virtual ~FieldJ() = default;
 
         //! Get a reference to the host-device buffer for the field values
-        HINLINE GridBuffer<ValueType, simDim> &getGridBuffer();
+        HINLINE pmacc::mem::GridBuffer<ValueType, simDim> &getGridBuffer();
+
+        auto host() { return getGridBuffer().host(); }
+        auto device() { return getGridBuffer().device(); }
 
         //! Get the grid layout
         HINLINE GridLayout<simDim> getGridLayout();
-
-        //! Get the host data box for the field values
-        DataBoxType getHostDataBox()
-        {
-            return buffer.getHostBuffer().getDataBox();
-        }
-
-        //! Get the device data box for the field values
-        DataBoxType getDeviceDataBox()
-        {
-            return buffer.getDeviceBuffer().getDataBox();
-        }
 
         /** Start asynchronous communication of field values
          *
@@ -110,7 +102,7 @@ namespace picongpu
         void syncToDevice() override
         {
             ValueType tmp = float3_X(0., 0., 0.);
-            pmacc::mem::buffers::fill( buffer.device(), tmp );
+            pmacc::mem::buffer::fill( buffer.device(), tmp );
         }
 
         //! Synchronize host data with device data
@@ -178,10 +170,10 @@ namespace picongpu
     private:
 
         //! Host-device buffer for current density values
-        GridBuffer<ValueType, simDim> buffer;
+        pmacc::mem::GridBuffer<ValueType, simDim> buffer;
 
         //! Buffer for receiving near-boundary values
-        std::unique_ptr< GridBuffer<ValueType, simDim> > fieldJrecv;
+        std::unique_ptr< pmacc::mem::GridBuffer<ValueType, simDim> > fieldJrecv;
 
     };
 

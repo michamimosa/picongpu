@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Axel Huebl, Rene Widera, Richard Pausch,
- *                     Benjamin Worpitz
+ *                     Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -80,7 +80,7 @@ namespace picongpu
         virtual ~FieldTmp( ) = default;
 
         //! Get a reference to the host-device buffer for the field values
-        HINLINE GridBuffer<ValueType, simDim>& getGridBuffer( );
+        HINLINE pmacc::mem::GridBuffer<ValueType, simDim>& getGridBuffer( );
 
         //! Get the grid layout
         HINLINE GridLayout<simDim> getGridLayout( );
@@ -175,17 +175,13 @@ namespace picongpu
     private:
 
         //! Host-device buffer for current density values
-        std::unique_ptr< GridBuffer<ValueType, simDim> > fieldTmp;
+        std::unique_ptr< pmacc::mem::GridBuffer<ValueType, simDim> > fieldTmp;
 
         //! Buffer for receiving near-boundary values
-        std::unique_ptr< GridBuffer<ValueType, simDim> > fieldTmpRecv;
+        std::unique_ptr< pmacc::mem::GridBuffer<ValueType, simDim> > fieldTmpRecv;
 
         //! Index of the temporary field
         uint32_t m_slotId;
-
-        //! Events for communication
-        EventTask m_scatterEv;
-        EventTask m_gatherEv;
 
         //! Tags for communication
         uint32_t m_commTagScatter;
