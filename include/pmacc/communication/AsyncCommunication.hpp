@@ -63,7 +63,7 @@ namespace communication {
     {};
 
     template<typename T_Data>
-    EventTask
+    void
     asyncCommunication( T_Data & data )
     {
         return AsyncCommunication<T_Data>()( data );

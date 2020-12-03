@@ -111,9 +111,9 @@ protected:
      */
     template< uint32_t AREA >
     void shiftParticles()
-    {        
+    {
         Environment<>::task(
-            [ cellDescription ]( auto parDevice )
+            [ cellDescription=this->cellDescription ]( auto parDevice )
             {
                 StrideMapping< AREA, 3, MappingDesc > mapper( cellDescription );
 
@@ -143,7 +143,7 @@ protected:
     void fillGaps()
     {
         Environment<>::task(
-            [ cellDescription ]( auto parDevice )
+            [ cellDescription=this->cellDescription ]( auto parDevice )
             {
                 AreaMapping< AREA, MappingDesc > mapper( cellDescription );
 

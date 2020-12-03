@@ -60,7 +60,7 @@ namespace pmacc{
                     else
                         handleNotExchanged.handleIncoming( particles, i );
 
-                    if( parBase.getParticlesBuffer().hasSendExchange( i ) )
+                    if( particles.getParticlesBuffer().hasSendExchange( i ) )
                         handleExchanged.handleOutgoing( particles, i );
                     else
                         handleNotExchanged.handleOutgoing( particles, i );

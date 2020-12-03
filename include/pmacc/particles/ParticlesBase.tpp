@@ -37,7 +37,7 @@ namespace pmacc
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::deleteGuardParticles(uint32_t exchangeType)
     {
 	Environment<>::task(
-            [cellDescription, exchangeType] ( auto parDevice )
+            [cellDescription = this->cellDescription, exchangeType] ( auto parDevice )
 	    {
                 ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, exchangeType);
 
@@ -55,7 +55,7 @@ namespace pmacc
 	    },
 	    TaskProperties::Builder()
                 .label("ParticlesBase::deleteGuardParticles")
-                .schedulingTags({ SCHED_CUPLA }),
+                .scheduling_tags({ SCHED_CUPLA }),
 	    particlesBuffer.device()
 	);
     }
@@ -64,15 +64,15 @@ namespace pmacc
     template<uint32_t T_area>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::deleteParticlesInArea()
     {
-        AreaMapping<T_area, MappingDesc> mapper(this->cellDescription);
-
-        constexpr uint32_t numWorkers = traits::GetNumWorkers<
-            math::CT::volume< typename FrameType::SuperCellSize >::type::value
-        >::value;
-
 	Environment<>::task(
-             []( auto parDevice )
+             [ cellDescription=this->cellDescription ]( auto parDevice )
 	     {
+	         AreaMapping<T_area, MappingDesc> mapper( cellDescription );
+
+                 constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                     math::CT::volume< typename FrameType::SuperCellSize >::type::value
+                 >::value;
+
 	        PMACC_KERNEL( KernelDeleteParticles< numWorkers >{ } )(
 	            mapper.getGridDim( ),
                     numWorkers
@@ -83,9 +83,10 @@ namespace pmacc
 	     },
              TaskProperties::Builder()
                 .label("deleteParticlesInArea")
-                .schedulingTags({ SCHED_CUPLA }),
+                .scheduling_tags({ SCHED_CUPLA }),
              particlesBuffer.device()
-	);
+        );
+    }
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::reset(uint32_t )
@@ -102,7 +103,7 @@ namespace pmacc
             particlesBuffer->getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
 
             Environment<>::task(
-                [ cellDescription, exchangeType ]
+                [ cellDescription= this->cellDescription, exchangeType ]
                 ( auto parDevice, auto parExchangeDevice )
                 {
                     ExchangeMapping<
@@ -151,7 +152,7 @@ namespace pmacc
             if( numParticles != 0u )
             {
                 Environment<>::task(
-                    [ cellDescription, exchangeType ] (
+                    [ cellDescription=this->cellDescription, numParticles, exchangeType ] (
                         auto parDevice,
                         auto parExchangeDevice
                     )
