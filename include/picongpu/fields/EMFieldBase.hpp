@@ -66,7 +66,7 @@ namespace fields
         static constexpr int numComponents = ValueType::dim;
 
         //! Type of host-device buffer for field values
-        using Buffer = pmacc::GridBuffer< ValueType, simDim >;
+        using Buffer = pmacc::mem::GridBuffer< ValueType, simDim >;
 
         //! Type of data box for field values on host and device
         using DataBoxType = pmacc::DataBox< PitchedBox< ValueType, simDim > >;

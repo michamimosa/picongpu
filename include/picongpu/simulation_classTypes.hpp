@@ -25,7 +25,6 @@
 
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 #include <pmacc/math/Vector.hpp>
-#include <pmacc/eventSystem/EventSystem.hpp>
 
 #include "picongpu/debug/PIConGPUVerbose.hpp"
 

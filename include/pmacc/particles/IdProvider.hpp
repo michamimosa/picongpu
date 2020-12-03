@@ -23,7 +23,6 @@
 
 #include "IdProvider.def"
 #include "pmacc/Environment.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/algorithms/reverseBits.hpp"
 #include "pmacc/nvidia/atomic.hpp"
 #include "pmacc/memory/buffers/HostDeviceBuffer.hpp"

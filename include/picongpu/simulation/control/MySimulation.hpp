@@ -37,7 +37,6 @@
 #include "picongpu/versionFormat.hpp"
 #include "picongpu/random/seed/ISeed.hpp"
 
-#include <pmacc/eventSystem/EventSystem.hpp>
 #include <pmacc/dimensions/GridLayout.hpp>
 #include <pmacc/nvidia/memory/MemoryInfo.hpp>
 #include <pmacc/mappings/kernel/MappingDescription.hpp>
@@ -533,10 +532,8 @@ public:
         log<picLog::MEMORY > ("free mem after all particles are initialized %1% MiB") % (freeGpuMem / 1024 / 1024);
 
         // generate valid GUARDS (overwrite)
-        EventTask eRfieldE = fieldE->asyncCommunication(__getTransactionEvent());
-        __setTransactionEvent(eRfieldE);
-        EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
-        __setTransactionEvent(eRfieldB);
+        fieldE->communication();
+        fieldB->communication();
 
         dc.releaseData( FieldE::getName() );
         dc.releaseData( FieldB::getName() );
@@ -567,7 +564,7 @@ public:
             bremsstrahlungPhotonAngle
         }( currentStep );
 #endif
-        EventTask commEvent;
+
         ParticlePush{ }( currentStep, commEvent );
         FieldBackground{ *cellDescription }( currentStep, nvidia::functors::Sub( ) );
         myFieldSolver->update_beforeCurrent( currentStep );

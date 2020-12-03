@@ -25,7 +25,6 @@
 #include "pmacc/types.hpp"
 #include "pmacc/mappings/kernel/MappingDescription.hpp"
 #include "pmacc/mappings/kernel/ExchangeMapping.hpp"
-#include "pmacc/fields/tasks/FieldFactory.hpp"
 #include "pmacc/math/Vector.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 
