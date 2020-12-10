@@ -440,6 +440,14 @@ public:
         return get().ResourceManager().emplace_task( std::forward<Args>(args)... );
     }
 
+    template <typename Functor, typename... Args>
+    static auto fun_task(Functor f, Args&&... args)
+    {
+        auto propBuilder = TaskProperties::Builder();
+        f.buildTaskProperties( propBuilder );
+        return task( f, propBuilder, std::forward<Args>(args)... );
+    }
+
     /** create and initialize the environment of PMacc
      *
      * Usage of MPI or device(accelerator) function calls before this method
