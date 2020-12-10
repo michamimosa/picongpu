@@ -327,70 +327,77 @@ Particles<
         particles::pusher::IsComposite< T_Pusher >::type::value == false
     );
 
-    using InterpolationScheme = typename pmacc::traits::Resolve<
-        typename GetFlagType<
-            FrameType,
-            interpolation< >
-        >::type
-    >::type;
-
-    using FrameSolver = PushParticlePerFrame<
-        T_Pusher,
-        MappingDesc::SuperCellSize,
-        InterpolationScheme
-    >;
-
     DataConnector & dc = Environment< >::get( ).DataConnector( );
-    auto fieldE = dc.get< FieldE >(
-        FieldE::getName(),
-        true
+
+    Environment< >::task(
+        [
+            currentStep,
+            cellDescription = this->cellDescription
+        ](
+            auto fieldEDevice,
+            auto fieldBDevice,
+            auto parDevice
+        ){
+            using InterpolationScheme = typename pmacc::traits::Resolve<
+                typename GetFlagType<
+                    FrameType,
+                    interpolation< >
+                    >::type
+                >::type;
+
+            using FrameSolver = PushParticlePerFrame<
+                T_Pusher,
+                MappingDesc::SuperCellSize,
+                InterpolationScheme
+            >;
+
+            /* Adjust interpolation area in particle pusher to allow sub-stepping pushes.
+             * Here were provide an actual pusher and use its actual margins
+             */
+            using LowerMargin = typename GetLowerMarginForPusher<
+                Particles,
+                T_Pusher
+            >::type;
+
+            using UpperMargin = typename GetUpperMarginForPusher<
+                Particles,
+                T_Pusher
+            >::type;
+
+            using BlockArea = SuperCellDescription<
+                typename MappingDesc::SuperCellSize,
+                LowerMargin,
+                UpperMargin
+            >;
+
+            AreaMapping<
+                CORE + BORDER,
+                picongpu::MappingDesc
+            > mapper( cellDescription );
+
+            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                pmacc::math::CT::volume< SuperCellSize >::type::value
+            >::value;
+
+            PMACC_KERNEL( KernelMoveAndMarkParticles< numWorkers, BlockArea >{ } )(
+                mapper.getGridDim(),
+                numWorkers
+            )(
+                parDevice.getParticlesBox( ),
+                fieldEDevice.getDataBox( ),
+                fieldBDevice.getDataBox( ),
+                currentStep,
+                FrameSolver( ),
+                mapper
+            );
+        },
+        TaskProperties::Builder()
+            .label("Particles::push()")
+            .scheduling_tags({ SCHED_CUPLA }),
+        dc.get< FieldE >( FieldE::getName(), true )->device().data(),
+        dc.get< FieldB >( FieldB::getName(), true )->device().data(),
+        this->particlesBuffer.device()
     );
-    auto fieldB = dc.get< FieldB >(
-        FieldB::getName(),
-        true
-    );
-
-    /* Adjust interpolation area in particle pusher to allow sub-stepping pushes.
-     * Here were provide an actual pusher and use its actual margins
-     */
-    using LowerMargin = typename GetLowerMarginForPusher<
-        Particles,
-        T_Pusher
-    >::type;
-    using UpperMargin = typename GetUpperMarginForPusher<
-        Particles,
-        T_Pusher
-    >::type;
-
-    using BlockArea = SuperCellDescription<
-        typename MappingDesc::SuperCellSize,
-        LowerMargin,
-        UpperMargin
-    >;
-
-    AreaMapping<
-        CORE + BORDER,
-        picongpu::MappingDesc
-    > mapper( this->cellDescription );
-
-    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-        pmacc::math::CT::volume< SuperCellSize >::type::value
-    >::value;
-
-    PMACC_KERNEL( KernelMoveAndMarkParticles< numWorkers, BlockArea >{ } )(
-        mapper.getGridDim(),
-        numWorkers
-    )(
-        this->getDeviceParticlesBox( ),
-        fieldE->getDeviceDataBox( ),
-        fieldB->getDeviceDataBox( ),
-        currentStep,
-        FrameSolver( ),
-        mapper
-    );
-
-    dc.releaseData( FieldE::getName() );
-    dc.releaseData( FieldB::getName() );
 
     ParticlesBaseType::template shiftParticles < CORE + BORDER > ( );
 }
@@ -417,36 +424,50 @@ Particles<
 {
     log<picLog::SIMULATION_STATE >( "initialize density profile for species %1%" ) % FrameType::getName( );
 
-    uint32_t const numSlides = MovingWindow::getInstance( ).getSlideCounter( currentStep );
-    SubGrid< simDim > const & subGrid = Environment< simDim >::get( ).SubGrid( );
-    DataSpace< simDim > localCells = subGrid.getLocalDomain( ).size;
-    DataSpace< simDim > totalGpuCellOffset = subGrid.getLocalDomain( ).offset;
-    totalGpuCellOffset.y( ) += numSlides * localCells.y( );
+    Environment<>::task(
+        [
+            densityFunctor,
+            positionFunctor,
+            currentStep,
+            cellDescription = this->cellDescription
+        ](
+            auto parDevice
+        ){
+            uint32_t const numSlides = MovingWindow::getInstance( ).getSlideCounter( currentStep );
+            SubGrid< simDim > const & subGrid = Environment< simDim >::get( ).SubGrid( );
+            DataSpace< simDim > localCells = subGrid.getLocalDomain( ).size;
+            DataSpace< simDim > totalGpuCellOffset = subGrid.getLocalDomain( ).offset;
+            totalGpuCellOffset.y( ) += numSlides * localCells.y( );
 
-    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-        pmacc::math::CT::volume< SuperCellSize >::type::value
-    >::value;
+            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                pmacc::math::CT::volume< SuperCellSize >::type::value
+            >::value;
 
-    AreaMapping<
-        CORE + BORDER,
-        picongpu::MappingDesc
-    > mapper( this->cellDescription );
-    PMACC_KERNEL(
-        KernelFillGridWithParticles<
-            numWorkers,
-            Particles
-        >{}
-    )
-    (
-        mapper.getGridDim( ),
-        numWorkers
-    )
-    (
-        densityFunctor,
-        positionFunctor,
-        totalGpuCellOffset,
-        this->particlesBuffer->getDeviceParticleBox( ),
-        mapper
+            AreaMapping<
+                CORE + BORDER,
+                picongpu::MappingDesc
+            > mapper( cellDescription );
+
+            PMACC_KERNEL(
+                KernelFillGridWithParticles<
+                    numWorkers,
+                    Particles
+                >{}
+            )(
+                mapper.getGridDim( ),
+                numWorkers
+            )(
+                densityFunctor,
+                positionFunctor,
+                totalGpuCellOffset,
+                parDevice->getParticleBox( ),
+                mapper
+            );
+        },
+        TaskProperties::Builder()
+            .label("Particles::initDensityProfile()")
+            .scheduling_tags({ SCHED_CUPLA }),
+        this->particlesBuffer.device()
     );
 
     this->fillAllGaps( );
@@ -479,24 +500,43 @@ Particles<
     T_SrcFilterFunctor& srcFilterFunctor
 )
 {
-    log< picLog::SIMULATION_STATE > ( "clone species %1%" ) % FrameType::getName( );
+    Environment<>::task(
+        [
+            manipulatorFunctor,
+            srcFilterFunctor,
+            cellDescription = this->cellDescription
+        ](
+            auto dstParDevice,
+            auto srcParDevice
+        )
+        {
+            log< picLog::SIMULATION_STATE > ( "clone species %1%" ) % FrameType::getName( );
 
-    AreaMapping<CORE + BORDER, picongpu::MappingDesc> mapper(this->cellDescription);
+            AreaMapping<CORE + BORDER, picongpu::MappingDesc> mapper( cellDescription );
 
-    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-           pmacc::math::CT::volume< SuperCellSize >::type::value
-    >::value;
+            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                pmacc::math::CT::volume< SuperCellSize >::type::value
+            >::value;
 
-    PMACC_KERNEL( KernelDeriveParticles< numWorkers >{ } )(
-        mapper.getGridDim(),
-        numWorkers
-    )(
-        this->getDeviceParticlesBox( ),
-        src.getDeviceParticlesBox( ),
-        manipulatorFunctor,
-        srcFilterFunctor,
-        mapper
+            PMACC_KERNEL( KernelDeriveParticles< numWorkers >{ } )(
+                mapper.getGridDim(),
+                numWorkers
+            )(
+                dstParDevice.getParticlesBox( ),
+                srcParDevice.getParticlesBox( ),
+                manipulatorFunctor,
+                srcFilterFunctor,
+                mapper
+           );
+        },
+        TaskProperties::Builder()
+            .label("Particles::deviceDeriveFrom()")
+            .scheduling_tags({ SCHED_CUPLA }),
+
+        this->particlesBuffer.device(),
+        src->particlesBuffer.device()
     );
+
     this->fillAllGaps( );
 }
 
