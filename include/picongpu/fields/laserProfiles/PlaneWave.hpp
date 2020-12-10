@@ -149,7 +149,7 @@ namespace acc
             dataBoxE = dc.get< FieldE >(
                 FieldE::getName(),
                 true
-            )->getDeviceDataBox();
+            )->device().data().getDataBox();
 
             // get meta data for offsets
             SubGrid< simDim > const & subGrid = Environment< simDim >::get().SubGrid();
