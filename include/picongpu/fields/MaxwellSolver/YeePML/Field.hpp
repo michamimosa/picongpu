@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch,
- *                     Benjamin Worpitz, Sergei Bastrakov
+ *                     Benjamin Worpitz, Sergei Bastrakov, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -41,6 +41,7 @@
 #include <string>
 #include <vector>
 
+#include <redGrapes/property/trait.hpp>
 
 namespace picongpu
 {
@@ -252,7 +253,7 @@ namespace yeePML
          * The buffer is logically 1d, but technically multidimentional
          * for easier coupling to output utilities.
          */
-        using Buffer = pmacc::GridBuffer<
+        using Buffer = pmacc::mem::GridBuffer<
             ValueType,
             simDim
         >;
@@ -293,20 +294,14 @@ namespace yeePML
         //! Get the grid layout
         HINLINE pmacc::GridLayout< simDim > getGridLayout( );
 
-        //! Get the host data box for the field values
-        HINLINE DataBoxType getHostDataBox( );
-
-        //! Get the device data box for the field values
-        HINLINE DataBoxType getDeviceDataBox( );
-
-        //! Get the device outer layer data box for the field values
-        HINLINE OuterLayerBoxType getDeviceOuterLayerBox( );
+        //! Get the host buffer for the field values
+        HINLINE auto host( );
 
         /** Start asynchronous communication of field values
          *
          * @param serialEvent event to depend on
          */
-        HINLINE virtual EventTask asyncCommunication( EventTask serialEvent );
+        HINLINE virtual void communication();
 
         /** Reset the host-device buffer for field values
          *
@@ -320,10 +315,10 @@ namespace yeePML
         //! Synchronize host data with device data
         HINLINE void synchronize( ) override;
 
-    private:
+    protected:
 
         //! Host-device buffer for field values
-        std::unique_ptr< Buffer > data;
+        Buffer data;
 
         //! Grid layout for normal (non-PML) fields
         pmacc::GridLayout< simDim > gridLayout;
@@ -332,6 +327,33 @@ namespace yeePML
         Thickness globalThickness;
 
     };
+
+namespace field
+{
+    template < typename T_Field >
+    struct DeviceGuard
+    {
+        //! Get the device outer layer data box for the field values
+        HINLINE Field::OuterLayerBoxType getOuterLayerBox( )
+        {
+            auto const boxWrapper1d = pmacc::DataBoxDim1Access< Field::DataBoxType >{
+                field.getGridBuffer( ).device( ).data( ).getDataBox( ),
+                field.getGridLayout( ).getDataSpace( )
+            };
+            /* Note: the outer layer box type just provides access to data,
+             * it does not own or make copy of the data (nor is that required)
+             */
+            return Field::OuterLayerBoxType{
+                field.getGridLayout( ),
+                field.globalThickness,
+                boxWrapper1d
+            };
+        }
+
+        T_Field field;
+    };
+
+} // namespace field
 
     //! Data box type used for PML fields in kernels
     using FieldBox = Field::OuterLayerBoxType;
@@ -362,6 +384,12 @@ namespace yeePML
                 globalThickness
             )
         {
+        }
+
+        //! Get the device buffer guard for the field values
+        HINLINE auto device( )
+        {
+            field::DeviceGuard<FieldE>{ *this };
         }
 
         //! Get id
@@ -422,6 +450,12 @@ namespace yeePML
                 globalThickness
             )
         {
+        }
+
+        //! Get the device buffer guard for the field values
+        HINLINE auto device( )
+        {
+            field::DeviceGuard<FieldB>{ *this };
         }
 
         //! Get id
@@ -548,3 +582,25 @@ namespace traits
 
 } // namespace traits
 } // namespace pmacc
+
+namespace redGrapes
+{
+namespace trait
+{
+    template< typename T_Field >
+    struct BuildProperties<
+        picongpu::fields::maxwellSolver::yeePML::field::DeviceGuard< T_Field >
+    >
+    {
+        template < typename Builder >
+        static void build(
+            Builder & builder,
+            picongpu::fields::maxwellSolver::yeePML::field::DeviceGuard<T_Field> const & guard
+        )
+        {
+            builder.add( guard.field.getGridBuffer().device().data().write() );
+        }
+    };
+} // namespace trait
+} // namespace redGrapes
+

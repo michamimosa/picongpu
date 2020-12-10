@@ -1,4 +1,4 @@
-/* Copyright 2013-2020 Axel Huebl, Rene Widera
+/* Copyright 2013-2020 Axel Huebl, Rene Widera, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -28,6 +28,8 @@
 #include <pmacc/traits/GetNumWorkers.hpp>
 #include <pmacc/mappings/simulation/GridController.hpp>
 #include <pmacc/memory/dataTypes/Mask.hpp>
+#include <pmacc/exec/kernelEvents.hpp>
+#include <pmacc/Environment.hpp>
 
 #include <string>
 #include <sstream>
@@ -43,8 +45,8 @@ class ExponentialDamping
 {
 public:
 
-    template<class BoxedMemory>
-    static void run(uint32_t currentStep, MappingDesc &cellDescription, BoxedMemory deviceBox)
+    template<class DeviceBuffer>
+    static void run(uint32_t currentStep, MappingDesc &cellDescription, DeviceBuffer deviceBuffer )
     {
         const uint32_t numSlides = MovingWindow::getInstance().getSlideCounter(currentStep);
         for (uint32_t i = 1; i < NumberOfExchanges<simDim>::value; ++i)
@@ -88,19 +90,28 @@ public:
                 /* if sliding window is active we disable absorber on bottom side*/
                 if (MovingWindow::getInstance().isSlidingWindowActive(currentStep) && i == BOTTOM) continue;
 
-                ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, i);
-                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                    pmacc::math::CT::volume< SuperCellSize >::type::value
-                >::value;
+                Environment<>::task(
+                    [cellDescription, i, absorber_strength, thickness]( auto deviceData )
+                    {
+                        ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, i);
+                        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                            pmacc::math::CT::volume< SuperCellSize >::type::value
+                        >::value;
 
-                PMACC_KERNEL( KernelAbsorbBorder< numWorkers> {} )(
-                    mapper.getGridDim(),
-                    numWorkers
-                )(
-                    deviceBox,
-                    thickness,
-                    absorber_strength,
-                    mapper
+                        PMACC_KERNEL( KernelAbsorbBorder< numWorkers> {} )(
+                            mapper.getGridDim(),
+                            numWorkers
+                        )(
+                            deviceData.getDataBox(),
+                            thickness,
+                            absorber_strength,
+                            mapper
+                        );
+                    },
+                    TaskProperties::Builder()
+                        .label("ExponentialDamping::KernelAbsorbBorder")
+                        .scheduling_tags({ SCHED_CUPLA }),
+                    deviceBuffer.data()
                 );
             }
         }

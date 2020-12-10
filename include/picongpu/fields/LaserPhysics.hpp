@@ -214,6 +214,13 @@ namespace fields
                 );
             }
         }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("LaserPhysics");
+            builder.scheduling_tags({ SCHED_CUPLA });
+        }
     };
 } // namespace fields
 } // namespace picongpu

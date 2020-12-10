@@ -1,5 +1,5 @@
 /* Copyright 2019-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz,
- *                Sergei Bastrakov, Klaus Steiniger
+ *                Sergei Bastrakov, Klaus Steiniger, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -105,27 +105,46 @@ namespace maxwellSolver
             template< uint32_t T_Area >
             void updateBHalf( uint32_t const currentStep )
             {
-                constexpr auto numWorkers = getNumWorkers( );
-                using Kernel = yeePML::KernelUpdateBHalf<
-                    numWorkers,
-                    BlockDescription< CurlE >
-                >;
-                AreaMapper< T_Area > mapper{ cellDescription };
-                /* Note: here it is possible to first check if PML is enabled
-                 * in the local domain at all, and otherwise optimize by calling
-                 * the normal Yee update kernel. We do not do that, as this
-                 * would be fragile with respect to future separation of PML
-                 * into a plugin.
-                 */
-                PMACC_KERNEL( Kernel{ } )
-                    ( mapper.getGridDim( ), numWorkers )(
-                        mapper,
-                        getLocalParameters( mapper, currentStep ),
-                        CurlE( ),
-                        fieldE->getDeviceDataBox( ),
-                        fieldB->getDeviceDataBox( ),
-                        psiB->getDeviceOuterLayerBox( )
-                    );
+                Environment<>::task(
+                    [
+                        currentStep,
+                        cellDescription = this->cellDescription
+                    ](
+                        auto fieldEDeviceData,
+                        auto fieldBDeviceData,
+                        auto psiBDeviceData
+                    ){
+                        constexpr auto numWorkers = getNumWorkers( );
+                        using Kernel = yeePML::KernelUpdateBHalf<
+                            numWorkers,
+                            BlockDescription< CurlE >
+                        >;
+
+                        AreaMapper< T_Area > mapper{ cellDescription };
+
+                        /* Note: here it is possible to first check if PML is enabled
+                         * in the local domain at all, and otherwise optimize by calling
+                         * the normal Yee update kernel. We do not do that, as this
+                         * would be fragile with respect to future separation of PML
+                         * into a plugin.
+                         */
+                        PMACC_KERNEL( Kernel{ } )
+                            ( mapper.getGridDim( ), numWorkers )(
+                            mapper,
+                            getLocalParameters( mapper, currentStep ),
+                            CurlE( ),
+                            fieldEDeviceData.getDataBox( ),
+                            fieldBDeviceData.getDataBox( ),
+                            psiBDeviceData.getOuterLayerBox( )
+                        );
+                    },
+                    TaskProperties::Builder()
+                        .label("YeePML::updateBHalf()")
+                        .scheduling_tags({ SCHED_CUPLA }),
+                    fieldE->device().data(),
+                    fieldB->device().data(),
+                    psiE->device()
+                );
             }
 
             /** Propagate E values in the given area by a time step.
@@ -146,22 +165,40 @@ namespace maxwellSolver
                 PMACC_CASSERT_MSG(Courant_Friedrichs_Levy_condition_failure____check_your_grid_param_file,
                     (SPEED_OF_LIGHT*SPEED_OF_LIGHT*DELTA_T*DELTA_T*INV_CELL2_SUM)<=1.0 && sizeof(T_CurlE*) != 0);
 
-                constexpr auto numWorkers = getNumWorkers( );
-                using Kernel = yeePML::KernelUpdateE<
-                    numWorkers,
-                    BlockDescription< CurlB >
-                >;
-                AreaMapper< T_Area > mapper{ cellDescription };
-                // Note: optimization considerations same as in updateBHalf( ).
-                PMACC_KERNEL( Kernel{ } )
-                    ( mapper.getGridDim( ), numWorkers )(
-                        mapper,
-                        getLocalParameters( mapper, currentStep ),
-                        CurlB( ),
-                        fieldB->getDeviceDataBox( ),
-                        fieldE->getDeviceDataBox( ),
-                        psiE->getDeviceOuterLayerBox( )
-                    );
+                Environment<>::task(
+                    [
+                        currentStep,
+                        cellDescription = this->cellDescription
+                    ](
+                        auto fieldEDeviceData,
+                        auto fieldBDeviceData,
+                        auto psiEDeviceData
+                    ){
+                        constexpr auto numWorkers = getNumWorkers( );
+                        using Kernel = yeePML::KernelUpdateE<
+                            numWorkers,
+                            BlockDescription< CurlB >
+                        >;
+                        AreaMapper< T_Area > mapper{ cellDescription };
+
+                        // Note: optimization considerations same as in updateBHalf( ).
+                        PMACC_KERNEL( Kernel{ } )
+                            ( mapper.getGridDim( ), numWorkers )(
+                            mapper,
+                            getLocalParameters( mapper, currentStep ),
+                            CurlB( ),
+                            fieldBDeviceData.getDataBox( ),
+                            fieldEDeviceData.getDataBox( ),
+                            psiEDeviceData.getOuterLayerBox( )
+                        );
+                    },
+                    TaskProperties::Builder()
+                        .label("YeePML::updateE()")
+                        .scheduling_tags({ SCHED_CUPLA }),
+                    fieldB->device().data(),
+                    fieldE->device().data(),
+                    psiE->device()
+                );
             }
 
         private:
@@ -407,11 +444,9 @@ namespace maxwellSolver
              * solver.updateBHalf( )
              */
             solver.template updateBHalf < CORE + BORDER >( currentStep );
-            auto & fieldB = solver.getFieldB( );
-            EventTask eRfieldB = fieldB.asyncCommunication( __getTransactionEvent( ) );
+            solver.getFieldB( ).communication();
 
             solver.template updateE< CORE >( currentStep );
-            __setTransactionEvent( eRfieldB );
             solver.template updateE< BORDER >( currentStep );
         }
 
@@ -428,18 +463,13 @@ namespace maxwellSolver
              * PML updates are done as part of solver.updateBHalf( ).
              */
             if( laserProfiles::Selected::INIT_TIME > 0.0_X )
-                LaserPhysics{ }( currentStep );
+                Environment<>::fun_task( LaserPhysics{ }, currentStep );
 
-            auto & fieldE = solver.getFieldE( );
-            EventTask eRfieldE = fieldE.asyncCommunication( __getTransactionEvent( ) );
+            solver.getFieldE( ).communication();
 
             solver.template updateBHalf< CORE >( currentStep );
-            __setTransactionEvent( eRfieldE );
             solver.template updateBHalf< BORDER >( currentStep );
-
-            auto & fieldB = solver.getFieldB( );
-            EventTask eRfieldB = fieldB.asyncCommunication( __getTransactionEvent( ) );
-            __setTransactionEvent( eRfieldB );
+            solver.getFieldB( ).communication();
         }
 
         static pmacc::traits::StringProperty getStringProperties( )

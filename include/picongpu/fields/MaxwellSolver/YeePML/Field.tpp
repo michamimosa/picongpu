@@ -1,5 +1,6 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
- *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov
+ *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov,
+ *                     Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -257,12 +258,10 @@ namespace yeePML
             zeroBasedIdx.z( ) * size.y( ) * size.x( );
     }
 
-    Field::Field(
-        MappingDesc const & cellDescription,
-        Thickness const & globalThickness ) :
-        SimulationFieldHelper< MappingDesc >( cellDescription ),
-        gridLayout( cellDescription.getGridLayout( ) ),
-        globalThickness( globalThickness )
+    static auto make_layout(
+        pmacc::GridLayout< simDim > const & gridLayout,
+        Thickness const & globalThickness
+    )
     {
         /* Create a simDim-dimentional buffer
          * with size = linearSize x 1 [x 1 for 3d]
@@ -277,66 +276,54 @@ namespace yeePML
             size,
             guardSize
         );
-        data.reset(
-            new Buffer( layout )
-        );
+
+        return layout;
     }
+
+    Field::Field(
+        MappingDesc const & cellDescription,
+        Thickness const & globalThickness
+    ) :
+        SimulationFieldHelper< MappingDesc >( cellDescription ),
+        gridLayout( cellDescription.getGridLayout( ) ),
+        globalThickness( globalThickness ),
+        data( make_layout( cellDescription.getGridLayout(), globalThickness ) )
+    {}
 
     Field::Buffer & Field::getGridBuffer( )
     {
-        return *data;
+        return data;
     }
 
     pmacc::GridLayout< simDim > Field::getGridLayout( )
     {
-        return data->getGridLayout( );
+        return data.getGridLayout( );
     }
 
-    Field::DataBoxType Field::getHostDataBox( )
+    auto Field::host()
     {
-        return data->getHostBuffer( ).getDataBox( );
+        return data.host();
     }
 
-    Field::DataBoxType Field::getDeviceDataBox( )
+    void Field::communication( )
     {
-        return data->getDeviceBuffer( ).getDataBox( );
-    }
-
-    Field::OuterLayerBoxType Field::getDeviceOuterLayerBox( )
-    {
-        auto const boxWrapper1d = pmacc::DataBoxDim1Access< DataBoxType >{
-            getDeviceDataBox( ),
-            data->getGridLayout( ).getDataSpace( )
-        };
-        /* Note: the outer layer box type just provides access to data,
-         * it does not own or make copy of the data (nor is that required)
-         */
-        return OuterLayerBoxType{
-            gridLayout,
-            globalThickness,
-            boxWrapper1d
-        };
-    }
-
-    EventTask Field::asyncCommunication( EventTask serialEvent )
-    {
-        return data->asyncCommunication( serialEvent );
+        data.communication( );
     }
 
     void Field::reset( uint32_t )
     {
-        data->getHostBuffer( ).reset( true );
-        data->getDeviceBuffer( ).reset( false );
+        pmacc::mem::buffer::reset( data.host(), true );
+        pmacc::mem::buffer::reset( data.device(), false );
     }
 
     void Field::syncToDevice( )
     {
-        data->hostToDevice( );
+        pmacc::mem::buffer::copy( data.device(), data.host() );
     }
 
     void Field::synchronize( )
     {
-        data->deviceToHost( );
+        pmacc::mem::buffer::copy( data.host(), data.device() );
     }
 
 } // namespace yeePML

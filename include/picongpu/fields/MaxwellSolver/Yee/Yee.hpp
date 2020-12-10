@@ -1,4 +1,5 @@
-/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz,
+ *                     Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -69,49 +70,78 @@ namespace maxwellSolver
             PMACC_CASSERT_MSG(Courant_Friedrichs_Levy_condition_failure____check_your_grid_param_file,
                 (SPEED_OF_LIGHT*SPEED_OF_LIGHT*DELTA_T*DELTA_T*INV_CELL2_SUM)<=1.0 && sizeof(T_CurrentInterpolation*) != 0);
 
-            typedef SuperCellDescription<
-                    SuperCellSize,
-                    typename traits::GetLowerMargin<CurlB>::type,
-                    typename traits::GetUpperMargin<CurlB>::type
+            Environment<>::task(
+                [cellDescription = m_cellDescription](
+                    auto fieldEDeviceData,
+                    auto fieldBDeviceData
+                )
+                {
+                    typedef SuperCellDescription<
+                        SuperCellSize,
+                        typename traits::GetLowerMargin<CurlB>::type,
+                        typename traits::GetUpperMargin<CurlB>::type
                     > BlockArea;
 
-            AreaMapping<AREA, MappingDesc> mapper(m_cellDescription);
+                    AreaMapping<AREA, MappingDesc> mapper(cellDescription);
 
-            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                pmacc::math::CT::volume< SuperCellSize >::type::value
-            >::value;
+                    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                        pmacc::math::CT::volume< SuperCellSize >::type::value
+                    >::value;
 
-            PMACC_KERNEL(yee::KernelUpdateE< numWorkers, BlockArea >{ })
-                ( mapper.getGridDim(), numWorkers )(
-                    CurlB( ),
-                    this->fieldE->getDeviceDataBox(),
-                    this->fieldB->getDeviceDataBox(),
-                    mapper
-                );
+                    PMACC_KERNEL(yee::KernelUpdateE< numWorkers, BlockArea >{ })
+                        ( mapper.getGridDim(), numWorkers )(
+                        CurlB( ),
+                        fieldEDeviceData.getDataBox(),
+                        fieldBDeviceData.getDataBox(),
+                        mapper
+                    );
+                },
+
+                TaskProperties::Builder()
+                    .label("Yee::updateE()")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                fieldE->device().data(),
+                fieldB->device().data()
+            );
         }
 
         template<uint32_t AREA>
         void updateBHalf()
         {
-            typedef SuperCellDescription<
-                    SuperCellSize,
-                    typename CurlE::LowerMargin,
-                    typename CurlE::UpperMargin
+            Environment<>::task(
+                [cellDescription = m_cellDescription](
+                    auto fieldEDeviceData,
+                    auto fieldBDeviceData
+                )
+                {
+                    typedef SuperCellDescription<
+                        SuperCellSize,
+                        typename CurlE::LowerMargin,
+                        typename CurlE::UpperMargin
                     > BlockArea;
 
-            AreaMapping<AREA, MappingDesc> mapper(m_cellDescription);
+                    AreaMapping<AREA, MappingDesc> mapper(cellDescription);
 
-            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                pmacc::math::CT::volume< SuperCellSize >::type::value
-            >::value;
+                    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                        pmacc::math::CT::volume< SuperCellSize >::type::value
+                    >::value;
 
-            PMACC_KERNEL(yee::KernelUpdateBHalf< numWorkers, BlockArea >{ })
-                ( mapper.getGridDim(), numWorkers )(
-                    CurlE( ),
-                    this->fieldB->getDeviceDataBox(),
-                    this->fieldE->getDeviceDataBox(),
-                    mapper
-                );
+                    PMACC_KERNEL(yee::KernelUpdateBHalf< numWorkers, BlockArea >{ })
+                        ( mapper.getGridDim(), numWorkers )(
+                            CurlE( ),
+                            fieldBDeviceData.getDataBox(),
+                            fieldEDeviceData.getDataBox(),
+                            mapper
+                        );
+                },
+                TaskProperties::Builder()
+                    .label("Yee::updateBHalf()")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                fieldE->device().data(),
+                fieldB->device().data()                
+            );
         }
 
     public:
@@ -130,10 +160,8 @@ namespace maxwellSolver
         void update_beforeCurrent(uint32_t)
         {
             updateBHalf < CORE+BORDER >();
-            EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
-
+            fieldB->communication();
             updateE<CORE>();
-            __setTransactionEvent(eRfieldB);
             updateE<BORDER>();
         }
 
@@ -143,25 +171,24 @@ namespace maxwellSolver
             Absorber::run(
                 currentStep,
                 this->m_cellDescription,
-                this->fieldE->getDeviceDataBox()
+                this->fieldE->device()
             );
-            if (laserProfiles::Selected::INIT_TIME > float_X(0.0))
-                LaserPhysics{}(currentStep);
 
-            EventTask eRfieldE = fieldE->asyncCommunication(__getTransactionEvent());
+            if (laserProfiles::Selected::INIT_TIME > float_X(0.0))
+                Environment<>::fun_task( LaserPhysics{}, currentStep );
+
+            fieldE->communication();
 
             updateBHalf < CORE> ();
-            __setTransactionEvent(eRfieldE);
             updateBHalf < BORDER > ();
 
             Absorber::run(
                 currentStep,
                 this->m_cellDescription,
-                fieldB->getDeviceDataBox()
+                this->fieldB->device()
             );
 
-            EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
-            __setTransactionEvent(eRfieldB);
+            fieldB->communication();
         }
 
         static pmacc::traits::StringProperty getStringProperties()
