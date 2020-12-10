@@ -40,6 +40,12 @@ template <
 >
 struct HostDeviceBufferGuard
 {
+    using Item = T_Item;
+    static constexpr std::size_t dim = T_dim;
+    using DataAccessPolicy = T_DataAccessPolicy;
+    using DataBoxType = DataBox< PitchedBox< Item, dim > >;
+
+    
     //! todo: currently the size is stored doubled, in host buffer and device buffer
     //        and could possibly be shared (using only one DeviceBufferSize for both buffers)
     host_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > host_buf;
@@ -155,7 +161,7 @@ template <
 >
 struct HostDeviceBuffer
     : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
-{
+{    
     HostDeviceBuffer(
         DataSpace< T_dim > capacity,
         bool size_on_device = false

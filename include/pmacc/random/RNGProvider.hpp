@@ -50,7 +50,7 @@ namespace random
         typedef typename RNGMethod::StateType RNGState;
 
     public:
-        typedef HostDeviceBuffer< RNGState, dim > Buffer;
+        typedef mem::HostDeviceBuffer< RNGState, dim > Buffer;
         typedef typename Buffer::DataBoxType DataBoxType;
         typedef RNGHandle<RNGProvider> Handle;
 
@@ -112,14 +112,10 @@ namespace random
          * Note: This buffer might be empty
          */
         Buffer& getStateBuffer();
-    private:
-        /**
-         * Gets the device data box
-         */
-        DataBoxType getDeviceDataBox();
 
+    private:
         const Space m_size;
-        Buffer* buffer;
+        Buffer buffer;
         const std::string m_uniqueId;
     };
 

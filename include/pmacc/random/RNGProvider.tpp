@@ -97,8 +97,9 @@ namespace random
 
     template<uint32_t T_dim, class T_RNGMethod>
     RNGProvider<T_dim, T_RNGMethod>::RNGProvider(const Space& size, const std::string& uniqueId):
-            m_size(size), m_uniqueId(uniqueId.empty() ? getName() : uniqueId),
-            buffer(new Buffer(size))
+            m_size(size),
+            m_uniqueId(uniqueId.empty() ? getName() : uniqueId),
+            buffer(size)
     {
         if(m_size.productOfComponents() == 0)
             throw std::invalid_argument("Cannot create RNGProvider with zero size");
@@ -107,29 +108,36 @@ namespace random
     template<uint32_t T_dim, class T_RNGMethod>
     void RNGProvider<T_dim, T_RNGMethod>::init(uint32_t seed)
     {
+        Environment<>::task(
+            [ seed, size=this->m_size ]( auto bufferDeviceData )
+            {
+                const uint32_t blockSize = 256;
 
-        const uint32_t blockSize = 256;
+                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                    blockSize
+                >::value;
 
-        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-            blockSize
-        >::value;
+                const uint32_t gridSize = (size.productOfComponents() + blockSize - 1u) / blockSize; // Round up
 
-        const uint32_t gridSize = (m_size.productOfComponents() + blockSize - 1u) / blockSize; // Round up
-
-        auto bufferBox = buffer->getDeviceBuffer().getDataBox();
-
-        PMACC_KERNEL(
-            kernel::InitRNGProvider<
-                numWorkers,
-                blockSize,
-                RNGMethod>{}
-        )(
-            gridSize,
-            numWorkers
-        )(
-            bufferBox,
-            seed,
-            m_size
+                PMACC_KERNEL(
+                    kernel::InitRNGProvider<
+                        numWorkers,
+                        blockSize,
+                        RNGMethod
+                    >{}
+                )(
+                    gridSize,
+                    numWorkers
+                )(
+                    bufferDeviceData.getDataBox(),
+                    seed,
+                    size
+                );
+            },
+            TaskProperties::Builder()
+                .label("RNGProvider::init()")
+                .scheduling_tags({ SCHED_CUPLA }),
+            this->buffer.device().data().write()
         );
     }
 
@@ -139,7 +147,9 @@ namespace random
     {
         auto provider =
             Environment<>::get().DataConnector().get< RNGProvider >( id, true );
-        Handle result( provider->getDeviceDataBox() );
+
+        Handle result( provider->buffer.device().data() );
+
         Environment<>::get().DataConnector().releaseData( id );
         return result;
     }
@@ -157,14 +167,7 @@ namespace random
     typename RNGProvider<T_dim, T_RNGMethod>::Buffer&
     RNGProvider<T_dim, T_RNGMethod>::getStateBuffer()
     {
-        return *buffer;
-    }
-
-    template<uint32_t T_dim, class T_RNGMethod>
-    typename RNGProvider<T_dim, T_RNGMethod>::DataBoxType
-    RNGProvider<T_dim, T_RNGMethod>::getDeviceDataBox()
-    {
-        return buffer->getDeviceBuffer().getDataBox();
+        return buffer;
     }
 
     template<uint32_t T_dim, class T_RNGMethod>
@@ -188,7 +191,7 @@ namespace random
     void
     RNGProvider<T_dim, T_RNGMethod>::synchronize()
     {
-        buffer->deviceToHost();
+        pmacc::mem::buffer::copy( buffer.host().write(), buffer.device().read() );
     }
 
 }  // namespace random
