@@ -181,6 +181,26 @@ struct HostDeviceBuffer
             }
         )
     {}
+
+    HostDeviceBuffer(
+        device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > other_device_buffer,
+        DataSpace< T_dim > capacity
+    ) :
+        host_device_buffer::WriteGuard<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >(
+            host_device_buffer::HostDeviceBufferGuard<
+                T_Item,
+                T_dim,
+                T_DataAccessPolicy
+            >{
+                HostBuffer< T_Item, T_dim, T_DataAccessPolicy >( capacity ),
+                other_device_buffer
+            }
+        )
+    {}
 };
 
 } // namespace mem

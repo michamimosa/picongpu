@@ -150,6 +150,30 @@ struct GridBuffer
     {}
 
     /**
+     * Constructor.
+     *
+     * @param otherDeviceBuffer DeviceBuffer which should be used instead of creating own DeviceBuffer
+     * @param gridLayout layout of the buffers, including border-cells
+     * @param sizeOnDevice if true, internal buffers must store their
+     *        size additionally on the device
+     *        (as we keep this information coherent with the host, it influences
+     *        performance on host-device copies, but some algorithms on the device
+     *        might need to know the size of the buffer)
+     */
+    GridBuffer(
+        device_buffer::WriteGuard< T_Item, T_dim, grid_buffer::data::Access > otherDeviceBuffer,
+        const GridLayout<T_dim>& gridLayout
+    ) :
+        HostDeviceBuffer<
+            T_Item, T_dim, grid_buffer::data::Access
+        >(
+            otherDeviceBuffer,
+            gridLayout.getDataSpace()
+        ),
+        gridLayout( gridLayout )
+    {}
+
+    /**
      * Add Exchange in GridBuffer memory space.
      *
      * An Exchange is added to this GridBuffer. The exchange buffers use
@@ -479,6 +503,13 @@ private:
 };
 
 } // namespace mem
+
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_BorderItem = T_Item
+>
+using GridBuffer = mem::GridBuffer< T_Item, T_dim, T_BorderItem >;
 
 } // namespace pmacc
 
