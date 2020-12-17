@@ -169,25 +169,40 @@ namespace detail
         T_Functor functor
     )
     {
-        using MappingDesc = decltype(species.getCellDescription());
-        AreaMapping<
-            CORE + BORDER,
-            MappingDesc
-        > mapper( species.getCellDescription() );
+        auto cellDescription = species.getCellDescription();
+        using MappingDesc = decltype( cellDescription );
 
-        using SuperCellSize = typename MappingDesc::SuperCellSize;
+        Environment<>::task(
+            [
+                functor = std::move(functor),
+                cellDescription
+            ](
+                auto parDevice
+            ){
+                AreaMapping<
+                    CORE + BORDER,
+                    MappingDesc
+                > mapper( cellDescription );
 
-        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-            pmacc::math::CT::volume< SuperCellSize >::type::value
-        >::value;
+                using SuperCellSize = typename MappingDesc::SuperCellSize;
 
-        PMACC_KERNEL( acc::detail::ForEachParticle< numWorkers >{ } )(
-            mapper.getGridDim(),
-            numWorkers
-        )(
-            std::move(functor),
-            mapper,
-            species.getDeviceParticlesBox( )
+                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                    pmacc::math::CT::volume< SuperCellSize >::type::value
+                >::value;
+
+                PMACC_KERNEL( acc::detail::ForEachParticle< numWorkers >{ } )(
+                    mapper.getGridDim(),
+                    numWorkers
+                )(
+                    std::move(functor),
+                    mapper,
+                    parDevice.getParticlesBox( )
+                );
+            },
+            TaskProperties::Builder()
+                .label("ForEachParticle")
+                .scheduling_tags({ SCHED_CUPLA }),
+            species.getParticlesBuffer().device()
         );
     }
 
