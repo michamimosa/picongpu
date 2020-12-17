@@ -25,6 +25,8 @@
 #include "picongpu/simulation_defines.hpp"
 #include <pmacc/assert.hpp>
 
+/*
+
 #include "picongpu/plugins/CountParticles.hpp"
 #include "picongpu/plugins/EnergyParticles.hpp"
 #include "picongpu/plugins/multi/Master.hpp"
@@ -35,13 +37,16 @@
 #include "picongpu/plugins/transitionRadiation/TransitionRadiation.hpp"
 #include "picongpu/plugins/output/images/PngCreator.hpp"
 #include "picongpu/plugins/output/images/Visualisation.hpp"
+*/
+
 /* That's an abstract plugin for image output with the possibility
  * to store the image as png file or send it via a sockets to a server.
  *
  * \todo rename PngPlugin to ImagePlugin or similar
  */
-#include "picongpu/plugins/PngPlugin.hpp"
+//#include "picongpu/plugins/PngPlugin.hpp"
 
+/*
 #if (ENABLE_ADIOS == 1)
 #   include "picongpu/plugins/adios/ADIOSWriter.hpp"
 #endif
@@ -85,7 +90,7 @@
 #include "picongpu/plugins/ILightweightPlugin.hpp"
 #include "picongpu/plugins/ISimulationPlugin.hpp"
 #include "picongpu/particles/traits/SpeciesEligibleForSolver.hpp"
-
+*/
 #include <list>
 
 
@@ -168,6 +173,7 @@ private:
 
     /* define stand alone plugins */
     using StandAlonePlugins = bmpl::vector<
+        /*
         Checkpoint,
         EnergyFields
 #if (ENABLE_ADIOS == 1)
@@ -190,6 +196,7 @@ private:
         , isaacP::IsaacPlugin
 #endif
         , ResourceLog
+        */
     >;
 
 
@@ -217,6 +224,7 @@ private:
 
     /* define species plugins */
     using UnspecializedSpeciesPlugins = bmpl::vector <
+        /*
         plugins::multi::Master< EnergyParticles<bmpl::_1> >,
         plugins::multi::Master< CalcEmittance<bmpl::_1> >,
         plugins::multi::Master< BinEnergyParticles<bmpl::_1> >,
@@ -239,6 +247,7 @@ private:
         , PerSuperCell<bmpl::_1>
 #   endif
 #endif
+        */
     >;
 
     using CombinedUnspecializedSpeciesPlugins = typename AllCombinations<
