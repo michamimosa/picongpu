@@ -252,50 +252,67 @@ device_set_value_big(
                     static_cast< double >( xChunkSize )
                 );
 
-                T_Item * devicePtr = dst.data().getPointer();
-                T_Item * valuePointer_host;
+                rg::IOResource< T_Item * > valuePointer_host;
 
-                CUDA_CHECK(cuplaMallocHost(
-                    (void**)&valuePointer_host,
-                    sizeof(T_Item)));
+                Environment<>::task(
+                    [value]( auto valuePointer_host )
+                    {
+                        T_Item * ptr;
+                        CUDA_CHECK(cuplaMallocHost(
+                            (void**) &ptr,
+                            sizeof(T_Item)));
 
-                *valuePointer_host = value; //copy value to new place
-
-                CUDA_CHECK(cuplaMemcpyAsync(
-                    devicePtr,
-                    valuePointer_host,
-                    sizeof(T_Item),
-                    cuplaMemcpyHostToDevice,
-                    redGrapes::thread::current_cupla_stream));
-
-                auto destBox = dst.data().getDataBox( );
-                CUPLA_KERNEL(
-                    KernelSetValue<
-                        numWorkers,
-                        xChunkSize
-                    >
-                )(
-                    gridSize,
-                    numWorkers,
-                    0,
-                    redGrapes::thread::current_cupla_stream
-                )(
-                    destBox,
-                    devicePtr,
-                    area_size
+                        *ptr = value; //copy value to new place
+                        *valuePointer_host = ptr;
+                    },
+                    valuePointer_host.write()
                 );
 
-                // the free seems a bit early..
-                if (valuePointer_host != nullptr)
-                {
-                    CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(valuePointer_host));
-                    valuePointer_host = nullptr;
-                }
+                Environment<>::task(
+                    [gridSize, area_size]( auto data, auto valuePointer_host )
+                    {
+                        CUDA_CHECK(cuplaMemcpyAsync(
+                            data.getPointer(),
+                            *valuePointer_host,
+                            sizeof(T_Item),
+                            cuplaMemcpyHostToDevice,
+                            redGrapes::thread::current_cupla_stream));
+
+                        CUPLA_KERNEL(
+                            KernelSetValue<
+                                numWorkers,
+                                xChunkSize
+                            >
+                        )(
+                            gridSize,
+                            numWorkers,
+                            0,
+                            redGrapes::thread::current_cupla_stream
+                        )(
+                            data.getDataBox(),
+                            data.getPointer(),
+                            area_size
+                        );
+                    },
+                    TaskProperties::Builder()
+                       .label("KernelSetValue")
+                       .scheduling_tags({ SCHED_CUPLA }),
+
+                    dst.data().write(),
+                    valuePointer_host.read()
+                );
+
+                Environment<>::task(
+                    []( auto valuePointer_host )
+                    {
+                        CUDA_CHECK_NO_EXCEPT(cuplaFreeHost(*valuePointer_host));
+                    },
+                    valuePointer_host.write()
+                );
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_big()"/* + std::to_string(value) + ")"*/)
-            .scheduling_tags({ SCHED_CUPLA }),
+            .label("device_set_value_big()"/* + std::to_string(value) + ")"*/),
         dst.write()
     );
 }
