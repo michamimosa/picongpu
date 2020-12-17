@@ -200,7 +200,7 @@ namespace detail
                         return t.get().required_scheduler_tags.test(
                             SCHED_CUPLA);
                     },
-                    8 /* number of cupla streams */
+                    1 /* number of cupla streams */
                 );
 
             mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler(
