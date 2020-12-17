@@ -187,6 +187,53 @@ using WriteGuard =
 
 } // namespace device_buffer
 
+
+
+namespace buffer
+{
+namespace size
+{
+
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct ReadGuard<
+    device_buffer::DeviceBufferResource<
+        T_Item,
+        T_dim,
+        T_DataAccessPolicy
+    >
+>
+    : GuardBase<
+        device_buffer::DeviceBufferResource<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >
+    >
+{
+    ReadGuard( GuardBase< device_buffer::DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const & base )
+        : GuardBase< device_buffer::DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
+    {}
+
+    auto read() { return *this; }
+
+    std::size_t get() const { return this->size.get_current_size(); }
+    std::size_t getCurrentSize() const { return this->size.get_current_size(); }
+    DataSpace< T_dim > getCurrentDataSpace() const { return this->size.get_current_data_space(); }
+
+    size_t * get_device_pointer()
+    {
+        this->size.get_device_pointer();
+    }
+};
+
+} // namespace size
+} // namespace buffer
+
+
 } // namespace mem
 
 } // namespace pmacc
