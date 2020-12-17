@@ -33,6 +33,7 @@
 #include "pmacc/traits/NumberOfExchanges.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 #include "pmacc/assert.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
 
 #include <memory>
 
@@ -125,7 +126,7 @@ protected:
                 {
                     PMACC_KERNEL(KernelShiftParticles< numWorkers >{})
                         (mapper.getGridDim(), numWorkers)
-                        (parDevice->getParticlesBox(), mapper);
+                        (parDevice.getParticlesBox(), mapper);
                 }
                 while ( mapper.next() );
             },

@@ -310,11 +310,11 @@ struct ExchangeBuffer
         }
     }
 
-    auto host() { return hostBuffer; }
-    auto getHostBuffer() { return hostBuffer; }
+    auto host() const { return hostBuffer; }
+    auto getHostBuffer() const { return hostBuffer; }
 
-    auto device() { return deviceBuffer; }
-    auto getDeviceBuffer() { return deviceBuffer; }
+    auto device() const { return deviceBuffer; }
+    auto getDeviceBuffer() const { return deviceBuffer; }
 
 private:
 

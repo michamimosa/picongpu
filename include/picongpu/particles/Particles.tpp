@@ -460,7 +460,7 @@ Particles<
                 densityFunctor,
                 positionFunctor,
                 totalGpuCellOffset,
-                parDevice->getParticleBox( ),
+                parDevice.getParticlesBox( ),
                 mapper
             );
         },
@@ -534,7 +534,7 @@ Particles<
             .scheduling_tags({ SCHED_CUPLA }),
 
         this->particlesBuffer.device(),
-        src->particlesBuffer.device()
+        src.getParticlesBuffer().device()
     );
 
     this->fillAllGaps( );

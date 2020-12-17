@@ -240,7 +240,6 @@ struct PushSpecies
     >;
     using FrameType = typename SpeciesType::FrameType;
 
-    template<typename T_EventList>
     HINLINE void operator()(
         const uint32_t currentStep
     ) const
@@ -268,7 +267,6 @@ struct CommunicateSpecies
     >;
     using FrameType = typename SpeciesType::FrameType;
 
-    template<typename T_EventList>
     HINLINE void operator() () const
     {
         DataConnector &dc = Environment<>::get().DataConnector();

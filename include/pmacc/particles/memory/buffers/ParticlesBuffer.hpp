@@ -199,6 +199,15 @@ public:
         reset();
     }
 
+    ParticlesBuffer( ParticlesBuffer const & other ) :
+        m_deviceHeap(other.m_deviceHeap),
+        superCellSize( other.superCellSize ),
+        gridSize(other.gridSize),
+        exchangeMemoryIndexer(other.exchangeMemoryIndexer),
+        framesExchanges(other.framesExchanges),
+        superCells(other.superCells)
+    {}
+
     /**
      * Destructor.
      */
@@ -275,13 +284,13 @@ public:
     StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 > getSendExchangeStack(uint32_t ex)
     {
         return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 >
-            (framesExchanges.getSendExchange(ex), exchangeMemoryIndexer.getSendExchange(ex));
+            (*framesExchanges.getSendExchange(ex), *exchangeMemoryIndexer.getSendExchange(ex));
     }
 
     StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 > getReceiveExchangeStack(uint32_t ex)
     {
         return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1 >
-            (framesExchanges.getReceiveExchange(ex), exchangeMemoryIndexer.getReceiveExchange(ex));
+            (*framesExchanges.getReceiveExchange(ex), *exchangeMemoryIndexer.getReceiveExchange(ex));
     }
 
     void communication()
@@ -355,11 +364,15 @@ namespace particles_buffer
 {
 
 template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
-struct HostGuard
-    : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
+struct HostGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 {
+    friend class redGrapes::trait::BuildProperties< HostGuard >;
+
     using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::ParticlesBoxType;
 
+    HostGuard(ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const & b)
+        : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b) {}
+    
     /**
      * Returns a ParticlesBox for host frame data.
      *
@@ -376,10 +389,14 @@ struct HostGuard
 };
 
 template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
-struct DeviceGuard
-    : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
+struct DeviceGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
 {
+    friend class redGrapes::trait::BuildProperties< DeviceGuard >;
+
     using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::ParticlesBoxType;
+
+    DeviceGuard(ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const & b)
+        : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b) {}
 
     /**
      * Returns a ParticlesBox for device frame data.

@@ -50,7 +50,7 @@ namespace pmacc
                     mapper.getGridDim( ),
 		    numWorkers
                 )(
-                    parDevice->getParticlesBox( ),
+                    parDevice.getParticlesBox( ),
                     mapper
                 );
 	    },
@@ -78,7 +78,7 @@ namespace pmacc
 	            mapper.getGridDim( ),
                     numWorkers
                 )(
-                    parDevice->getParticlesBox( ),
+                    parDevice.getParticlesBox( ),
                     mapper
                 );
 	     },
@@ -174,8 +174,8 @@ namespace pmacc
                             numParticles,
                             numWorkers
                         )(
-                            parDevice->getParticlesBox( ),
-                            parExchangeDevice->getPopDataBox( ),
+                            parDevice.getParticlesBox( ),
+                            parExchangeDevice.getPopDataBox( ),
                             mapper
                         );
 		    },

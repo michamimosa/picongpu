@@ -66,30 +66,26 @@ struct DeviceGuard;
 
         void setCurrentSize(const size_t size)
         {
-            stack.getHostBuffer().size().set(size);
-            stack.getDeviceBuffer().size().set(size);
-            stackIndexer.getHostBuffer().size().set(size);
-            stackIndexer.getDeviceBuffer().size().set(size);
+            stack.host()->size().set(size);
+            stack.device().size().set(size);
+            stackIndexer.host()->size().set(size);
+            stackIndexer.device().size().set(size);
         }
 
         size_t getMaxParticlesCount()
         {
             if (Environment<>::get().isMpiDirectEnabled())
-                return stack.getDeviceBuffer()
-                    .getDataSpace()
-                    .productOfComponents();
+                return stack.device().getDataSpace().productOfComponents();
             else
-                return stack.getHostBuffer()
-                    .getDataSpace()
-                    .productOfComponents();
+                return stack.host()->getDataSpace().productOfComponents();
         }
 
-        auto host()
+        auto host() const
         {
             return stack_exchange_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>(*this);
         }
 
-        auto device()
+        auto device() const
         {
             return stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>(*this);
         }
@@ -114,20 +110,23 @@ struct DeviceGuard;
         {
             friend class redGrapes::trait::BuildProperties< HostGuard >;
 
+            HostGuard( StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const & b )
+                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b) {}
+            
             size_t getCurrentSize()
             {
                 if (Environment<>::get().isMpiDirectEnabled())
-                    return this->stackIndexer.getDeviceBuffer().size().get();
+                    return this->stackIndexer.device().size().get();
                 else
-                    return this->stackIndexer.getHostBuffer().size().get();
+                    return this->stackIndexer.host()->size().get();
             }
 
             size_t getParticlesCurrentSize()
             {
                 if (Environment<>::get().isMpiDirectEnabled())
-                    return this->stack.getDeviceBuffer().size().get();
+                    return this->stack.device().size().get();
                 else
-                    return this->stack.getHostBuffer().size().get();
+                    return this->stack.host()->size().get();
             }
 
             /**
@@ -139,14 +138,12 @@ struct DeviceGuard;
             getPushDataBox()
             {
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                    this->stack.getHostBuffer().data().getBasePointer(),
-                    this->stack.getHostBuffer().size().get_host_pointer(),
-                    this->stack.getHostBuffer().getDataSpace().productOfComponents(),
+                    this->stack.host()->data().getBasePointer(),
+                    this->stack.host()->size().get_host_pointer(),
+                    this->stack.host()->getDataSpace().productOfComponents(),
                     PushDataBox<vint_t, FRAMEINDEX>(
-                        this->stackIndexer.getHostBuffer().data().getBasePointer(),
-                        this->stackIndexer.getHostBuffer()
-                            .size()
-                            .get_host_pointer()));
+                        this->stackIndexer.host()->data().getBasePointer(),
+                        this->stackIndexer.host()->size().get_host_pointer()));
             }
 
             /**
@@ -157,8 +154,8 @@ struct DeviceGuard;
             ExchangePopDataBox<vint_t, FRAME, DIM> getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                    this->stack.getHostBuffer().data().getDataBox(),
-                    this->stackIndexer.getHostBuffer().data().getDataBox());
+                    this->stack.host()->data().getDataBox(),
+                    this->stackIndexer.host()->data().getDataBox());
             }
         };
 
@@ -169,6 +166,9 @@ struct DeviceGuard;
         struct DeviceGuard : private StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>
         {
             friend class redGrapes::trait::BuildProperties< DeviceGuard >;
+
+            DeviceGuard( StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const & b )
+                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b) {}
 
             size_t getCurrentSize()
             {
@@ -191,17 +191,12 @@ struct DeviceGuard;
                 PMACC_ASSERT(this->stackIndexer.getDeviceBuffer().size().is_on_device());
 
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                    this->stack.getDeviceBuffer().data().getBasePointer(),
-                    (vint_t*) this->stack.getDeviceBuffer()
-                        .size()
-                        .get_device_pointer(),
-                    this->stack.getDeviceBuffer()
-                        .data()
-                        .getDataSpace()
-                        .productOfComponents(),
+                    this->stack.device().data().getBasePointer(),
+                    (vint_t*) this->stack.device().size().get_device_pointer(),
+                    this->stack.device().data().getDataSpace().productOfComponents(),
                     PushDataBox<vint_t, FRAMEINDEX>(
-                        this->stackIndexer.getDeviceBuffer().data().getBasePointer(),
-                        (vint_t*) this->stackIndexer.getDeviceBuffer()
+                        this->stackIndexer.device().data().getBasePointer(),
+                        (vint_t*) this->stackIndexer.device()
                             .size()
                             .get_device_pointer()));
             }

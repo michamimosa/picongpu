@@ -149,7 +149,7 @@ namespace random
         auto provider =
             Environment<>::get().DataConnector().get< RNGProvider >( id, true );
 
-        Handle result( provider->buffer.device().data() );
+        Handle result( provider->buffer.device().data().getDataBox() );
 
         Environment<>::get().DataConnector().releaseData( id );
         return result;
