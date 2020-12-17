@@ -148,8 +148,8 @@ namespace ionization
                 auto eneKinDens = dc.get< FieldTmp >( FieldTmp::getUniqueId( 1 ), true );
 
                 /* reset density and kinetic energy values to zero */
-                density->getGridBuffer().getDeviceBuffer().setValue( FieldTmp::ValueType( 0. ) );
-                eneKinDens->getGridBuffer().getDeviceBuffer().setValue( FieldTmp::ValueType( 0. ) );
+                pmacc::mem::buffer::fill( density->getGridBuffer().device(), FieldTmp::ValueType( 0. ) );
+                pmacc::mem::buffer::fill( eneKinDens->getGridBuffer().device(), FieldTmp::ValueType( 0. ) );
 
                 /* load species without copying the particle data to the host */
                 auto srcSpecies = dc.get< SrcSpecies >( SrcSpecies::FrameType::getName(), true );
@@ -165,8 +165,9 @@ namespace ionization
                 >::Solver;
                 density->template computeValue< CORE + BORDER, DensitySolver >(*srcSpecies, currentStep);
                 dc.releaseData( SrcSpecies::FrameType::getName() );
-                EventTask densityEvent = density->asyncCommunication( __getTransactionEvent() );
-                densityEvent += density->asyncCommunicationGather( densityEvent );
+
+                density->communication();
+                density->communicationGather();
 
                 /* load species without copying the particle data to the host */
                 auto destSpecies = dc.get< DestSpecies >( DestSpecies::FrameType::getName(), true );
@@ -182,15 +183,13 @@ namespace ionization
                 >::Solver;
                 eneKinDens->template computeValue< CORE + BORDER, EnergyDensitySolver >(*destSpecies, currentStep);
                 dc.releaseData( DestSpecies::FrameType::getName() );
-                EventTask eneKinEvent = eneKinDens->asyncCommunication( __getTransactionEvent() );
-                eneKinEvent += eneKinDens->asyncCommunicationGather( eneKinEvent );
 
-                /* contributions from neighboring GPUs to our border area */
-                __setTransactionEvent( densityEvent + eneKinEvent );
+                eneKinDens->communication();
+                eneKinDens->communicationGather();
 
                 /* initialize device-side density- and energy density field databox pointers */
-                rhoBox = density->getDeviceDataBox();
-                eneBox = eneKinDens->getDeviceDataBox();
+                rhoBox = density->device().data().getDataBox();
+                eneBox = eneKinDens->device().data().getDataBox();
 
             }
 

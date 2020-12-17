@@ -205,7 +205,7 @@ device_set_value_small(
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_small(" + std::to_string(value) + ")"),
+           .label("device_set_value_small()"/* + std::to_string(value) + ")"*/),
         dst.write()
     );
 }
@@ -294,7 +294,7 @@ device_set_value_big(
             }
         },
         TaskProperties::Builder()
-            .label("device_set_value_big(" + std::to_string(value) + ")")
+            .label("device_set_value_big()"/* + std::to_string(value) + ")"*/)
             .scheduling_tags({ SCHED_CUPLA }),
         dst.write()
     );

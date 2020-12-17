@@ -168,7 +168,7 @@ namespace pmacc
             bool slide()
             {
                /* wait that all tasks are finished */
-               Environment<DIM>::get().Manager().waitForAllTasks();//
+               //Environment<DIM>::get().Manager().waitForAllTasks();
 
                bool result = comm.slide();
 

@@ -69,7 +69,7 @@ namespace stage
 
             DataConnector & dc = Environment< >::get( ).DataConnector( );
             auto & fieldJ = *dc.get< FieldJ >( FieldJ::getName( ), true );
-            auto eRecvCurrent = fieldJ.asyncCommunication( __getTransactionEvent() );
+            fieldJ.communication();
             using CurrentInterpolation = fields::Solver::CurrentInterpolation;
             CurrentInterpolation currentInterpolation;
             using Margin = traits::GetMargin< CurrentInterpolation >;
@@ -83,7 +83,6 @@ namespace stage
             )
             {
                 fieldJ.addCurrentToEMF< type::CORE >( currentInterpolation );
-                __setTransactionEvent( eRecvCurrent );
                 fieldJ.addCurrentToEMF< type::BORDER >( currentInterpolation );
             }
             else
@@ -95,7 +94,6 @@ namespace stage
                 * to BORDER (send) and then updates the GUARD (receive)
                 * \todo split the last `receive` part in a separate method to
                 *       allow already a computation of CORE */
-                __setTransactionEvent( eRecvCurrent );
                 fieldJ.addCurrentToEMF<
                     type::CORE + type::BORDER
                 >( currentInterpolation );

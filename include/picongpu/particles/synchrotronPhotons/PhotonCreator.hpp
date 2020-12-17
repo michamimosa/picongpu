@@ -134,8 +134,8 @@ public:
         auto fieldE = dc.get< FieldE >( FieldE::getName(), true );
         auto fieldB = dc.get< FieldB >( FieldB::getName(), true );
         /* initialize device-side E-(B-)field databoxes */
-        eBox = fieldE->getDeviceDataBox();
-        bBox = fieldB->getDeviceDataBox();
+        eBox = fieldE->device().data().getDataBox();
+        bBox = fieldB->device().data().getDataBox();
     }
 
     /** cache fields used by this functor

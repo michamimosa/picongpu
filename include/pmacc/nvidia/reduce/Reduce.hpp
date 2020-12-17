@@ -341,7 +341,7 @@ namespace kernel
 
 
             if (threads > n) threads = n;
-            Type* dest = (Type*) reduceBuffer->getDeviceBuffer().getBasePointer();
+            Type* dest = (Type*) reduceBuffer->device().data().getBasePointer();
 
             uint32_t blocks = threads / 2 / blockcount;
             if (blocks == 0) blocks = 1;
@@ -380,8 +380,8 @@ namespace kernel
             }
 
             reduceBuffer->deviceToHost();
-            __getTransactionEvent().waitForFinished();
-            return *((Type*) (reduceBuffer->getHostBuffer().getBasePointer()));
+            //__getTransactionEvent().waitForFinished();
+            return *((Type*) (reduceBuffer->host().data().getBasePointer()));
 
         }
 

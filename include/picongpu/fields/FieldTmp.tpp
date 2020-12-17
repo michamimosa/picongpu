@@ -68,7 +68,7 @@ namespace picongpu
 
         if( fieldTmpSupportGatherCommunication )
             fieldTmpRecv = std::make_unique< Buffer >(
-                fieldTmp->getDeviceBuffer(),
+                fieldTmp->device(),
                 cellDescription.getGridLayout( )
             );
 
@@ -189,7 +189,7 @@ namespace picongpu
     void FieldTmp::computeValue( ParticlesClass& parClass, uint32_t )
     {
         Environment<>::task(
-            [ cellDescription ]( auto tmpData, auto parDevice )
+            [ cellDescription = this->cellDescription ]( auto tmpData, auto parDevice )
             {
                 typedef SuperCellDescription<
                     typename MappingDesc::SuperCellSize,
@@ -247,32 +247,32 @@ namespace picongpu
     void FieldTmp::synchronize( )
     {
         pmacc::mem::buffer::copy(
-            fieldTmp.host().write(),
-            fieldTmp.device().read()
+            fieldTmp->host().write(),
+            fieldTmp->device().read()
         );
     }
 
     void FieldTmp::syncToDevice( )
     {
         pmacc::mem::buffer::copy(
-            fieldTmp.device().write(),
-            fieldTmp.host().read()
+            fieldTmp->device().write(),
+            fieldTmp->host().read()
         );
     }
 
     void FieldTmp::communication( )
     {
-        for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
+        for (uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
         {
-            if ( fieldTmp.hasSendExchange( i ) )
+            if ( fieldTmp->hasSendExchange( i ) )
             {
                 bashField( i );
-                fieldTmp.send( i );
+                fieldTmp->send( i );
             }
 
-            if ( fieldTmp.hasReceiveExchange( i ) )
+            if ( fieldTmp->hasReceiveExchange( i ) )
             {
-                fieldTmp.recv( i );
+                fieldTmp->recv( i );
                 insertField( i );
             }
         }
@@ -292,10 +292,10 @@ namespace picongpu
     void FieldTmp::bashField( uint32_t exchangeType )
     {
         Environment<>::task(
-            [ exchangeType ]( auto bufferData )
+            [ exchangeType ]( auto buffer )
             {
                 pmacc::fields::operations::CopyGuardToExchange{ }(
-                    bufferData,
+                    buffer,
                     SuperCellSize{ },
                     exchangeType
                 );
@@ -305,17 +305,17 @@ namespace picongpu
                 .label("FieldTmp::bashField()")
                 .scheduling_tags({ SCHED_CUPLA }),
 
-            fieldTmp->device().data()
+            this->getGridBuffer()
         );
     }
 
     void FieldTmp::insertField( uint32_t exchangeType )
     {
         Environment<>::task(
-            [ exchangeType ]( auto bufferData )
+            [ exchangeType ]( auto buffer )
 	    {
                 pmacc::fields::operations::AddExchangeToBorder{ }(
-                    bufferData,
+                    buffer,
                     SuperCellSize{ },
                     exchangeType
                 );
@@ -325,7 +325,7 @@ namespace picongpu
                 .label("FieldTmpa::insertField()")
                 .scheduling_tags({ SCHED_CUPLA }),
 
-            fieldTmp->device().data()
+            this->getGridBuffer()
         );
     }
 

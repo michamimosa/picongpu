@@ -226,9 +226,9 @@ namespace operations
                 mapper.getGridDim( ),
                 numWorkers
             )(
-                destBuffer.getDeviceBuffer( ).getDataBox( ),
-                destBuffer.getReceiveExchange( exchangeType ).getDeviceBuffer( ).getDataBox( ),
-                destBuffer.getReceiveExchange( exchangeType ).getDeviceBuffer( ).getDataSpace( ),
+                destBuffer.device( ).data( ).getDataBox( ),
+                destBuffer.getReceiveExchange( exchangeType )->device( ).data( ).getDataBox( ),
+                destBuffer.getReceiveExchange( exchangeType )->device( ).data( ).getDataSpace( ),
                 direction,
                 mapper
             );

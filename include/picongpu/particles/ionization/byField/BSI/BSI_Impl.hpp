@@ -114,8 +114,8 @@ namespace ionization
                 auto fieldE = dc.get< FieldE >( FieldE::getName(), true );
                 auto fieldJ = dc.get< FieldJ >( FieldJ::getName(), true );
                 /* initialize device-side E-(J-)field databoxes */
-                eBox = fieldE->getDeviceDataBox();
-                jBox = fieldJ->getDeviceDataBox();
+                eBox = fieldE->device().data().getDataBox();
+                jBox = fieldJ->device().data().getDataBox();
 
             }
 

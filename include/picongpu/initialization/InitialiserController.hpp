@@ -67,7 +67,7 @@ public:
 
         SimStartInitialiser simStartInitialiser;
         Environment<>::get().DataConnector().initialise(simStartInitialiser, 0);
-        __getTransactionEvent().waitForFinished();
+        //__getTransactionEvent().waitForFinished();
 
         log<picLog::SIMULATION_STATE > ("Loading from default values finished");
     }
@@ -83,7 +83,7 @@ public:
             restartStep % restartDirectory;
 
         Environment<>::get().PluginConnector().restartPlugins(restartStep, restartDirectory);
-        __getTransactionEvent().waitForFinished();
+        //__getTransactionEvent().waitForFinished();
 
         CUDA_CHECK(cuplaDeviceSynchronize());
         CUDA_CHECK(cuplaGetLastError());
@@ -91,7 +91,8 @@ public:
         GridController<simDim> &gc = Environment<simDim>::get().GridController();
 
         // avoid deadlock between not finished pmacc tasks and MPI_Barrier
-        __getTransactionEvent().waitForFinished();
+        //__getTransactionEvent().waitForFinished();
+
         /* can be spared for better scalings, but guarantees the user
          * that the restart was successful */
         MPI_CHECK(MPI_Barrier(gc.getCommunicator().getMPIComm()));
@@ -196,7 +197,7 @@ public:
     {
         SimStartInitialiser simStartInitialiser;
         Environment<>::get().DataConnector().initialise(simStartInitialiser, currentStep);
-        __getTransactionEvent().waitForFinished();
+        //__getTransactionEvent().waitForFinished();
     }
 
 private:

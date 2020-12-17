@@ -126,7 +126,7 @@ FieldJ::FieldJ( MappingDesc const & cellDescription ) :
         endRecvGuard != DataSpace<simDim>::create(0) )
     {
         fieldJrecv = std::make_unique< GridBuffer<ValueType, simDim > >(
-            buffer.getDeviceBuffer(),
+            buffer.device(),
             cellDescription.getGridLayout( )
         );
 
@@ -158,7 +158,7 @@ GridLayout<simDim> FieldJ::getGridLayout( )
 
 void FieldJ::communication( )
 {
-    for (uint32_t i = 1; i < traits::NumberOfExchanges<Dim>::value; ++i)
+    for (uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
     {
         if ( buffer.hasSendExchange( i ) )
         {
@@ -183,7 +183,7 @@ void FieldJ::reset( uint32_t )
 
 void FieldJ::synchronize( )
 {
-    pmacc::mem::copy(
+    pmacc::mem::buffer::copy(
         this->host().write(),
         this->device().read()
     );
@@ -262,8 +262,8 @@ void FieldJ::computeCurrent( T_Species & species, uint32_t )
         BlockArea
     >{};
 
-    typename T_Species::ParticlesBoxType pBox = species.getDeviceParticlesBox( );
-    FieldJ::DataBoxType jBox = buffer.getDeviceBuffer( ).getDataBox( );
+    typename T_Species::ParticlesBoxType pBox = species.getParticlesBuffer( ).device( ).getParticlesBox( );
+    FieldJ::DataBoxType jBox = buffer.device( ).data( ).getDataBox( );
     FrameSolver solver( DELTA_T );
 
     auto const deposit = currentSolver::Deposit< Strategy >{};
@@ -286,7 +286,7 @@ void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
 
     Environment<>::task(
         [
-            cellDescription,
+            cellDescription = this->cellDescription,
             myCurrentInterpolation
         ]
         (
@@ -308,8 +308,8 @@ void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
                 mapper.getGridDim(),
                 numWorkers
             )(
-                fieldE->getDataBox( ),
-                fieldB->getDataBox( ),
+                fieldE.getDataBox( ),
+                fieldB.getDataBox( ),
                 buffer.getDataBox( ),
                 myCurrentInterpolation,
                 mapper
@@ -320,8 +320,8 @@ void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
             .label("FieldJ::addCurrentToEMF()")
             .scheduling_tags({ SCHED_CUPLA }),
 
-        dc.get< FieldE >( FieldE::getName(), true ).device().data(),
-        dc.get< FieldB >( FieldB::getName(), true ).device().data(),
+        dc.get< FieldE >( FieldE::getName(), true )->device().data(),
+        dc.get< FieldB >( FieldB::getName(), true )->device().data(),
         this->device().data()
     );
 }
@@ -329,10 +329,10 @@ void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
 void FieldJ::bashField( uint32_t exchangeType )
 {
     Environment<>::task(
-        [ exchangeType ]( auto bufferData )
+        [ exchangeType ]( auto buffer )
 	{
             pmacc::fields::operations::CopyGuardToExchange{ }(
-                bufferData,
+                buffer,
                 SuperCellSize{ },
                 exchangeType
             );
@@ -342,17 +342,17 @@ void FieldJ::bashField( uint32_t exchangeType )
             .label("FieldJ::bashField()")
             .scheduling_tags({ SCHED_CUPLA }),
 
-        this->device().data()
+        this->getGridBuffer()
     );
 }
 
 void FieldJ::insertField( uint32_t exchangeType )
 {
     Environment<>::task(
-        [ exchangeType ]( auto bufferData )
+        [ exchangeType ]( auto buffer )
 	{
             pmacc::fields::operations::AddExchangeToBorder{ }(
-                bufferData,
+                buffer,
                 SuperCellSize{ },
                 exchangeType
             );
@@ -362,7 +362,7 @@ void FieldJ::insertField( uint32_t exchangeType )
             .label("FieldJ::insertField()")
             .scheduling_tags({ SCHED_CUPLA }),
 
-        this->device().data()
+        this->getGridBuffer()
     );
 }
 

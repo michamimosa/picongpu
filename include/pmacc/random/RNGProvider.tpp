@@ -27,6 +27,7 @@
 #include "pmacc/mappings/threads/ForEachIdx.hpp"
 #include "pmacc/mappings/threads/IdxConfig.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
 
 #include <memory>
 

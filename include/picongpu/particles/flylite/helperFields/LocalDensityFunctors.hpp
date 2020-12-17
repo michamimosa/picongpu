@@ -122,7 +122,10 @@ namespace detail
                 true
             );
             using DensityValueType = typename FieldTmp::ValueType;
-            fieldTmp->getGridBuffer().getDeviceBuffer().setValue( DensityValueType::create(0.0) );
+            pmacc::mem::buffer::fill(
+                fieldTmp->getGridBuffer().device(),
+                DensityValueType::create(0.0)
+            );
 
             // add density of each species in list to FieldTmp
             meta::ForEach< SpeciesList, detail::AddSingleDensity< bmpl::_1 > > addSingleDensity;
@@ -132,8 +135,7 @@ namespace detail
              * note: for average != supercell multiples the GUARD of fieldTmp
              *       also needs to be filled in the communication above
              */
-            EventTask fieldTmpEvent = fieldTmp->asyncCommunication(__getTransactionEvent());
-            __setTransactionEvent(fieldTmpEvent);
+            fieldTmp->communication();
 
             /* average summed density in FieldTmp down to local resolution and
              * write in new field
@@ -142,20 +144,37 @@ namespace detail
                 helperFields::LocalDensity::getName( speciesGroup ),
                 true
             );
-            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                pmacc::math::CT::volume< SuperCellSize >::type::value
-            >::value;
-            PMACC_KERNEL( helperFields::KernelAverageDensity< numWorkers >{ } )
-            (
-                // one block per averaged density value
-                nlocal->getGridBuffer().getGridLayout().getDataSpaceWithoutGuarding(),
-                numWorkers
-            )
-            (
-                // start in border (jump over GUARD area)
-                fieldTmp->getDeviceDataBox().shift( SuperCellSize::toRT() * GuardSize::toRT() ),
-                // start in border (has no GUARD area)
-                nlocal->getGridBuffer().getDeviceBuffer( ).getDataBox( )
+
+            Environment<>::task(
+                [
+                    gridLayout = nlocal->getGridBuffer().getGridLayout()
+                ](
+                    auto fieldTmpDeviceData,
+                    auto nlocalDeviceData
+                ){
+                    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                        pmacc::math::CT::volume< SuperCellSize >::type::value
+                    >::value;
+
+                    PMACC_KERNEL( helperFields::KernelAverageDensity< numWorkers >{ } )
+                    (
+                        // one block per averaged density value
+                        gridLayout.getDataSpaceWithoutGuarding(),
+                        numWorkers
+                    )
+                    (
+                        // start in border (jump over GUARD area)
+                        fieldTmpDeviceData.getataBox().shift( SuperCellSize::toRT() * GuardSize::toRT() ),
+                        // start in border (has no GUARD area)
+                        nlocalDeviceData.getDataBox( )
+                    );
+                },
+                TaskProperties::Builder()
+                    .label("KernelAverageDensity")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                fieldTmp->device().data(),
+                nlocal->getGridBuffer().device().data()
             );
 
             // release fields

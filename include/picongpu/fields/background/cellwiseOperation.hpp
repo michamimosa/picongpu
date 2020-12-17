@@ -183,7 +183,7 @@ namespace cellwiseOperation
                 mapper.getGridDim( ),
                 numWorkers
             )(
-                field->getDeviceDataBox( ),
+                field->device().data().getDataBox(),
                 opFunctor,
                 valFunctor,
                 totalDomainOffset,

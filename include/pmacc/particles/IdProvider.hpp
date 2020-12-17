@@ -226,7 +226,7 @@ namespace pmacc
                 return static_cast<uint64_t>(hostData.getDataBox()(0));
             },
             newIdBuf.host().data()
-        );
+        ).get();
     }
 
 }  // namespace pmacc

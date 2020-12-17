@@ -106,7 +106,10 @@ namespace helperFields
         void
         synchronize() override
         {
-            m_energyHistogram->deviceToHost( );
+            pmacc::mem::buffer::copy(
+                m_energyHistogram->host( ),
+                m_energyHistogram->device( )
+            );
         }
 
         SimulationDataId

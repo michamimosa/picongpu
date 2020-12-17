@@ -20,6 +20,7 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+#include <picongpu/algorithms/KinEnergy.hpp>
 
 // pmacc
 #include <pmacc/dataManagement/ISimulationData.hpp>
@@ -31,7 +32,6 @@
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
 #include <pmacc/nvidia/atomic.hpp>
-
 
 namespace picongpu
 {

@@ -44,11 +44,7 @@ namespace stage
         void operator( )( uint32_t const step ) const
         {
             particles::PushAllSpecies pushAllSpecies;
-            pushAllSpecies(
-                step, initEvent,
-                updateEvent,
-                commEvent
-            );
+            pushAllSpecies( step );
         }
     };
 

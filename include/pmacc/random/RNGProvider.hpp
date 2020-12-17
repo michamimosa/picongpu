@@ -71,8 +71,8 @@ namespace random
         RNGProvider(const Space& size, const std::string& uniqueId = "");
         virtual ~RNGProvider()
         {
-            __delete(buffer)
         }
+
         /**
          * Initializes the random number generators
          * Must be called before usage

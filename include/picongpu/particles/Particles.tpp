@@ -87,48 +87,48 @@ Particles<
     const uint32_t commTag = pmacc::traits::GetUniqueTypeId<FrameType, uint32_t>::uid() + SPECIES_FIRSTTAG;
     log<picLog::MEMORY > ( "communication tag for species %1%: %2%" ) % FrameType::getName( ) % commTag;
 
-    this->particlesBuffer->addExchange( Mask( LEFT ) + Mask( RIGHT ),
+    this->particlesBuffer.addExchange( Mask( LEFT ) + Mask( RIGHT ),
                                         ExchangeMemCfg::BYTES_EXCHANGE_X,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EXCHANGE_X * 2u;
 
-    this->particlesBuffer->addExchange( Mask( TOP ) + Mask( BOTTOM ),
+    this->particlesBuffer.addExchange( Mask( TOP ) + Mask( BOTTOM ),
                                         ExchangeMemCfg::BYTES_EXCHANGE_Y,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EXCHANGE_Y * 2u;
 
     //edges of the simulation area
-    this->particlesBuffer->addExchange( Mask( RIGHT + TOP ) + Mask( LEFT + TOP ) +
+    this->particlesBuffer.addExchange( Mask( RIGHT + TOP ) + Mask( LEFT + TOP ) +
                                         Mask( LEFT + BOTTOM ) + Mask( RIGHT + BOTTOM ), ExchangeMemCfg::BYTES_EDGES,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EDGES * 4u;
 
 #if(SIMDIM==DIM3)
-    this->particlesBuffer->addExchange( Mask( FRONT ) + Mask( BACK ), ExchangeMemCfg::BYTES_EXCHANGE_Z,
+    this->particlesBuffer.addExchange( Mask( FRONT ) + Mask( BACK ), ExchangeMemCfg::BYTES_EXCHANGE_Z,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EXCHANGE_Z * 2u;
 
     //edges of the simulation area
-    this->particlesBuffer->addExchange( Mask( FRONT + TOP ) + Mask( BACK + TOP ) +
+    this->particlesBuffer.addExchange( Mask( FRONT + TOP ) + Mask( BACK + TOP ) +
                                         Mask( FRONT + BOTTOM ) + Mask( BACK + BOTTOM ),
                                         ExchangeMemCfg::BYTES_EDGES,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EDGES * 4u;
 
-    this->particlesBuffer->addExchange( Mask( FRONT + RIGHT ) + Mask( BACK + RIGHT ) +
+    this->particlesBuffer.addExchange( Mask( FRONT + RIGHT ) + Mask( BACK + RIGHT ) +
                                         Mask( FRONT + LEFT ) + Mask( BACK + LEFT ),
                                         ExchangeMemCfg::BYTES_EDGES,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_EDGES * 4u;
 
     //corner of the simulation area
-    this->particlesBuffer->addExchange( Mask( TOP + FRONT + RIGHT ) + Mask( TOP + BACK + RIGHT ) +
+    this->particlesBuffer.addExchange( Mask( TOP + FRONT + RIGHT ) + Mask( TOP + BACK + RIGHT ) +
                                         Mask( BOTTOM + FRONT + RIGHT ) + Mask( BOTTOM + BACK + RIGHT ),
                                         ExchangeMemCfg::BYTES_CORNER,
                                         commTag);
     sizeOfExchanges += ExchangeMemCfg::BYTES_CORNER * 4u;
 
-    this->particlesBuffer->addExchange( Mask( TOP + FRONT + LEFT ) + Mask( TOP + BACK + LEFT ) +
+    this->particlesBuffer.addExchange( Mask( TOP + FRONT + LEFT ) + Mask( TOP + BACK + LEFT ) +
                                         Mask( BOTTOM + FRONT + LEFT ) + Mask( BOTTOM + BACK + LEFT ),
                                         ExchangeMemCfg::BYTES_CORNER,
                                         commTag);
@@ -159,7 +159,7 @@ Particles<
     T_Attributes
 >::createParticleBuffer( )
 {
-    this->particlesBuffer->createParticleBuffer( );
+    this->particlesBuffer.createParticleBuffer( );
 }
 
 template<
@@ -189,7 +189,7 @@ Particles<
     T_Attributes
 >::synchronize( )
 {
-    this->particlesBuffer->deviceToHost();
+    this->particlesBuffer.deviceToHost();
 }
 
 template<

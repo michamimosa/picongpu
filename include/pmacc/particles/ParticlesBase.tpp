@@ -30,6 +30,7 @@
 #include "pmacc/particles/memory/boxes/ParticlesBox.hpp"
 #include "pmacc/particles/memory/buffers/ParticlesBuffer.hpp"
 
+#include "pmacc/exec/kernelEvents.hpp"
 
 namespace pmacc
 {
@@ -92,15 +93,15 @@ namespace pmacc
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::reset(uint32_t )
     {
         deleteParticlesInArea<CORE+BORDER+GUARD>();
-        particlesBuffer->reset( );
+        particlesBuffer.reset( );
     }
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::copyGuardToExchange( uint32_t exchangeType )
     {
-        if( particlesBuffer->hasSendExchange( exchangeType ) )
+        if( particlesBuffer.hasSendExchange( exchangeType ) )
         {
-            particlesBuffer->getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
+            particlesBuffer.getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
 
             Environment<>::task(
                 [ cellDescription= this->cellDescription, exchangeType ]
@@ -141,7 +142,7 @@ namespace pmacc
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
     void ParticlesBase<T_ParticleDescription, MappingDesc, T_DeviceHeap>::insertParticles(uint32_t exchangeType)
     {
-        if( particlesBuffer->hasReceiveExchange( exchangeType ) )
+        if( particlesBuffer.hasReceiveExchange( exchangeType ) )
         {
             size_t numParticles = 0u;
             if( Environment<>::get().isMpiDirectEnabled() )

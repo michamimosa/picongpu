@@ -27,6 +27,7 @@
 #include <pmacc/static_assert.hpp>
 #include <pmacc/Environment.hpp>
 #include <pmacc/meta/ForEach.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Fill.hpp>
 
 #include <string>
 #include <memory>
@@ -95,9 +96,9 @@ namespace detail
             )
             (
                 // start in border (jump over GUARD area)
-                speciesTmp->getDeviceParticlesBox(),
+                speciesTmp->device().getParticleBox(),
                 // start in border (has no GUARD area)
-                eneHistLocal->getGridBuffer().getDeviceBuffer( ).getDataBox( ),
+                eneHistLocal->getGridBuffer().device().data().getDataBox(),
                 minEnergy,
                 maxEnergy,
                 mapper
@@ -147,7 +148,10 @@ namespace detail
             );
 
             // reset local energy histograms
-            eneHistLocal->getGridBuffer().getDeviceBuffer().setValue( float_X( 0.0 ) );
+            pmacc::mem::buffer::fill(
+                eneHistLocal->getGridBuffer().device(),
+                float_X( 0.0 )
+            );
 
             // add local energy histogram of each species in list
             meta::ForEach< SpeciesList, detail::AddSingleEnergyHistogram< bmpl::_1 > > addSingleEnergyHistogram;

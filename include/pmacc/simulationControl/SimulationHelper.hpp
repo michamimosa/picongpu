@@ -156,7 +156,7 @@ public:
             CUDA_CHECK(cuplaGetLastError());
 
             // avoid deadlock between not finished PMacc tasks and MPI_Barrier
-            __getTransactionEvent().waitForFinished();
+            //__getTransactionEvent().waitForFinished();
 
             GridController<DIM> &gc = Environment<DIM>::get().GridController();
             /* can be spared for better scalings, but allows to spare the
@@ -178,7 +178,7 @@ public:
             CUDA_CHECK(cuplaGetLastError());
 
             /* avoid deadlock between not finished PMacc tasks and MPI_Barrier */
-            __getTransactionEvent().waitForFinished();
+            //__getTransactionEvent().waitForFinished();
 
             /* \todo in an ideal world with MPI-3, this would be an
              * MPI_Ibarrier call and this function would return a MPI_Request
@@ -292,7 +292,7 @@ public:
             }
 
             // simulatation end
-            Environment<>::get().Manager().waitForAllTasks();
+            //Environment<>::get().Manager().waitForAllTasks();
 
             tSimCalculation.toggleEnd();
 
