@@ -1,4 +1,4 @@
-/* Copyright 2016-2020 Alexander Grund
+/* Copyright 2016-2020 Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -99,15 +99,37 @@ namespace pmacc
     }
 
     template<unsigned T_dim>
+    // TODO: return future here
     typename IdProvider<T_dim>::State IdProvider<T_dim>::getState()
     {
         HostDeviceBuffer<uint64_cu, 1> nextIdBuf(DataSpace<1>(1));
-        PMACC_KERNEL(idDetail::KernelGetNextId{})(1, 1)(nextIdBuf.getDeviceBuffer().getDataBox());
+
+        Environment<>::task(
+            []( auto deviceData )
+            {
+                PMACC_KERNEL(idDetail::KernelGetNextId{})(1, 1)(deviceData.getDataBox());
+            },
+            TaskProperties::Builder()
+                .label("KernelGetNextId")
+                .scheduling_tags({ SCHED_CUPLA }),
+
+            nextIdBuf.device().data()
+        );
+
         nextIdBuf.deviceToHost();
+
         State state;
-        state.nextId = static_cast<uint64_t>(nextIdBuf.getHostBuffer().getDataBox()(0));
         state.startId = m_startId;
         state.maxNumProc = m_maxNumProc;
+        state.nextId =
+            Environment<>::task(
+                []( auto hostData )
+                {
+                    return static_cast<uint64_t>(hostData.getDataBox()(0));
+                },
+                nextIdBuf.host().data()
+            ).get();
+
         return state;
     }
 
@@ -169,16 +191,42 @@ namespace pmacc
     template<unsigned T_dim>
     void IdProvider<T_dim>::setNextId(uint64_t nextId)
     {
-        PMACC_KERNEL(idDetail::KernelSetNextId{})(1, 1)(nextId);
+        Environment<>::task(
+            [ nextId ]()
+            {
+                PMACC_KERNEL(idDetail::KernelSetNextId{})(1, 1)(nextId);
+            },
+            TaskProperties::Builder()
+                .label("KernelSetNextId")
+                .scheduling_tags({ SCHED_CUPLA })
+        );
     }
 
     template<unsigned T_dim>
     uint64_t IdProvider<T_dim>::getNewIdHost()
     {
         HostDeviceBuffer<uint64_cu, 1> newIdBuf(DataSpace<1>(1));
-        PMACC_KERNEL(idDetail::KernelGetNewId{})(1, 1)(newIdBuf.getDeviceBuffer().getDataBox(), GetNewId());
+
+        Environment<>::task(
+            []( auto deviceData )
+            {
+                PMACC_KERNEL(idDetail::KernelGetNewId{})(1, 1)(deviceData.getDataBox(), GetNewId());
+            },
+            TaskProperties::Builder()
+                .label("KernelGetNewId")
+                .scheduling_tags({ SCHED_CUPLA }),
+            newIdBuf.device().data()
+        );
+
         newIdBuf.deviceToHost();
-        return static_cast<uint64_t>(newIdBuf.getHostBuffer().getDataBox()(0));
+
+        return Environment<>::task(
+            []( auto hostData )
+            {
+                return static_cast<uint64_t>(hostData.getDataBox()(0));
+            },
+            newIdBuf.host().data()
+        );
     }
 
 }  // namespace pmacc
