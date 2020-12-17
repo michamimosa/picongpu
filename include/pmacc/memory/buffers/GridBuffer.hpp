@@ -319,37 +319,60 @@ struct GridBuffer
                     }
                     hasOneExchange = true;
 
-                    if (sendExchanges[ex] != nullptr)
-                    {
-                        throw std::runtime_error("Exchange already added!");
-                    }
+
 
                     //GridLayout<DIM> memoryLayout(size);
                     //maxExchange = std::max(maxExchange, ex + 1u);
 
 
                     auto sendex = ex;
-                    sendExchanges[sendex].emplace(
-                        DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceSend ),
-                        sendex,
-                        uniqCommunicationTag,
-                        useMpiDirect,
-                        sizeOnDeviceSend
-                    );
 
-                    ExchangeType recvex = Mask::getMirroredExchangeType(ex);
-                    //maxExchange = std::max(maxExchange, recvex + 1u);
+                    if ( ! sendExchanges[sendex] )
+                    {
+                        sendExchanges[sendex].emplace(
+                            DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceSend ),
+                            sendex,
+                            uniqCommunicationTag,
+                            useMpiDirect,
+                            sizeOnDeviceSend
+                        );
 
-                    recvExchanges[recvex].emplace(
-                        DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceReceive ),
-                        recvex,
-                        uniqCommunicationTag,
-                        useMpiDirect,
-                        sizeOnDeviceReceive
-                    );
+                        ExchangeType recvex = Mask::getMirroredExchangeType(ex);
+                        //maxExchange = std::max(maxExchange, recvex + 1u);
+
+                        recvExchanges[recvex].emplace(
+                            DeviceBuffer< T_BorderItem, T_dim, grid_buffer::data::Access >( dataSpace, sizeOnDeviceReceive ),
+                            recvex,
+                            uniqCommunicationTag,
+                            useMpiDirect,
+                            sizeOnDeviceReceive
+                        );
+                    }
+                    else
+                        throw std::runtime_error("Exchange already added!");
                 }
             }
         }
+    }
+
+    /**
+     * Add Exchange in dedicated memory space.
+     *
+     * An Exchange is added to this GridBuffer. The exchange buffers use
+     * the their own memory instead of using the GridBuffer's memory space.
+     *
+     * @param receive a Mask which describes the directions for the exchange
+     * @param dataSpace size of the newly created exchange buffer in each dimension
+     * @param communicationTag unique tag/id for communication
+     * @param sizeOnDevice if true, internal buffers must store their
+     *        size additionally on the device
+     *        (as we keep this information coherent with the host, it influences
+     *        performance on host-device copies, but some algorithms on the device
+     *        might need to know the size of the buffer)
+     */
+    void addExchangeBuffer(const Mask &receive, const DataSpace<T_dim> &dataSpace, uint32_t communicationTag, bool sizeOnDevice = false )
+    {
+        addExchangeBuffer( receive, dataSpace, communicationTag, sizeOnDevice, sizeOnDevice );
     }
 
     device_buffer::WriteGuard<
