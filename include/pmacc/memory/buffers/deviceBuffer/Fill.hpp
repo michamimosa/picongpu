@@ -9,6 +9,8 @@
 #include "pmacc/nvidia/gpuEntryFunction.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 
+#include <pmacc/memory/Array.hpp>
+
 #include <boost/type_traits/remove_pointer.hpp>
 #include <boost/type_traits.hpp>
 
@@ -322,6 +324,26 @@ auto fill(
     else
         device_set_value_big( device_buffer, value );
 }
+
+
+template<
+    typename T_Item,
+    std::size_t T_array_size,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+auto fill(
+    device_buffer::WriteGuard<
+        pmacc::memory::Array< T_Item, T_array_size >,
+        T_dim,
+        T_DataAccessPolicy
+    > const & device_buffer,
+    T_Item value
+)
+{
+    fill( device_buffer, pmacc::memory::Array< T_Item, T_array_size >( value ) );
+}
+
 
 } // namespace buffer
 
