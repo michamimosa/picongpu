@@ -26,6 +26,8 @@
 #include <pmacc/memory/buffers/DeviceBuffer.hpp>
 #include <boost/type_traits.hpp>
 
+#include <pmacc/memory/buffers/copy/DeviceToHost.hpp>
+
 namespace pmacc
 {
 namespace mem
@@ -147,6 +149,11 @@ struct WriteGuard
         });
     }
 
+    void deviceToHost()
+    {
+        pmacc::mem::buffer::copy( host(), device() );
+    }
+
 protected:
     WriteGuard( HostDeviceBufferGuard< T_Item, T_dim, T_DataAccessPolicy> const & b )
         : ReadGuard< T_Item, T_dim, T_DataAccessPolicy >( b ) {}
@@ -204,6 +211,13 @@ struct HostDeviceBuffer
 };
 
 } // namespace mem
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+using HostDeviceBuffer = mem::HostDeviceBuffer< T_Item, T_dim, T_DataAccessPolicy >;
 
 } // namespace pmacc
 
