@@ -83,7 +83,7 @@ void copy(
 )
 {
     cuplaPitchedPtr hostPtr;
-    hostPtr.ptr = src.getBasePointer();
+    hostPtr.ptr = const_cast<void*>((void const*)src.getBasePointer());
     hostPtr.pitch = src.getPitch();
     hostPtr.xsize = src.getDataSpace()[0] * sizeof (T);
     hostPtr.ysize = src.getDataSpace()[1];
@@ -101,7 +101,7 @@ void copy(
         src.getOffset()[0] * sizeof(T),
         src.getOffset()[1],
         src.getOffset()[2]);
-    params.srcPtr.ptr = hostPtr;
+    params.srcPtr = hostPtr;
 
     params.extent = make_cuplaExtent(
         size[0] * sizeof (T),

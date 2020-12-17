@@ -82,13 +82,13 @@ void copy(
 {
     cuplaMemcpy3DParms params;
     params.srcArray = nullptr;
-    params.srcPos = make_cudaPos(src.getOffset()[0] * sizeof (T),
+    params.srcPos = make_cuplaPos(src.getOffset()[0] * sizeof (T),
                                  src.getOffset()[1],
                                  src.getOffset()[2]);
     params.srcPtr = src.getCudaPitched();
 
     params.dstArray = nullptr;
-    params.dstPos = make_cudaPos(dst.getOffset()[0] * sizeof (T),
+    params.dstPos = make_cuplaPos(dst.getOffset()[0] * sizeof (T),
                                  dst.getOffset()[1],
                                  dst.getOffset()[2]);
     params.dstPtr = dst.getCudaPitched();
