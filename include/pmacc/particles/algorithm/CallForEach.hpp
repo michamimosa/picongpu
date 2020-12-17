@@ -48,6 +48,9 @@ namespace algorithm
     >
     struct CallForEach
     {
+        using Species = typename T_SpeciesOperator::type;
+        using FrameType = typename Species::FrameType;
+
         /** Operate on the domain CORE and BORDER
          *
          * @param currentStep current simulation time step
@@ -55,9 +58,6 @@ namespace algorithm
         HINLINE void
         operator()( uint32_t const currentStep )
         {
-            using Species = typename T_SpeciesOperator::type;
-            using FrameType = typename Species::FrameType;
-
             // be sure the species functor follows the pmacc functor interface
             using UnaryFunctor = pmacc::functor::Interface<
                 typename T_FunctorOperator::type,
@@ -77,6 +77,15 @@ namespace algorithm
             );
 
             dc.releaseData( FrameType::getName() );
+        }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder ) const
+        {
+            builder.label("CallForEach");
+
+            DataConnector &dc = Environment<>::get().DataConnector();
+            builder.add( dc.get< Species >( FrameType::getName(), true ) );
         }
     };
 

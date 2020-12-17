@@ -92,6 +92,15 @@ namespace detail
             depositCurrent( step, fieldJ, dc );
             dc.releaseData( FieldJ::getName( ) );
         }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("CurrentDeposition");
+
+            DataConnector & dc = Environment< >::get( ).DataConnector( );
+            builder.add( *dc.get< FieldJ >( FieldJ::getName( ), true ) );
+        }
     };
 
 } // namespace stage

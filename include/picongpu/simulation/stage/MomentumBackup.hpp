@@ -62,6 +62,13 @@ namespace stage
                 SpeciesWithMomentumPrev1
             >( step );
         }
+
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("MomentumBackup");
+        }
     };
 
 } // namespace stage

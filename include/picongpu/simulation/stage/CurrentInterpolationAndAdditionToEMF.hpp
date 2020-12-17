@@ -100,6 +100,15 @@ namespace stage
             }
             dc.releaseData( FieldJ::getName( ) );
         }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("CurrentInterpolationAndAdditionToEMF");
+
+            DataConnector & dc = Environment< >::get( ).DataConnector( );
+            builder.add( *dc.get< FieldJ >( FieldJ::getName( ), true ) );
+        }
     };
 
 } // namespace stage

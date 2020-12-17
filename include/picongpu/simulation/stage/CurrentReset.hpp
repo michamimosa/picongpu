@@ -52,6 +52,15 @@ namespace stage
             fieldJ.assign( zeroJ );
             dc.releaseData( FieldJ::getName( ) );
         }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("CurrentReset");
+
+            DataConnector & dc = Environment< >::get( ).DataConnector( );
+            builder.add( *dc.get< FieldJ >( FieldJ::getName( ), true ) );
+        }
     };
 
 } // namespace stage

@@ -71,6 +71,12 @@ namespace stage
             particleIonization( cellDescription, step );
         }
 
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("ParticleIonization");
+        }
+
     private:
 
         //! Mapping for kernels

@@ -91,6 +91,12 @@ namespace stage
             dc.releaseData( FieldB::getName( ) );
         }
 
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("FieldBackground");
+        }
+
     private:
 
         //! Mapping for kernels

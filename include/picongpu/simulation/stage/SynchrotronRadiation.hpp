@@ -82,6 +82,12 @@ namespace stage
             );
         }
 
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("SynchrotronRadiation");
+        }
+
     private:
 
         //! Mapping for kernels

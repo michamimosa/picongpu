@@ -46,6 +46,12 @@ namespace stage
             particles::PushAllSpecies pushAllSpecies;
             pushAllSpecies( step );
         }
+
+        template < typename Builder >
+        void buildTaskProperties( Builder & builder )
+        {
+            builder.label("ParticlePush");
+        }
     };
 
 } // namespace stage

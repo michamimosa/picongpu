@@ -549,29 +549,38 @@ public:
     virtual void runOneStep(uint32_t currentStep)
     {
         using namespace simulation::stage;
-        MomentumBackup{ }( currentStep );
-        CurrentReset{ }( currentStep );
-        ParticleIonization{ *cellDescription }( currentStep );
-        PopulationKinetics{ }( currentStep );
-        SynchrotronRadiation{
-            *cellDescription,
-            synchrotronFunctions
-        }( currentStep );
+        Environment<>::fun_task( MomentumBackup{ }, currentStep );
+        Environment<>::fun_task( CurrentReset{ }, currentStep );
+        Environment<>::fun_task( ParticleIonization{ *cellDescription }, currentStep );
+        Environment<>::fun_task( PopulationKinetics{ }, currentStep );
+        Environment<>::fun_task(
+            SynchrotronRadiation{
+                *cellDescription,
+                synchrotronFunctions
+            },
+            currentStep
+        );
+
 #if( PMACC_CUDA_ENABLED == 1 )
-        Bremsstrahlung{
-            *cellDescription,
-            scaledBremsstrahlungSpectrumMap,
-            bremsstrahlungPhotonAngle
-        }( currentStep );
+        Environment<>::fun_task(
+            Bremsstrahlung{
+                *cellDescription,
+                scaledBremsstrahlungSpectrumMap,
+                bremsstrahlungPhotonAngle
+            },
+            currentStep
+        );
 #endif
 
-        ParticlePush{ }( currentStep, commEvent );
-        FieldBackground{ *cellDescription }( currentStep, nvidia::functors::Sub( ) );
+        Environment<>::fun_task( ParticlePush{ }, currentStep );
+        Environment<>::fun_task( FieldBackground{ *cellDescription }, currentStep, nvidia::functors::Sub( ) );
+
         myFieldSolver->update_beforeCurrent( currentStep );
-        __setTransactionEvent( commEvent );
-        CurrentBackground{ *cellDescription }( currentStep );
-        CurrentDeposition{ }( currentStep );
-        CurrentInterpolationAndAdditionToEMF{ }( currentStep );
+
+        Environment<>::fun_task( CurrentBackground{ *cellDescription }, currentStep );
+        Environment<>::fun_task( CurrentDeposition{ }, currentStep );
+        Environment<>::fun_task( CurrentInterpolationAndAdditionToEMF{ }, currentStep );
+
         myFieldSolver->update_afterCurrent( currentStep );
     }
 
@@ -600,8 +609,10 @@ public:
              * Hence the background field is visible for all plugins
              * in between the time steps.
              */
-            simulation::stage::FieldBackground{ *cellDescription }(
-                currentStep, nvidia::functors::Add( )
+            Environment<>::fun_task(
+                simulation::stage::FieldBackground{ *cellDescription },
+                currentStep,
+                nvidia::functors::Add( )
             );
         }
     }
