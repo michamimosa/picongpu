@@ -138,6 +138,17 @@ struct DeviceBufferResource
         use_vector_as_base( use_vector_as_base )
     {}
 
+    DeviceBufferResource(
+        buffer::GuardBase< DeviceBufferResource > const & other,
+        bool use_vector_as_base = false        
+    ) :
+        rg::SharedResourceObject<
+            Data,
+            DataAccessPolicy
+        >( other.data ),
+        use_vector_as_base( use_vector_as_base )
+    {}
+
     auto make_guard( bool size_on_device = false )
     {
         auto guard = buffer::GuardBase<DeviceBufferResource>( *this );
@@ -223,6 +234,11 @@ struct ReadGuard<
     std::size_t get() const { return this->size.get_current_size(); }
     std::size_t getCurrentSize() const { return this->size.get_current_size(); }
     DataSpace< T_dim > getCurrentDataSpace() const { return this->size.get_current_data_space(); }
+
+    bool is_on_device()
+    {
+        return this->size.is_on_device();
+    }
 
     size_t * get_device_pointer()
     {

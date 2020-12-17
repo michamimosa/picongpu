@@ -161,14 +161,16 @@ struct GridBuffer
      *        might need to know the size of the buffer)
      */
     GridBuffer(
-        device_buffer::WriteGuard< T_Item, T_dim, grid_buffer::data::Access > otherDeviceBuffer,
-        const GridLayout<T_dim>& gridLayout
+        buffer::GuardBase< device_buffer::DeviceBufferResource< T_Item, T_dim, grid_buffer::data::Access > > const & otherDeviceBuffer,
+        GridLayout<T_dim> const & gridLayout,
+        bool sizeOnDevice = false
     ) :
         HostDeviceBuffer<
             T_Item, T_dim, grid_buffer::data::Access
         >(
             otherDeviceBuffer,
-            gridLayout.getDataSpace()
+            gridLayout.getDataSpace(),
+            sizeOnDevice
         ),
         gridLayout( gridLayout )
     {}

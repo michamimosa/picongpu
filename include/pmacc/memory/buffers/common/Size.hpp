@@ -23,6 +23,7 @@ public:
     {
         size_t * host_size_ptr;
         CUDA_CHECK(cuplaMallocHost( (void**)&host_size_ptr, sizeof(size_t) ));
+
         this->host_current_size =
             rg::IOResource< size_t >(
                 std::shared_ptr< size_t >(

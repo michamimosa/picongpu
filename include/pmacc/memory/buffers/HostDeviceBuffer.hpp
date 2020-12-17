@@ -190,8 +190,9 @@ struct HostDeviceBuffer
     {}
 
     HostDeviceBuffer(
-        device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > other_device_buffer,
-        DataSpace< T_dim > capacity
+        device_buffer::DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > other_device_buffer,
+        DataSpace< T_dim > capacity,
+        bool size_on_device = false
     ) :
         host_device_buffer::WriteGuard<
             T_Item,
@@ -204,7 +205,11 @@ struct HostDeviceBuffer
                 T_DataAccessPolicy
             >{
                 HostBuffer< T_Item, T_dim, T_DataAccessPolicy >( capacity ),
-                other_device_buffer
+                device_buffer::DeviceBufferResource<
+                    T_Item,
+                    T_dim,
+                    T_DataAccessPolicy
+                >( other_device_buffer ).make_guard( size_on_device )
             }
         )
     {}
