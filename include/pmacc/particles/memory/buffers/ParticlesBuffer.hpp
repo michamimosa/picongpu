@@ -194,7 +194,7 @@ public:
         gridSize(layout),
         exchangeMemoryIndexer( DataSpace< DIM1 >( 0 ) ),
         framesExchanges( DataSpace< DIM1 >( 0 ) ),
-        superCells( DataSpace< DIM >( gridSize / superCellSize ) )
+        superCells( DataSpace< DIM >( layout / superCellSize ) )
     {
         reset();
     }
@@ -409,7 +409,7 @@ struct DeviceGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellS
             this->superCells.device().data().getDataBox(),
             this->m_deviceHeap->getAllocatorHandle()
         );
-    }    
+    }
 };
 
 } // namespace particles_buffer
