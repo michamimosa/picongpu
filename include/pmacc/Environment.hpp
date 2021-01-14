@@ -236,6 +236,11 @@ namespace detail
             return mpi_scheduler().emplace_mpi_task( std::forward<Args>(args)... );
         }
 
+        void waitForAllTasks()
+        {
+            ResourceManager().wait_for_all();
+        }
+
         /** get the singleton StreamController
          *
          * @return instance of StreamController
