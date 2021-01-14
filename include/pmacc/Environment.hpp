@@ -185,7 +185,7 @@ namespace detail
             EnvironmentContext::getInstance().finalize();
         }
 
-        void initScheduler( int n_threads )
+        void initScheduler( int n_threads, int n_cupla_streams )
         {
             ResourceManager_ptr() = new RedGrapesManager();
             auto& mgr = ResourceManager();
@@ -200,7 +200,7 @@ namespace detail
                         return t.get().required_scheduler_tags.test(
                             SCHED_CUPLA);
                     },
-                    1 /* number of cupla streams */
+                    n_cupla_streams
                 );
 
             mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler(

@@ -49,7 +49,7 @@ namespace
         int errorCode = EXIT_FAILURE;
 
         spdlog::set_level( spdlog::level::debug );
-        pmacc::Environment<>::get().initScheduler( 1 );
+        pmacc::Environment<>::get().initScheduler( 4, 4 );
 
         switch( parserStatus )
         {
