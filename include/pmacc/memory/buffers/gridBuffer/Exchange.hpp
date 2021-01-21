@@ -184,7 +184,7 @@ struct Exchange
         Environment<>::task(
             [=]( auto messageBuffer )
             {
-                size_t new_size = Environment<DIM2>::get()
+                size_t new_size = Environment<BufferResource::dim>::get()
                     .GridController()
                     .getCommunicator()
                     .recv(
@@ -211,7 +211,7 @@ struct Exchange
         Environment<>::task(
             [=]( auto messageBuffer )
             {
-                Environment<DIM2>::get()
+                Environment<BufferResource::dim>::get()
                     .GridController()
                     .getCommunicator()
                     .send(
