@@ -126,7 +126,7 @@ struct Access
                 return true;
             else
             {
-                for( uint32_t ex = 0; ex < 27; ++ex )
+                for( uint32_t ex = 1; ex < 27; ++ex )
                     if(
                         ! this->direction.containsExchangeType(ex) &&
                         other.direction.containsExchangeType(ex)
@@ -376,12 +376,29 @@ struct fmt::formatter< pmacc::mem::grid_buffer::data::Access >
 
         area_str << " ]";
 
+
+        std::stringstream direction_str;
+        direction_str << "[";
+
+        first = true;
+        for(int ex=1; ex<27; ++ex)
+            if( a.direction.containsExchangeType(ex) )
+            {
+                if(! first)
+                    direction_str << ", ";
+
+                first = false;
+                direction_str << "\"" << names[ex] << "\"";
+            }
+
+        direction_str << "]";
+
         return format_to(
                    ctx.out(),
-                   "{{ \"GridAccess\" : {{ \"mode\" : {}, \"area\" : {}, \"direction\" : \"{}\" }} }}",
+                   "{{ \"GridAccess\" : {{ \"mode\" : {}, \"area\" : {}, \"directions\" : {} }} }}",
                    a.mode,
                    area_str.str(),
-                   names[a.direction]
+                   direction_str.str()
                );
     }
 };

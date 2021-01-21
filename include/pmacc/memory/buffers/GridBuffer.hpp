@@ -411,25 +411,23 @@ struct GridBuffer
      */
     void communication()
     {
-        for( auto & exchangeBuffer : sendExchanges )
-            if( exchangeBuffer )
-                exchangeBuffer->send();
+        for(int ex = 0; ex < 27; ++ex)
+            send(ex);
 
-        for( auto & exchangeBuffer : recvExchanges )
-            if( exchangeBuffer )
-                exchangeBuffer->recv();
+        for(int ex = 0; ex < 27; ++ex)
+            recv(ex);
     }
 
     void send( uint32_t direction )
     {
-        if( auto ex = sendExchanges[ direction ] )
-            ex->send();
+        if( hasSendExchange( direction ) )
+            sendExchanges[ direction ]->send();
     }
 
     void recv( uint32_t direction )
     {
-        if( auto ex = recvExchanges[ direction ] )
-            ex->recv();
+        if( hasReceiveExchange( direction ) )
+            recvExchanges[ direction ]->recv();
     }
 
     /*!
@@ -440,7 +438,7 @@ struct GridBuffer
      */
     bool hasSendExchange(uint32_t ex) const
     {
-        return ( sendExchanges[ex] && (getSendMask().isSet(ex)));
+        return ( sendExchanges[ex] && getSendMask().isSet(ex) );
     }
 
     /*!
@@ -451,7 +449,7 @@ struct GridBuffer
      */
     bool hasReceiveExchange(uint32_t ex) const
     {
-        return ( recvExchanges[ex] && (getReceiveMask().isSet(ex)));
+        return ( recvExchanges[ex] && getReceiveMask().isSet(ex) );
     }
 
     /*!
