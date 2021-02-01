@@ -287,7 +287,7 @@ namespace kernel
                 TaskProperties::Builder()
                     .label("Evolution::initEvolution()")
                     .scheduling_tags({ SCHED_CUPLA }),
-                buf.write().data().sub_area( CORE + BORDER )
+                buf.write().data().access_dataPlace( CORE + BORDER )
             );
         }
 
@@ -334,8 +334,8 @@ namespace kernel
                 TaskProperties::Builder()
                     .label( std::move(l) )
                     .scheduling_tags({ SCHED_CUPLA }),
-                readBuffer.read().data().sub_area( (uint32_t)(T_Area == CORE) ? (CORE + BORDER) : (CORE + BORDER + GUARD) ),
-                writeBuffer.write().data().sub_area( T_Area )
+                readBuffer.read().data().access_dataPlace( (uint32_t)(T_Area == CORE) ? (CORE + BORDER) : (CORE + BORDER + GUARD) ),
+                writeBuffer.write().data().access_dataPlace( T_Area )
             );
         }
     };

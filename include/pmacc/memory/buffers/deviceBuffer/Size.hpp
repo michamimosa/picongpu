@@ -112,6 +112,24 @@ struct DeviceBufferSize
         return (bool)device_current_size;
     }
 
+    void push_read_access( std::vector< rg::ResourceAccess > & access ) const
+    {
+        if( device_current_size )
+        {
+            access.push_back( this->host_current_size.write() );
+            access.push_back( this->device_current_size->read() );
+        }
+        else
+            access.push_back( this->host_current_size.read() );
+    }
+
+    void push_write_access( std::vector< rg::ResourceAccess > & access ) const
+    {
+        access.push_back( this->host_current_size.write() );
+        if( device_current_size )
+            access.push_back( this->device_current_size->write() );
+    }
+    
 protected:
     template < typename, typename >
     friend class rg::trait::BuildProperties;

@@ -4,5 +4,4 @@
 #include <pmacc/memory/buffers/common/Data.hpp>
 #include <pmacc/memory/buffers/common/Size.hpp>
 #include <pmacc/memory/buffers/common/Resource.hpp>
-#include <pmacc/memory/buffers/common/TaskPropertyTrait.hpp>
 

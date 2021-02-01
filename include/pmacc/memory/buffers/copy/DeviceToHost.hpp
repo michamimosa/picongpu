@@ -165,7 +165,9 @@ auto copy(
                             devCurrentSize.productOfComponents()
                         );
                     else
+                    {
                         device2host_detail::copy(dst.write(), src.read(), devCurrentSize);
+                    }
                 },
                 TaskProperties::Builder()
                     .label("cuplaMemcpyAsync(dst: Host, src: Device)")

@@ -238,6 +238,7 @@ public:
         {
             resetAll(0);
             uint32_t currentStep = fillSimulation();
+
             Environment<>::get().SimulationDescription().setCurrentStep( currentStep );
 
             tInit.toggleEnd();
@@ -292,7 +293,7 @@ public:
             }
 
             // simulatation end
-            //Environment<>::get().Manager().waitForAllTasks();
+            Environment<>::get().waitForAllTasks();
 
             tSimCalculation.toggleEnd();
 

@@ -67,7 +67,7 @@ public:
         : evo(rule), steps(steps), gridSize(gridSize), isMaster(false)
     {
         // initialize Resource Manager
-        pmacc::Environment<>::get().initScheduler( n_threads + 1 );
+        pmacc::Environment<>::get().initScheduler( n_threads + 1, 4 );
 
         /* -First this initializes the GridController with number of 'devices'*
          *  and 'periodic'ity. The init-routine will then create and manage   *

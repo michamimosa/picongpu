@@ -151,7 +151,7 @@ struct WriteGuard
 
     void deviceToHost()
     {
-        pmacc::mem::buffer::copy( host(), device() );
+        pmacc::mem::buffer::copy( host().write(), device().read() );
     }
 
 protected:

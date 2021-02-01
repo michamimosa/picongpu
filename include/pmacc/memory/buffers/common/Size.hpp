@@ -142,10 +142,17 @@ public:
         return host_current_size.get();
     }
 
+    void push_read_access( std::vector< rg::ResourceAccess > & access ) const
+    {
+        access.push_back( host_current_size.make_access( rg::access::IOAccess::read ) );
+    }
+
+    void push_write_access( std::vector< rg::ResourceAccess > & access ) const
+    {
+        access.push_back( host_current_size.make_access( rg::access::IOAccess::write ) );
+    }
+
 protected:
-    
-    template < typename, typename >
-    friend class rg::trait::BuildProperties;
 
     DataSpace< dim > data_space;
     rg::IOResource< size_t > host_current_size;

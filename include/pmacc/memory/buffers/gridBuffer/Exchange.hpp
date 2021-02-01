@@ -202,7 +202,7 @@ struct Exchange
     }
 
     template< typename BufferResource >
-    void sendBuf( buffer::ReadGuard< BufferResource > messageBuffer )
+    void sendBuf( buffer::ReadGuard< BufferResource > const & messageBuffer )
     {
         PMACC_ASSERT( messageBuffer.is1D() );
 
@@ -264,11 +264,11 @@ struct ExchangeBuffer
             {
                 // send over host memory
                 buffer::copy( hostBuffer->write(), deviceDoubleBuffer->read() );
-                this->sendBuf( *hostBuffer );
+                this->sendBuf( hostBuffer->read() );
             }
             else
                 // use mpi direct
-                this->sendBuf( *deviceDoubleBuffer );
+                this->sendBuf( deviceDoubleBuffer->read() );
         }
         else
         {
@@ -276,7 +276,7 @@ struct ExchangeBuffer
             {
                 // send over host memory
                 buffer::copy( hostBuffer->write(), deviceBuffer.read() );
-                this->sendBuf( *hostBuffer );
+                this->sendBuf( hostBuffer->read() );
             }
             else
                 // use mpi direct
@@ -294,7 +294,7 @@ struct ExchangeBuffer
                 buffer::copy( deviceDoubleBuffer->write(), hostBuffer->read() );
             }
             else
-                this->recvBuf( *deviceDoubleBuffer );
+                this->recvBuf( deviceDoubleBuffer->write() );
 
             buffer::copy( deviceBuffer.write(), deviceDoubleBuffer->read() );
         }

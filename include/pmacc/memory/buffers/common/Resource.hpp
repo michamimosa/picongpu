@@ -7,6 +7,7 @@
 #include <pmacc/memory/boxes/PitchedBox.hpp>
 
 #include <redGrapes/resource/resource.hpp>
+#include <redGrapes/property/trait.hpp>
 
 namespace rg = redGrapes;
 
@@ -80,7 +81,7 @@ struct GuardBase
         > const & data,
         DataSpace< dim > offset,
         DataSpace< dim > data_space
-    ) :
+    ) noexcept :
         data( data ),
         offset( offset ),
         data1D( false )
@@ -111,14 +112,14 @@ struct GuardBase
             typename Buffer::DataAccessPolicy
         > const & data,
         GuardBase const & other
-    ) :
+    ) noexcept :
         data( data ),
         offset( other.offset ),
         size( other.size ),
         data1D( other.data1D )
     {}
 
-    GuardBase( GuardBase const & other )
+    GuardBase( GuardBase const & other ) noexcept
         : data( other.data ),
           offset( other.offset ),
           size( other.size ),
@@ -128,7 +129,7 @@ struct GuardBase
     GuardBase sub_area(
         DataSpace< Buffer::dim > offset,
         DataSpace< Buffer::dim > data_space
-    )
+    ) const noexcept
     {
         return GuardBase( this->data, this->offset + offset, data_space );
     }
@@ -140,10 +141,31 @@ struct GuardBase
 
     rg::SharedResourceObject< typename Buffer::Data, typename Buffer::DataAccessPolicy > data;
 
+    virtual std::vector< rg::ResourceAccess > get_access() const
+    {
+        return std::vector< rg::ResourceAccess >();
+    }
+
     DataSpace< dim > offset;
     typename Buffer::Size size;
     bool data1D;
 };
+
+#define IMPL_BUILD_GUARD_PROPERTIES( guardtype )                        \
+    struct redGrapes::trait::BuildProperties<                           \
+        guardtype                                                       \
+    >                                                                   \
+    {                                                                   \
+        template < typename Builder >                                   \
+        static void build(                                              \
+            Builder & builder,                                          \
+            guardtype const & buf                                       \
+        )                                                               \
+        {                                                               \
+            for( auto acc : buf.get_access() )                          \
+                builder.add( acc );                                     \
+        }                                                               \
+    }
 
 
 /*
@@ -163,7 +185,15 @@ struct ReadGuard : GuardBase< Buffer >
     DataSpace< Buffer::dim > getCurrentDataSpace() const { return this->size.get_current_data_space(); }
 
     ReadGuard( GuardBase< Buffer > const & base )
-        : GuardBase< Buffer >( base ) {}
+        : GuardBase< Buffer >( base )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+        this->size.push_read_access( acc );
+        return acc;
+    }
 };
 
 template < typename Buffer >
@@ -176,7 +206,15 @@ struct WriteGuard : ReadGuard< Buffer >
     void setCurrentSize( std::size_t new_size ) { this->size.set_current_size( new_size ); }
 
     WriteGuard( GuardBase< Buffer > const & base )
-        : ReadGuard< Buffer >( base ) {}
+        : ReadGuard< Buffer >( base )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+        this->size.push_write_access( acc );
+        return acc;
+    }
 };
 
 } // namespace size
@@ -202,7 +240,8 @@ struct ReadGuardBase : GuardBase< Buffer >
     DataBox const getDataBox() const { return this->data.obj->get_data_box( this->offset ); }
 
     ReadGuardBase( GuardBase< Buffer > const & base ) noexcept
-        : GuardBase< Buffer >( base ) {}
+        : GuardBase< Buffer >( base )
+    {}
 };
 
 template < typename Buffer >
@@ -230,7 +269,7 @@ struct ReadGuard
     ReadGuard( GuardBase< Buffer > const & base ) noexcept
         : ReadGuardBase< Buffer >( base ) {}
 
-    ReadGuard read() const { return *this; }
+    ReadGuard< Buffer > read() const { return *this; }
 };
 
 template <
@@ -244,22 +283,77 @@ struct WriteGuard
         : WriteGuardBase< Buffer > ( base ) {}
 
     ReadGuard< Buffer > read() const { return *this; }
-    WriteGuard write() const  { return *this; }
+    WriteGuard< Buffer > write() const  { return *this; }
+};
+
+template <
+    typename Buffer
+>
+struct ReadGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            rg::access::IOAccess
+        >::value
+    >::type
+>
+    : ReadGuardBase< Buffer >
+{
+    ReadGuard( GuardBase< Buffer > const & base ) noexcept
+        : ReadGuardBase< Buffer >( base )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+        acc.push_back( this->data.make_access( rg::access::IOAccess::read ) );
+        return acc;
+    }
+
+    ReadGuard read() const noexcept { return *this; }
+};
+
+template <
+    typename Buffer
+>
+struct WriteGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            rg::access::IOAccess
+        >::value
+    >::type
+>
+    : WriteGuardBase< Buffer >
+{
+    WriteGuard( GuardBase< Buffer > const & base ) noexcept
+        : WriteGuardBase< Buffer >( base )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+        acc.push_back( this->data.make_access( rg::access::IOAccess::write ) );
+        return acc;
+    }
+
+    ReadGuard< Buffer > read() const noexcept { return *this; }
+    WriteGuard write() const noexcept { return *this; }
 };
 
 } // namespace data
-
-
 
 
 /*
  * access-guards for buffers
  */
 
-template < typename Buffer >
-struct WriteGuard;
-
-template < typename Buffer >
+template <
+    typename Buffer,
+    typename Sfinae = void
+>
 struct ReadGuard
     : GuardBase< Buffer >
 {
@@ -273,18 +367,35 @@ struct ReadGuard
         return ReadGuard(this->GuardBase<Buffer>::sub_area(offset, data_space));
     }
 
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+
+        auto size_acc = this->size().get_access();
+        acc.insert( std::begin(acc), std::begin(size_acc), std::end(size_acc) );
+
+        auto data_acc = this->data().get_access();
+        acc.insert( std::begin(acc), std::begin(data_acc), std::end(data_acc) );
+
+        return acc;
+    }
+
     ReadGuard( GuardBase< Buffer > const & base )
         : GuardBase< Buffer >( base )
     {}
 };
 
-template < typename Buffer >
+template <
+    typename Buffer,
+    typename Sfinae = void
+>
 struct WriteGuard
-    : ReadGuard< Buffer >
+    : GuardBase< Buffer >
 {
     auto size() const noexcept { return typename Buffer::SizeGuard( *this ).write(); }
     auto data() const noexcept { return typename Buffer::DataGuard( *this ).write(); }
 
+    ReadGuard< Buffer > read() const noexcept { return *this; }
     WriteGuard< Buffer > write() const noexcept { return *this; }
 
     WriteGuard< Buffer > sub_area( DataSpace< Buffer::dim > offset, DataSpace< Buffer::dim > data_space )
@@ -292,8 +403,21 @@ struct WriteGuard
         return WriteGuard(this->GuardBase<Buffer>::sub_area(offset, data_space));
     }
 
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+
+        auto size_acc = this->size().get_access();
+        acc.insert( std::begin(acc), std::begin(size_acc), std::end(size_acc) );
+
+        auto data_acc = this->data().get_access();
+        acc.insert( std::begin(acc), std::begin(data_acc), std::end(data_acc) );
+
+        return acc;
+    }
+
     WriteGuard( GuardBase< Buffer > const & base )
-        : ReadGuard< Buffer >( base )
+        : GuardBase< Buffer >( base )
     {}
 }; 
 
@@ -302,4 +426,22 @@ struct WriteGuard
 } // namespace mem
 
 } // namespace pmacc
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::size::ReadGuard<Buffer> );
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::size::WriteGuard<Buffer> );
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::data::ReadGuard<Buffer> );
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::data::WriteGuard<Buffer> );
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::ReadGuard<Buffer> );
+
+template < typename Buffer >
+IMPL_BUILD_GUARD_PROPERTIES( pmacc::mem::buffer::WriteGuard<Buffer> );
 

@@ -22,6 +22,8 @@
 #pragma once
 
 #include <redGrapes/access/io.hpp>
+#include <pmacc/memory/buffers/common/Resource.hpp>
+#include <pmacc/memory/buffers/gridBuffer/Exchange.hpp>
 
 #include <sstream>
 #include <fmt/format.h>
@@ -128,8 +130,8 @@ struct Access
             {
                 for( uint32_t ex = 1; ex < 27; ++ex )
                     if(
-                        ! this->direction.containsExchangeType(ex) &&
-                        other.direction.containsExchangeType(ex)
+                        ! this->direction.isSet(ex) &&
+                        other.direction.isSet(ex)
                     )
                         // found a direction that is used in other,
                         // but not in this
@@ -157,15 +159,8 @@ struct Access
 
 } // namespace grid_buffer
 
-
-
-namespace buffer
-{
-namespace data
-{
-
 template < typename Buffer >
-struct ReadGuard<
+struct buffer::data::ReadGuard<
     Buffer,
     typename std::enable_if<
         std::is_same<
@@ -174,7 +169,252 @@ struct ReadGuard<
         >::value
     >::type
 >
-    : ReadGuardBase< Buffer >
+    : buffer::data::ReadGuardBase< Buffer >
+{
+    uint32_t area;
+    Mask directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< ReadGuard >;
+    
+    ReadGuard( ReadGuard const & other )
+        : buffer::data::ReadGuardBase< Buffer >( other )
+        , area(other.area)
+        , directions(other.directions)
+    {}
+
+    ReadGuard( buffer::data::WriteGuard< Buffer > const & other )
+        : buffer::data::ReadGuardBase< Buffer >( other )
+        , area(other.area)
+        , directions(other.directions)
+    {}
+
+    //! read guard for whole buffer
+    ReadGuard( GuardBase< Buffer > const & base )
+        : buffer::data::ReadGuardBase< Buffer >( base )
+        , area{ CORE + BORDER + GUARD }
+        , directions(
+            Mask(TOP) + Mask(BOTTOM) +
+            Mask(LEFT) + Mask(RIGHT) +
+            Mask(FRONT) + Mask(BACK))
+    {}
+
+    ReadGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
+        : buffer::data::ReadGuardBase< Buffer >( base )
+        , area(area)
+        , directions(directions)
+    {}
+
+    //! create read guard for exchange data
+    ReadGuard(
+        GuardBase< Buffer > const & base,
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+        : buffer::data::ReadGuardBase< Buffer >(
+              base.sub_area(
+                  exchange::exchangeTypeToOffset< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells,
+                      dataPlace == GUARD ? GUARD : BORDER
+                  ),
+                  exchange::exchangeTypeToDataSpace< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells
+                  )
+              )
+          )
+        , directions( Mask(exchangeType) )
+        , area( dataPlace )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        return
+            std::vector< rg::ResourceAccess >({
+                this->data.make_access(
+                    grid_buffer::data::Access{
+                        rg::access::IOAccess::read,
+                        this->area,
+                        this->directions
+                    }
+                )   
+            });
+    }
+
+    auto read() const noexcept
+    {
+        return ReadGuard( *this, this->area, this->directions );
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_dataPlace( uint32_t area ) const
+    {
+        auto n = typename Buffer::DataGuard( *this ).read();
+        n.area = area;
+        n.directions = this->directions;
+        return n;
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_directions( Mask directions ) const
+    {
+        auto n = typename Buffer::DataGuard( *this ).read();
+        n.area = this->area;
+        n.directions = directions;
+        return n;
+    }
+
+    auto exchange(
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+    {
+        return ReadGuard( *this, exchangeType, dataPlace, guardingCells, gridLayout );
+    }
+};
+
+template < typename Buffer >
+struct buffer::data::WriteGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : buffer::data::WriteGuardBase< Buffer >
+{
+public:
+    uint32_t area;
+    Mask directions;
+
+    friend Buffer;
+    friend class rg::trait::BuildProperties< WriteGuard >;
+
+    WriteGuard( WriteGuard const & other )
+        : buffer::data::WriteGuardBase< Buffer >( other )
+        , area(other.area)
+        , directions(other.directions)
+    {}
+
+    WriteGuard( GuardBase< Buffer > const & base )
+        : buffer::data::WriteGuardBase< Buffer >( base )
+        , area{ CORE + BORDER + GUARD }
+        , directions(
+            Mask(TOP) + Mask(BOTTOM) +
+            Mask(LEFT) + Mask(RIGHT) +
+            Mask(FRONT) + Mask(BACK))
+    {}
+
+    WriteGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
+        : buffer::data::WriteGuardBase< Buffer >( base )
+        , area(area)
+        , directions(directions)
+    {}
+
+    //! create write guard for exchange data
+    WriteGuard(
+        GuardBase< Buffer > const & base,
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+        : buffer::data::WriteGuardBase< Buffer >(
+              base.sub_area(
+                  exchange::exchangeTypeToOffset< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells,
+                      dataPlace == GUARD ? GUARD : BORDER
+                  ),
+                  exchange::exchangeTypeToDataSpace< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells
+                  )
+              )
+          )
+        , directions( Mask(exchangeType) )
+        , area( dataPlace )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        return
+            std::vector< rg::ResourceAccess >({
+                this->data.make_access(
+                    grid_buffer::data::Access{
+                        rg::access::IOAccess::write,
+                        this->area,
+                        this->directions
+                    }
+                )   
+            });
+    }
+
+    auto read() const noexcept
+    {
+        return buffer::data::ReadGuard< Buffer >( *this, this->area, this->directions );
+    }
+
+    auto write() const noexcept
+    {
+        return WriteGuard( *this, this->area, this->directions );
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_dataPlace( uint32_t area ) const
+    {
+        // todo: assert area is superset of this->area
+
+        typename Buffer::DataGuard n( *this );
+        n.area = area;
+        n.directions = this->directions;
+        return n;
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_directions( Mask directions ) const
+    {
+        // todo: assert directions is superset of this->directions
+
+        typename Buffer::DataGuard n( *this );
+        n.area = this->area;
+        n.directions = directions;
+        return n;
+    }
+
+    auto exchange(
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+    {
+        return buffer::data::WriteGuard< Buffer >( *this, exchangeType, dataPlace, guardingCells, gridLayout );
+    }    
+};
+
+template < typename Buffer >
+struct buffer::ReadGuard<
+    Buffer,
+    typename std::enable_if<
+        std::is_same<
+            typename Buffer::DataAccessPolicy,
+            pmacc::mem::grid_buffer::data::Access
+        >::value
+    >::type
+>
+    : buffer::GuardBase< Buffer >
 {
     uint32_t area;
     Mask directions;
@@ -184,7 +424,7 @@ struct ReadGuard<
 
 public:
     ReadGuard( GuardBase< Buffer > const & base )
-        : ReadGuardBase< Buffer >( base )
+        : buffer::GuardBase< Buffer >( base )
         , area{ CORE + BORDER + GUARD }
         , directions(
             Mask(TOP) + Mask(BOTTOM) +
@@ -192,25 +432,76 @@ public:
             Mask(FRONT) + Mask(BACK))
     {}
 
-    ReadGuard read() const { return *this; }
+    ReadGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
+        : buffer::GuardBase< Buffer >( base )
+        , area(area)
+        , directions(directions)
+    {}
     
-    ReadGuard sub_area( uint32_t area ) const
+    ReadGuard(
+        GuardBase< Buffer > const & base,
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+        : buffer::GuardBase< Buffer >(
+              base.sub_area(
+                  exchange::exchangeTypeToOffset< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells,
+                      dataPlace == GUARD ? GUARD : BORDER
+                  ),
+                  exchange::exchangeTypeToDataSpace< Buffer::dim >(
+                      exchangeType,
+                      gridLayout,
+                      guardingCells
+                  )
+              )
+          )
+        , directions( Mask(exchangeType) )
+        , area( dataPlace )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
     {
-        ReadGuard n = *this;
-        n.area = area;
-        return n;
+        std::vector< rg::ResourceAccess > acc;
+
+        auto size_acc = this->size().get_access();
+        acc.insert( std::begin(acc), std::begin(size_acc), std::end(size_acc) );
+
+        auto data_acc = this->data().get_access();
+        acc.insert( std::begin(acc), std::begin(data_acc), std::end(data_acc) );
+
+        return acc;
+    }
+    
+    auto size() const noexcept { return typename Buffer::SizeGuard( *this ).read(); }
+
+    auto data() const noexcept
+    {
+        return typename Buffer::DataGuard( *this )
+            .read()
+            .access_dataPlace( this->area )
+            .access_directions( this->directions );
     }
 
-    ReadGuard sub_directions( Mask directions ) const
+    auto read() const { return ReadGuard( *this, this->area, this->directions ); }
+
+    auto exchange(
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
     {
-        ReadGuard n = *this;
-        n.directions = directions;
-        return n;
+        return ReadGuard( *this, exchangeType, dataPlace, guardingCells, gridLayout );
     }
 };
 
 template < typename Buffer >
-struct WriteGuard<
+struct buffer::WriteGuard<
     Buffer,
     typename std::enable_if<
         std::is_same<
@@ -219,115 +510,69 @@ struct WriteGuard<
         >::value
     >::type
 >
-    : WriteGuardBase< Buffer >
+    : buffer::ReadGuard< Buffer >
 {
 public:
-    uint32_t area;
-    Mask directions;
-
     friend Buffer;
     friend class rg::trait::BuildProperties< WriteGuard >;
 
     WriteGuard( GuardBase< Buffer > const & base )
-        : WriteGuardBase< Buffer >( base )
-        , area{ CORE + BORDER + GUARD }
-        , directions(
-            Mask(TOP) + Mask(BOTTOM) +
-            Mask(LEFT) + Mask(RIGHT) +
-            Mask(FRONT) + Mask(BACK))
+        : buffer::ReadGuard< Buffer >( base )
     {}
 
-    ReadGuard< Buffer > read() const { return *this; }
-    WriteGuard write() const { return *this; }
+    WriteGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
+        : buffer::ReadGuard< Buffer >( base, area, directions )
+    {}
 
-    WriteGuard sub_area( uint32_t area ) const
+    WriteGuard(
+        GuardBase< Buffer > const & base,
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+        : buffer::ReadGuard< Buffer >( base, exchangeType, dataPlace, guardingCells, gridLayout )
+    {}
+
+    std::vector< rg::ResourceAccess > get_access() const
     {
-        WriteGuard n = *this;
-        n.area = area;
-        return n;
+        std::vector< rg::ResourceAccess > acc;
+
+        auto size_acc = this->size().get_access();
+        acc.insert( std::begin(acc), std::begin(size_acc), std::end(size_acc) );
+
+        auto data_acc = this->data().get_access();
+        acc.insert( std::begin(acc), std::begin(data_acc), std::end(data_acc) );
+
+        return acc;
     }
 
-    WriteGuard sub_directions( Mask directions ) const
+    auto size() const noexcept { return typename Buffer::SizeGuard( *this ).write(); }
+
+    auto data() const noexcept
     {
-        WriteGuard n = *this;
-        n.directions = directions;
-        return n;
+        return typename Buffer::DataGuard( *this )
+            .write()
+            .access_dataPlace( this->area )
+            .access_directions( this->directions );
+    }
+
+    auto write() const noexcept { return WriteGuard( *this, this->area, this->directions ); }
+
+    auto exchange(
+        ExchangeType exchangeType,
+        AreaType dataPlace,
+        DataSpace< Buffer::dim > guardingCells,
+        GridLayout< Buffer::dim > gridLayout
+    )
+    {
+        return WriteGuard( *this, exchangeType, dataPlace, guardingCells, gridLayout );
     }
 };
-
-} // namespace data
-} // namespace buffer
 
 } // namespace mem
 
 } // namespace pmacc
-
-
-
-
-
-namespace redGrapes
-{
-namespace trait
-{
-
-template < typename Buffer >
-struct BuildProperties<
-    pmacc::mem::buffer::data::ReadGuard< Buffer >,
-    typename std::enable_if<
-        std::is_same<
-            typename Buffer::DataAccessPolicy,
-            pmacc::mem::grid_buffer::data::Access
-        >::value
-    >::type
->
-{
-    template < typename Builder >
-    static void build(
-        Builder & builder,
-        pmacc::mem::buffer::data::ReadGuard< Buffer > const & buf
-    )
-    {
-        builder.add(
-            buf.data.make_access(
-                pmacc::mem::grid_buffer::data::Access{
-                    rg::access::IOAccess::read,
-                    buf.area,
-                    buf.directions
-                }));
-    }
-};
-
-template < typename Buffer >
-struct BuildProperties<
-    pmacc::mem::buffer::data::WriteGuard< Buffer >,
-    typename std::enable_if<
-        std::is_same<
-            typename Buffer::DataAccessPolicy,
-            pmacc::mem::grid_buffer::data::Access
-        >::value
-    >::type
->
-{
-    template < typename Builder >
-    static void build(
-        Builder & builder,
-        pmacc::mem::buffer::data::WriteGuard< Buffer > const & buf
-    )
-    {
-        builder.add(
-            buf.data.make_access(
-                 pmacc::mem::grid_buffer::data::Access{
-                    rg::access::IOAccess::write,
-                    buf.area,
-                    buf.directions
-                }));
-    }
-};
-
-} // namespace trait
-
-} // namespace redGrapes
 
 
 template <>
@@ -382,7 +627,7 @@ struct fmt::formatter< pmacc::mem::grid_buffer::data::Access >
 
         first = true;
         for(int ex=1; ex<27; ++ex)
-            if( a.direction.containsExchangeType(ex) )
+            if( a.direction.isSet(ex) )
             {
                 if(! first)
                     direction_str << ", ";

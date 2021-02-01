@@ -31,6 +31,13 @@ template <
     std::size_t T_dim,
     typename T_DataAccessPolicy
 >
+struct WriteGuard;
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
 struct ReadGuard
     : pmacc::mem::buffer::data::ReadGuard<
         DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy >
@@ -38,10 +45,14 @@ struct ReadGuard
 {
     cuplaPitchedPtr getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
 
-    ReadGuard read() const noexcept { return *this; }
+    ReadGuard< T_Item, T_dim, T_DataAccessPolicy > read() const noexcept { return *this; }
 
-    ReadGuard( buffer::GuardBase< DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const & base )
-        : pmacc::mem::buffer::data::ReadGuard< DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
+    ReadGuard( buffer::GuardBase< DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const & base ) noexcept
+        : buffer::data::ReadGuard< DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
+    {}
+
+    ReadGuard( WriteGuard< T_Item, T_dim, T_DataAccessPolicy > const & wr ) noexcept
+        : buffer::data::ReadGuard< DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( (buffer::data::WriteGuard<DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy>> const&) wr )
     {}
 };
 
@@ -57,11 +68,11 @@ struct WriteGuard
 {
     cuplaPitchedPtr getCudaPitched() const { return this->data.obj->get_cuda_pitched();  }
 
-    ReadGuard< T_Item, T_dim, T_DataAccessPolicy > read() const noexcept { return *this; }
-    WriteGuard write() const noexcept { return *this; }
+    ReadGuard< T_Item, T_dim, T_DataAccessPolicy > read() const noexcept { return ReadGuard< T_Item, T_dim, T_DataAccessPolicy >(*this); }
+    WriteGuard< T_Item, T_dim, T_DataAccessPolicy > write() const noexcept { return *this; }
 
-    WriteGuard( buffer::GuardBase< DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const & base )
-        : pmacc::mem::buffer::data::WriteGuard< DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
+    WriteGuard( buffer::GuardBase< DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const & base ) noexcept
+        : buffer::data::WriteGuard< DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
     {}
 };
 
@@ -119,8 +130,8 @@ struct DeviceBufferResource
     using Data = DeviceBufferData< Item, dim >;
     using Size = DeviceBufferSize< dim >;
 
-    using DataGuard = data::WriteGuard< Item, dim, DataAccessPolicy >;
-    using SizeGuard = size::WriteGuard< Item, dim, DataAccessPolicy >;
+    using DataGuard = device_buffer::data::WriteGuard< Item, dim, DataAccessPolicy >;
+    using SizeGuard = device_buffer::size::WriteGuard< Item, dim, DataAccessPolicy >;
 
     DeviceBufferResource(
         DataSpace< dim > capacity,
@@ -148,7 +159,7 @@ struct DeviceBufferResource
         >( other.data ),
         use_vector_as_base( use_vector_as_base )
     {}
-
+   
     auto make_guard( bool size_on_device = false )
     {
         auto guard = buffer::GuardBase<DeviceBufferResource>( *this );
@@ -229,7 +240,14 @@ struct ReadGuard<
         : GuardBase< device_buffer::DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> >( base )
     {}
 
-    auto read() { return *this; }
+    std::vector< rg::ResourceAccess > get_access() const
+    {
+        std::vector< rg::ResourceAccess > acc;
+        this->size.push_read_access( acc );
+        return acc;
+    }
+
+    ReadGuard read() { return *this; }
 
     std::size_t get() const { return this->size.get_current_size(); }
     std::size_t getCurrentSize() const { return this->size.get_current_size(); }
@@ -255,77 +273,44 @@ struct ReadGuard<
 } // namespace pmacc
 
 
-
-namespace redGrapes
-{
-namespace trait
-{
-
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties<
-    pmacc::mem::device_buffer::size::ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
 >
-{
-    template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::device_buffer::size::ReadGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf)
-    {
-        if( buf.size.device_current_size )
-        {
-            builder.add( buf.size.host_current_size.write() );
-            builder.add( buf.size.device_current_size->read() );
-        }
-        else
-            builder.add( buf.size.host_current_size.read() );
-    }
-};
-
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties<
-    pmacc::mem::device_buffer::size::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
->
-{
-    template < typename Builder >
-    static void build(Builder & builder, pmacc::mem::device_buffer::size::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf)
-    {
-        builder.add( buf.size.host_current_size.write() );
-
-        if( buf.size.device_current_size )
-            builder.add( buf.size.device_current_size->write() );
-    }
-};
-
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties<
-    pmacc::mem::device_buffer::data::ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
+struct redGrapes::trait::BuildProperties<
+    pmacc::mem::device_buffer::data::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>
 >
 {
     template < typename Builder >
     static void build(
         Builder & builder,
-        pmacc::mem::device_buffer::data::ReadGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf
+        pmacc::mem::device_buffer::data::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf
     )
     {
-        builder.add( (pmacc::mem::buffer::data::ReadGuard< pmacc::mem::device_buffer::DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const &) buf );
+        for( auto acc : buf.get_access() )
+            builder.add( acc );
     }
 };
 
-template < typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy >
-struct BuildProperties<
-    pmacc::mem::device_buffer::data::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
+template<
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct redGrapes::trait::BuildProperties<
+    pmacc::mem::device_buffer::data::ReadGuard<T_Item, T_dim, T_DataAccessPolicy>
 >
 {
     template < typename Builder >
     static void build(
         Builder & builder,
-        pmacc::mem::device_buffer::data::WriteGuard< T_Item, T_dim, T_DataAccessPolicy > const & buf
+        pmacc::mem::device_buffer::data::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const & buf
     )
     {
-        builder.add( (pmacc::mem::buffer::data::WriteGuard< pmacc::mem::device_buffer::DeviceBufferResource< T_Item, T_dim, T_DataAccessPolicy > > const &) buf );
+        for( auto acc : buf.get_access() )
+            builder.add( acc );
     }
 };
-
-} // namespace trait
-
-} // namespace redGrapes
 
 

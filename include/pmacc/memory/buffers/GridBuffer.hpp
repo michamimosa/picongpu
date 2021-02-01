@@ -231,7 +231,7 @@ struct GridBuffer
 
                 hasOneExchange = true;
 
-                auto sendex = ex;
+                auto sendex = ExchangeType(ex);
                 if ( ! sendExchanges[sendex] )
                 {
                     sendExchanges[sendex].emplace(
@@ -377,30 +377,14 @@ struct GridBuffer
         addExchangeBuffer( receive, dataSpace, communicationTag, sizeOnDevice, sizeOnDevice );
     }
 
-    device_buffer::WriteGuard<
-        T_Item,
-        T_dim,
-        grid_buffer::data::Access
-    >
-    get_device_exchange(
-        uint32_t exchangeType,
-        uint32_t dataPlace,
+    //! get access guard to an exchange buffer
+    auto get_device_exchange(
+        ExchangeType exchangeType,
+        AreaType dataPlace,
         DataSpace<T_dim> guardingCells
     )
     {
-        return this->device().sub_area(
-            exchange::exchangeTypeToOffset< T_dim >(
-                exchangeType,
-                gridLayout,
-                guardingCells,
-                dataPlace == GUARD ? GUARD : BORDER
-            ),
-            exchange::exchangeTypeToDataSpace< T_dim >(
-                exchangeType,
-                gridLayout,
-                guardingCells
-            )
-        );
+        return this->device().exchange( exchangeType, dataPlace, guardingCells, gridLayout );
     }
 
     /*!
