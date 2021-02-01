@@ -185,7 +185,7 @@ struct Exchange
             [=]( auto messageBuffer )
             {
                 size_t new_size = Environment<BufferResource::dim>::get()
-                    .GridController()
+                    .EnvironmentController()
                     .getCommunicator()
                     .recv(
                         exchangeType,
@@ -212,7 +212,7 @@ struct Exchange
             [=]( auto messageBuffer )
             {
                 Environment<BufferResource::dim>::get()
-                    .GridController()
+                    .EnvironmentController()
                     .getCommunicator()
                     .send(
                         exchangeType,
