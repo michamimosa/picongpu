@@ -150,13 +150,13 @@ public:
             )
         )
         {
+            // avoid deadlock between not finished PMacc tasks and MPI_Barrier
+            Environment<>::get().waitForAllTasks();
+
             /* first synchronize: if something failed, we can spare the time
              * for the checkpoint writing */
             CUDA_CHECK(cuplaDeviceSynchronize());
             CUDA_CHECK(cuplaGetLastError());
-
-            // avoid deadlock between not finished PMacc tasks and MPI_Barrier
-            //__getTransactionEvent().waitForFinished();
 
             GridController<DIM> &gc = Environment<DIM>::get().GridController();
             /* can be spared for better scalings, but allows to spare the
@@ -172,13 +172,13 @@ public:
             Environment<DIM>::get().PluginConnector().checkpointPlugins(currentStep,
                                                                         checkpointDirectory);
 
+            /* avoid deadlock between not finished PMacc tasks and MPI_Barrier */
+            Environment<>::get().waitForAllTasks();
+
             /* important synchronize: only if no errors occured until this
              * point guarantees that a checkpoint is usable */
             CUDA_CHECK(cuplaDeviceSynchronize());
             CUDA_CHECK(cuplaGetLastError());
-
-            /* avoid deadlock between not finished PMacc tasks and MPI_Barrier */
-            //__getTransactionEvent().waitForFinished();
 
             /* \todo in an ideal world with MPI-3, this would be an
              * MPI_Ibarrier call and this function would return a MPI_Request

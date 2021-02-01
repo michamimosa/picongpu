@@ -25,9 +25,9 @@
 #include "picongpu/simulation_defines.hpp"
 #include <pmacc/assert.hpp>
 
-/*
 
 #include "picongpu/plugins/CountParticles.hpp"
+/*
 #include "picongpu/plugins/EnergyParticles.hpp"
 #include "picongpu/plugins/multi/Master.hpp"
 #include "picongpu/plugins/EnergyFields.hpp"
@@ -84,13 +84,14 @@
 
 #include "picongpu/plugins/Checkpoint.hpp"
 #include "picongpu/plugins/ResourceLog.hpp"
+*/
 
 #include <pmacc/mappings/kernel/MappingDescription.hpp>
 
 #include "picongpu/plugins/ILightweightPlugin.hpp"
 #include "picongpu/plugins/ISimulationPlugin.hpp"
 #include "picongpu/particles/traits/SpeciesEligibleForSolver.hpp"
-*/
+
 #include <list>
 
 
@@ -228,7 +229,9 @@ private:
         plugins::multi::Master< EnergyParticles<bmpl::_1> >,
         plugins::multi::Master< CalcEmittance<bmpl::_1> >,
         plugins::multi::Master< BinEnergyParticles<bmpl::_1> >,
-        CountParticles<bmpl::_1>,
+        */
+        CountParticles<bmpl::_1>
+        /*
         PngPlugin< Visualisation<bmpl::_1, PngCreator> >,
         plugins::transitionRadiation::TransitionRadiation<bmpl::_1>
 #if(ENABLE_OPENPMD == 1)

@@ -146,6 +146,7 @@ public:
 
     Particles(const std::shared_ptr<DeviceHeap>& heap, picongpu::MappingDesc cellDescription, SimulationDataId datasetID);
 
+    // deprecated?
     void createParticleBuffer();
 
     void update( uint32_t const currentStep );

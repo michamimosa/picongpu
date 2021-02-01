@@ -48,8 +48,10 @@ namespace
         auto const parserStatus = sim.parseConfigs( argc, argv );
         int errorCode = EXIT_FAILURE;
 
-        spdlog::set_level( spdlog::level::debug );
-        pmacc::Environment<>::get().initScheduler( 4, 4 );
+        spdlog::set_pattern("[thread %t] %^[%l]%$ %v");
+        spdlog::set_level( spdlog::level::info );
+
+        pmacc::Environment<>::get().initScheduler( 8, 8 );
 
         switch( parserStatus )
         {
