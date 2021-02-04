@@ -87,6 +87,11 @@ struct MPIReduce
     void participate(bool isActive)
     {
         /*free old communicator of init is called again*/
+
+        Environment<>::task(
+                            [this, isActive]
+                            {
+
         if (isMPICommInitialized)
         {
             MPI_CHECK(MPI_Comm_free(&comm));
@@ -132,6 +137,10 @@ struct MPIReduce
         }
         MPI_CHECK(MPI_Group_free(&group));
         MPI_CHECK(MPI_Group_free(&newgroup));
+
+            },
+            TaskProperties::Builder().scheduling_tags({SCHED_MPI})
+        ).get();
     }
 
     /* Reduce elements on cpu memory
@@ -156,6 +165,9 @@ struct MPIReduce
             participate(true);
         typedef Type ValueType;
 
+        Environment<>::task(
+                            [func, dest, src, n, method, comm = this->comm]
+                            {
         method(func,
                dest,
                src,
@@ -163,6 +175,12 @@ struct MPIReduce
                ::pmacc::mpi::getMPI_StructAsArray<ValueType > ().dataType,
                ::pmacc::mpi::getMPI_Op<Functor > (),
                comm);
+        
+                            },
+                            TaskProperties::Builder().scheduling_tags({ SCHED_MPI }).label("MPI Reduce Method")
+        ).get();
+
+        spdlog::info("REDUCE METHOD FINISHED");
     }
 
     /* Reduce elements on cpu memory

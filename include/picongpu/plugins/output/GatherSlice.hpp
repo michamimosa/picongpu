@@ -1,4 +1,4 @@
-/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -31,6 +31,9 @@
 #include <vector>
 #include <sys/stat.h>
 
+#include <redGrapes/access/io.hpp>
+#include <redGrapes/resource/resource.hpp>
+#include <redGrapes/property/trait.hpp>
 
 namespace picongpu
 {
@@ -60,6 +63,11 @@ struct GatherSlice
      */
     bool init(bool isActive)
     {
+        Environment<>::get().waitForAllTasks();
+
+        return Environment<>::task(
+            [ this, isActive ]
+            {
         static int masterRankOffset = 0;
 
         /* free old communicator if `init()` is called again */
@@ -75,8 +83,6 @@ struct GatherSlice
         if (!isActive)
             mpiRank = -1;
 
-        // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-        __getTransactionEvent().waitForFinished();
         MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
 
         for (int i = 0; i < countRanks; ++i)
@@ -88,8 +94,6 @@ struct GatherSlice
             }
         }
 
-        // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-        __getTransactionEvent().waitForFinished();
         MPI_Group group = MPI_GROUP_NULL;
         MPI_Group newgroup = MPI_GROUP_NULL;
         MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
@@ -112,6 +116,10 @@ struct GatherSlice
         masterRank = (masterRankOffset % numRanks);
 
         return mpiRank == masterRank;
+       
+            },
+            TaskProperties::Builder().label("Gather init").scheduling_tags({ SCHED_MPI })
+        ).get();
     }
 
     template<class Box >
@@ -120,25 +128,32 @@ struct GatherSlice
         using ValueType = typename Box::ValueType;
 
         Box dstBox = Box(PitchedBox<ValueType, DIM2 > (
-                                                       (ValueType*) filteredData,
-                                                       DataSpace<DIM2 > (),
-                                                       header.sim.size,
-                                                       header.sim.size.x() * sizeof (ValueType)
-                                                       ));
+                             (ValueType*) filteredData,
+                             DataSpace<DIM2 > (),
+                             header.sim.size,
+                             header.sim.size.x() * sizeof (ValueType)
+                     ));
 
         MessageHeader* fakeHeader = MessageHeader::create();
         memcpy(fakeHeader, &header, sizeof (MessageHeader));
 
-        char* recvHeader = new char[ MessageHeader::bytes * numRanks];
+        char* recvHeader = new char[ MessageHeader::bytes * numRanks ];
 
         if (fullData == nullptr && mpiRank == masterRank)
             fullData = (char*) new ValueType[header.sim.size.productOfComponents()];
 
-
-        // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-        __getTransactionEvent().waitForFinished();
-        MPI_CHECK(MPI_Gather(fakeHeader, MessageHeader::bytes, MPI_CHAR, recvHeader, MessageHeader::bytes,
-                             MPI_CHAR, masterRank, comm));
+        Environment<>::task(
+            [this, fakeHeader, recvHeader]
+            {
+                MPI_CHECK(MPI_Gather(
+                    fakeHeader, MessageHeader::bytes, MPI_CHAR, recvHeader, MessageHeader::bytes,
+                    MPI_CHAR, masterRank, comm
+                ));
+            },
+            TaskProperties::Builder()
+                .label("MPI_Gather")
+                .scheduling_tags({ SCHED_MPI })
+        ).get();
 
         std::vector<int> counts(numRanks);
         std::vector<int> displs(numRanks);
@@ -153,28 +168,33 @@ struct GatherSlice
 
         const size_t elementsCount = header.node.maxSize.productOfComponents() * sizeof (ValueType);
 
-        // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-        __getTransactionEvent().waitForFinished();
-        MPI_CHECK(MPI_Gatherv(
-                              (char*) (data.getPointer()), elementsCount, MPI_CHAR,
-                              fullData, &counts[0], &displs[0], MPI_CHAR,
-                              masterRank, comm));
-
-
+        Environment<>::task(
+            [this, data, elementsCount, &counts, &displs]
+            {
+                MPI_CHECK(MPI_Gatherv(
+                    (char*) (data.getPointer()), elementsCount, MPI_CHAR,
+                    fullData, &counts[0], &displs[0], MPI_CHAR,
+                    masterRank, comm));
+            },
+            TaskProperties::Builder()
+                .label("MPI_Gatherv")
+                .scheduling_tags({ SCHED_MPI })
+        ).get();
 
         if (mpiRank == masterRank)
         {
             log<picLog::DOMAINS > ("Master create image");
-            if (filteredData == nullptr)
+
+            if(filteredData == nullptr)
                 filteredData = (char*) new ValueType[header.sim.size.productOfComponents()];
 
             /*create box with valid memory*/
-            dstBox = Box(PitchedBox<ValueType, DIM2 > (
-                                                       (ValueType*) filteredData,
-                                                       DataSpace<DIM2 > (),
-                                                       header.sim.size,
-                                                       header.sim.size.x() * sizeof (ValueType)
-                                                       ));
+            dstBox = Box(PitchedBox< ValueType, DIM2 > (
+                             (ValueType*) filteredData,
+                             DataSpace< DIM2 > (),
+                             header.sim.size,
+                             header.sim.size.x() * sizeof (ValueType)
+                     ));
 
             for (int i = 0; i < numRanks; ++i)
             {
@@ -184,12 +204,13 @@ struct GatherSlice
                     displs[i] % (displs[i] / sizeof (ValueType)) %
                     head->node.maxSize.toString() %
                     head->node.offset.toString();
+
                 Box srcBox = Box(PitchedBox<ValueType, DIM2 > (
-                                                               (ValueType*) (fullData + displs[i]),
-                                                               DataSpace<DIM2 > (),
-                                                               head->node.maxSize,
-                                                               head->node.maxSize.x() * sizeof (ValueType)
-                                                               ));
+                                     (ValueType*) (fullData + displs[i]),
+                                     DataSpace<DIM2 > (),
+                                     head->node.maxSize,
+                                     head->node.maxSize.x() * sizeof (ValueType)
+                             ));
 
                 insertData(dstBox, srcBox, head->node.offset, head->node.maxSize);
             }
@@ -215,6 +236,7 @@ struct GatherSlice
         }
     }
 
+    friend class redGrapes::trait::BuildProperties< GatherSlice >;
 private:
 
     /*reset this object und set all values to initial state*/
@@ -222,23 +244,29 @@ private:
     {
         mpiRank = -1;
         numRanks = 0;
-        if (filteredData != nullptr)
+
+        if ( filteredData != nullptr )
             delete[] filteredData;
         filteredData = nullptr;
-        if (fullData != nullptr)
+
+        if ( fullData != nullptr )
             delete[] fullData;
         fullData = nullptr;
+
         if (isMPICommInitialized)
         {
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
+            //Environment<>::get().waitForAllTasks();
             MPI_CHECK(MPI_Comm_free(&comm));
         }
+
         isMPICommInitialized = false;
     }
 
     char* filteredData;
     char* fullData;
+
+    redGrapes::Resource< redGrapes::access::IOAccess > resource;
+
     MPI_Comm comm;
     int mpiRank;
     int numRanks;
@@ -247,3 +275,18 @@ private:
 };
 
 }//namespace
+
+template <>
+struct redGrapes::trait::BuildProperties< picongpu::GatherSlice >
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        picongpu::GatherSlice const & gather
+    )
+    {
+        if ( gather.mpiRank == gather.masterRank )
+            builder.add( gather.resource.make_access( redGrapes::access::IOAccess::write ) );
+    }
+};
+

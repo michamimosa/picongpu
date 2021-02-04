@@ -35,16 +35,16 @@
 #include "picongpu/plugins/BinEnergyParticles.hpp"
 #include "picongpu/plugins/Emittance.hpp"
 #include "picongpu/plugins/transitionRadiation/TransitionRadiation.hpp"
+*/
 #include "picongpu/plugins/output/images/PngCreator.hpp"
 #include "picongpu/plugins/output/images/Visualisation.hpp"
-*/
 
 /* That's an abstract plugin for image output with the possibility
  * to store the image as png file or send it via a sockets to a server.
  *
  * \todo rename PngPlugin to ImagePlugin or similar
  */
-//#include "picongpu/plugins/PngPlugin.hpp"
+#include "picongpu/plugins/PngPlugin.hpp"
 
 /*
 #if (ENABLE_ADIOS == 1)
@@ -230,9 +230,9 @@ private:
         plugins::multi::Master< CalcEmittance<bmpl::_1> >,
         plugins::multi::Master< BinEnergyParticles<bmpl::_1> >,
         */
-        CountParticles<bmpl::_1>
+        CountParticles<bmpl::_1>,
+        PngPlugin< Visualisation<bmpl::_1, PngCreator> >
         /*
-        PngPlugin< Visualisation<bmpl::_1, PngCreator> >,
         plugins::transitionRadiation::TransitionRadiation<bmpl::_1>
 #if(ENABLE_OPENPMD == 1)
         , plugins::xrayScattering::XrayScattering<bmpl::_1>

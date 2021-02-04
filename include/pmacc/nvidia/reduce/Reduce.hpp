@@ -323,6 +323,7 @@ namespace kernel
         template<class Functor, typename Src>
         HINLINE typename traits::GetValueType<Src>::ValueType operator()(Functor func, Src src, uint32_t n)
         {
+            
            /* - the result of a functor can be a reference or a const value
             * - it is not allowed to create const or reference memory
             *   thus we remove `references` and `const` qualifiers */
@@ -332,6 +333,11 @@ namespace kernel
                        >::type
                    >::type Type;
 
+            Environment<>::task(
+                [this, func, src, n]( auto deviceData )
+                {
+
+                    uint32_t n = n;
             uint32_t blockcount = optimalThreadsPerBlock(n, sizeof (Type));
 
             uint32_t n_buffer = byte / sizeof (Type);
@@ -339,9 +345,8 @@ namespace kernel
             uint32_t threads = n_buffer * blockcount * 2; /* x2 is used thus we can use all byte in Buffer, after we calculate threads/2 */
 
 
-
             if (threads > n) threads = n;
-            Type* dest = (Type*) reduceBuffer->device().data().getBasePointer();
+            Type* dest = (Type*) deviceData.getBasePointer();
 
             uint32_t blocks = threads / 2 / blockcount;
             if (blocks == 0) blocks = 1;
@@ -351,7 +356,6 @@ namespace kernel
             blockcount = optimalThreadsPerBlock(n, sizeof (Type));
             blocks = n / 2 / blockcount;
             if (blocks == 0 && n > 1) blocks = 1;
-
 
             while (blocks != 0)
             {
@@ -379,10 +383,24 @@ namespace kernel
                 if (blocks == 0 && n > 1) blocks = 1;
             }
 
-            reduceBuffer->deviceToHost();
-            //__getTransactionEvent().waitForFinished();
-            return *((Type*) (reduceBuffer->host().data().getBasePointer()));
+                },
+                TaskProperties::Builder()
+                    .label("reduce kernels")
+                    .scheduling_tags({ SCHED_CUPLA }),
+                reduceBuffer->device().data()
+            );
 
+            reduceBuffer->deviceToHost();
+
+            return Environment<>::task(
+                       [](
+                           auto hostData
+                       ){
+                           return *((Type*) (hostData.getBasePointer()));
+                       },
+                       TaskProperties::Builder().label("read reduceBuffer"),
+                       reduceBuffer->host().data().read()
+                   ).get();
         }
 
         virtual ~Reduce()
@@ -574,6 +592,8 @@ namespace kernel
             return getThreadsPerBlock(std::min(sharedBorder, n));
         }
 
+        friend class redGrapes::trait::BuildProperties< Reduce >;
+        
         /*global gpu buffer for reduce steps*/
         GridBuffer<char, DIM1 > *reduceBuffer;
         /*buffer size limit in bytes on gpu*/
@@ -585,3 +605,15 @@ namespace kernel
 }
 }
 }
+
+
+template <>
+struct redGrapes::trait::BuildProperties< pmacc::nvidia::reduce::Reduce >
+{
+    template < typename Builder >
+    static void build( Builder & builder, pmacc::nvidia::reduce::Reduce const & reduce )
+    {
+        builder.add( *reduce.reduceBuffer );
+    }
+};
+
