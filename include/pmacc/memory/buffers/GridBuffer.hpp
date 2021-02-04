@@ -36,6 +36,8 @@
 #include <algorithm>
 #include <set>
 
+#include <redGrapes/property/trait.hpp>
+
 namespace pmacc
 {
 namespace mem
@@ -519,4 +521,24 @@ template<
 using GridBuffer = mem::GridBuffer< T_Item, T_dim, T_BorderItem >;
 
 } // namespace pmacc
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_BorderItem
+>
+struct redGrapes::trait::BuildProperties<
+    pmacc::mem::GridBuffer< T_Item, T_dim, T_BorderItem >
+>
+{
+    template < typename Builder >
+    static void build(
+        Builder & builder,
+        pmacc::mem::GridBuffer< T_Item, T_dim, T_BorderItem > const & buf
+    )
+    {
+        builder.add( buf.host() );
+        builder.add( buf.device() );
+    }
+};
 
