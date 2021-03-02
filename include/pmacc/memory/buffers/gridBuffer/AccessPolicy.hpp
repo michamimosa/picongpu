@@ -101,8 +101,8 @@ struct Access
             {
                 for( int ex = 0; ex < 27; ++ex )
                     if(
-                        a.direction.containsExchangeType(ex) &&
-                        b.direction.containsExchangeType(ex)
+                        a.direction.isSet(ex) &&
+                        b.direction.isSet(ex)
                     )
                         // found one direction that is used by both
                         return true;
@@ -193,11 +193,10 @@ struct buffer::data::ReadGuard<
     ReadGuard( GuardBase< Buffer > const & base )
         : buffer::data::ReadGuardBase< Buffer >( base )
         , area{ CORE + BORDER + GUARD }
-        , directions(
-            Mask(TOP) + Mask(BOTTOM) +
-            Mask(LEFT) + Mask(RIGHT) +
-            Mask(FRONT) + Mask(BACK))
-    {}
+    {
+        for( int i=1; i < 27; ++i)
+            this->directions = this->directions + Mask(i);
+    }
 
     ReadGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
         : buffer::data::ReadGuardBase< Buffer >( base )
@@ -308,11 +307,10 @@ public:
     WriteGuard( GuardBase< Buffer > const & base )
         : buffer::data::WriteGuardBase< Buffer >( base )
         , area{ CORE + BORDER + GUARD }
-        , directions(
-            Mask(TOP) + Mask(BOTTOM) +
-            Mask(LEFT) + Mask(RIGHT) +
-            Mask(FRONT) + Mask(BACK))
-    {}
+    {
+        for( int i=1; i < 27; ++i)
+            this->directions = this->directions + Mask(i);
+    }
 
     WriteGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
         : buffer::data::WriteGuardBase< Buffer >( base )
@@ -426,11 +424,10 @@ public:
     ReadGuard( GuardBase< Buffer > const & base )
         : buffer::GuardBase< Buffer >( base )
         , area{ CORE + BORDER + GUARD }
-        , directions(
-            Mask(TOP) + Mask(BOTTOM) +
-            Mask(LEFT) + Mask(RIGHT) +
-            Mask(FRONT) + Mask(BACK))
-    {}
+    {
+        for( int i=1; i < 27; ++i)
+            this->directions = this->directions + Mask(i);
+    }
 
     ReadGuard( GuardBase< Buffer > const & base, uint32_t const & area, Mask const & directions )
         : buffer::GuardBase< Buffer >( base )
