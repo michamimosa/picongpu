@@ -966,14 +966,15 @@ public:
             img->device().data().write().access_dataPlace( CORE + BORDER )
         );
 
-        // find maximum for img.x()/y and z and return it as float3_X
         auto size = img->getGridLayout().getDataSpace();
         int elements = size.productOfComponents();
 
 #if (EM_FIELD_SCALE_CHANNEL1 == -1 || EM_FIELD_SCALE_CHANNEL2 == -1 || EM_FIELD_SCALE_CHANNEL3 == -1)
 
+        // find maximum for img.x()/y and z and return it as float3_X
         float3_X max =
-            Environment<>::task([
+            Environment<>::task(
+                [
                     this,
                     size,
                     elements
@@ -1000,8 +1001,8 @@ public:
                 TaskProperties::Builder()
                     .label("reduce(nvidia::functors::Max())"),
 
-                                img->device().data().write(),
-                                std::ref( reduce )
+                img->device().data().read(),
+                std::ref( reduce )
             ).get();
 
 #if (EM_FIELD_SCALE_CHANNEL1 != -1 )
@@ -1013,7 +1014,7 @@ public:
 #if (EM_FIELD_SCALE_CHANNEL3 != -1 )
         max.z() = float_X(1.0);
 #endif
-        
+
         Environment<>::task([
                 this,
                 size,
@@ -1150,7 +1151,7 @@ public:
 
             img->host().data(),
             std::ref(gather)
-        ).get();
+        );
     }
 
     void init()

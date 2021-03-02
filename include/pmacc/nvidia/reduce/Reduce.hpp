@@ -1,5 +1,5 @@
 /* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz,
- *                     Alexander Grund
+ *                     Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -334,68 +334,115 @@ namespace kernel
                    >::type Type;
 
             Environment<>::task(
-                [this, func, src, n]( auto deviceData )
+                [this, func, src, n]( auto deviceData ) mutable
                 {
+                    uint32_t blockcount = optimalThreadsPerBlock(n, sizeof (Type));
 
-                    uint32_t n = n;
-            uint32_t blockcount = optimalThreadsPerBlock(n, sizeof (Type));
+                    uint32_t n_buffer = byte / sizeof (Type);
 
-            uint32_t n_buffer = byte / sizeof (Type);
+                    uint32_t threads = n_buffer * blockcount * 2; /* x2 is used thus we can use all byte in Buffer, after we calculate threads/2 */
 
-            uint32_t threads = n_buffer * blockcount * 2; /* x2 is used thus we can use all byte in Buffer, after we calculate threads/2 */
+                    if (threads > n)
+                        threads = n;
 
+                    Type* dest = (Type*) deviceData.getBasePointer();
 
-            if (threads > n) threads = n;
-            Type* dest = (Type*) deviceData.getBasePointer();
+                    uint32_t blocks = threads / 2 / blockcount;
+                    if (blocks == 0)
+                        blocks = 1;
+                    
+                    Environment<>::task(
+                        [this, blocks, blockcount, src, n, func]( auto deviceData )
+                        {
+                            callReduceKernel< Type >(
+                                blocks, blockcount, blockcount * sizeof (Type),
 
-            uint32_t blocks = threads / 2 / blockcount;
-            if (blocks == 0) blocks = 1;
-            callReduceKernel< Type >(blocks, blockcount, blockcount * sizeof (Type),
-                src, n, dest, func, pmacc::nvidia::functors::Assign());
-            n = blocks;
-            blockcount = optimalThreadsPerBlock(n, sizeof (Type));
-            blocks = n / 2 / blockcount;
-            if (blocks == 0 && n > 1) blocks = 1;
+                                src,
+                                n,
+                                (Type*)deviceData.getBasePointer(),
+                                func,
+                                pmacc::nvidia::functors::Assign()
+                            );
+                        },
+                        TaskProperties::Builder()
+                            .scheduling_tags({ SCHED_CUPLA }),
+                        deviceData.write()
+                    );
 
-            while (blocks != 0)
-            {
-                if (blocks > 1)
-                {
-                    uint32_t blockOffset = ceil((double) blocks / blockcount);
-                    uint32_t useBlocks = blocks - blockOffset;
-                    uint32_t problemSize = n - (blockOffset * blockcount);
-                    Type* srcPtr = dest + (blockOffset * blockcount);
+                    n = blocks;
+                    blockcount = optimalThreadsPerBlock(n, sizeof (Type));
+                    blocks = n / 2 / blockcount;
 
-                    callReduceKernel< Type >(useBlocks, blockcount, blockcount * sizeof (Type),
-                        srcPtr, problemSize, dest, func, func);
-                    blocks = blockOffset*blockcount;
-                }
-                else
-                {
+                    if (blocks == 0 && n > 1)
+                        blocks = 1;
 
-                    callReduceKernel< Type >(blocks, blockcount, blockcount * sizeof (Type),
-                        dest, n, dest, func, pmacc::nvidia::functors::Assign());
-                }
+                    while (blocks != 0)
+                    {
+                        if (blocks > 1)
+                        {
+                            uint32_t blockOffset = ceil((double) blocks / blockcount);
+                            uint32_t useBlocks = blocks - blockOffset;
+                            uint32_t problemSize = n - (blockOffset * blockcount);
+                            Type* srcPtr = dest + (blockOffset * blockcount);
 
-                n = blocks;
-                blockcount = optimalThreadsPerBlock(n, sizeof (Type));
-                blocks = n / 2 / blockcount;
-                if (blocks == 0 && n > 1) blocks = 1;
-            }
+                            Environment<>::task(
+                                [this, useBlocks, blockcount, srcPtr, n, problemSize, func]( auto deviceData )
+                                {
+                                    callReduceKernel< Type >(
+                                        useBlocks, blockcount, blockcount * sizeof (Type),
 
+                                        srcPtr,
+                                        problemSize,
+                                        (Type*)deviceData.getBasePointer(),
+                                        func,
+                                        func
+                                    );
+                                },
+                                TaskProperties::Builder()
+                                    .scheduling_tags({ SCHED_CUPLA }),
+                                deviceData.write()
+                            );
+
+                            blocks = blockOffset*blockcount;
+                        }
+                        else
+                        {
+                            Environment<>::task(
+                                [this, blocks, blockcount, src, n, func]( auto deviceData )
+                                {
+                                    callReduceKernel< Type >(
+                                        blocks, blockcount, blockcount * sizeof (Type),
+
+                                        (Type*)deviceData.getBasePointer(),
+                                        n,
+                                        (Type*)deviceData.getBasePointer(),
+                                        func,
+                                        pmacc::nvidia::functors::Assign()
+                                    );
+                                },
+                                TaskProperties::Builder()
+                                    .scheduling_tags({ SCHED_CUPLA }),
+                                deviceData.write()
+                            );
+                        }
+
+                        n = blocks;
+                        blockcount = optimalThreadsPerBlock(n, sizeof (Type));
+                        blocks = n / 2 / blockcount;
+                        if (blocks == 0 && n > 1) blocks = 1;
+                    }
                 },
                 TaskProperties::Builder()
-                    .label("reduce kernels")
-                    .scheduling_tags({ SCHED_CUPLA }),
+                    .label("reduce kernels"),
+
                 reduceBuffer->device().data()
             );
 
             reduceBuffer->deviceToHost();
 
             return Environment<>::task(
-                       [](
-                           auto hostData
-                       ){
+                       []( auto hostData )
+                       {
                            return *((Type*) (hostData.getBasePointer()));
                        },
                        TaskProperties::Builder().label("read reduceBuffer"),
