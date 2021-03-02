@@ -179,8 +179,6 @@ struct MPIReduce
                             },
                             TaskProperties::Builder().scheduling_tags({ SCHED_MPI }).label("MPI Reduce Method")
         ).get();
-
-        spdlog::info("REDUCE METHOD FINISHED");
     }
 
     /* Reduce elements on cpu memory
