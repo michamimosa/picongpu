@@ -553,28 +553,31 @@ public:
 
         MomentumBackup{ }( currentStep );        
         CurrentReset{ }( currentStep );
+
         ParticleIonization{ *cellDescription }( currentStep );
         PopulationKinetics{ }( currentStep );
         SynchrotronRadiation{ *cellDescription, synchrotronFunctions }( currentStep );
 
 #if( PMACC_CUDA_ENABLED == 1 )
-        Environment<>::fun_task(
             Bremsstrahlung{
                 *cellDescription,
                 scaledBremsstrahlungSpectrumMap,
                 bremsstrahlungPhotonAngle
-            },
-            currentStep
-        );
+            }(
+                currentStep
+            );
 #endif
 
         ParticlePush{ }( currentStep );
-        FieldBackground{ *cellDescription }( currentStep, nvidia::functors::Sub( ) );
 
+        FieldBackground{ *cellDescription }( currentStep, nvidia::functors::Sub( ) );
         myFieldSolver->update_beforeCurrent( currentStep );
 
         CurrentBackground{ *cellDescription }( currentStep );
+
         CurrentDeposition{ }( currentStep );
+        Environment<>::get().waitForAllTasks();
+
         CurrentInterpolationAndAdditionToEMF{ }( currentStep );
 
         myFieldSolver->update_afterCurrent( currentStep );

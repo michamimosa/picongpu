@@ -278,6 +278,9 @@ public:
             {
                 tRound.toggleStart();
                 runOneStep(currentStep);
+
+                Environment<>::get().waitForAllTasks();
+
                 tRound.toggleEnd();
                 roundAvg += tRound.getInterval();
 

@@ -233,49 +233,60 @@ void FieldJ::assign( ValueType value )
 template<uint32_t T_area, class T_Species>
 void FieldJ::computeCurrent( T_Species & species, uint32_t )
 {
-    /* tuning parameter to use more workers than cells in a supercell
-    * valid domain: 1 <= workerMultiplier
-    */
-    const int workerMultiplier = 2;
+    Environment<>::task(
+        [cellDescription = this->cellDescription]( auto jDevData, auto parDev )
+        {
+            /* tuning parameter to use more workers than cells in a supercell
+             * valid domain: 1 <= workerMultiplier
+             */
+            const int workerMultiplier = 2;
 
-    using FrameType = typename T_Species::FrameType;
-    typedef typename pmacc::traits::Resolve<
-        typename GetFlagType<FrameType, current<> >::type
-    >::type ParticleCurrentSolver;
+            using FrameType = typename T_Species::FrameType;
+            typedef typename pmacc::traits::Resolve<
+                typename GetFlagType<FrameType, current<> >::type
+                >::type ParticleCurrentSolver;
 
-    using FrameSolver = currentSolver::ComputePerFrame<ParticleCurrentSolver, Velocity, MappingDesc::SuperCellSize>;
+            using FrameSolver = currentSolver::ComputePerFrame<ParticleCurrentSolver, Velocity, MappingDesc::SuperCellSize>;
 
-    typedef SuperCellDescription<
-        typename MappingDesc::SuperCellSize,
-        typename GetMargin<ParticleCurrentSolver>::LowerMargin,
-        typename GetMargin<ParticleCurrentSolver>::UpperMargin
-    > BlockArea;
+            typedef SuperCellDescription<
+                typename MappingDesc::SuperCellSize,
+                typename GetMargin<ParticleCurrentSolver>::LowerMargin,
+                typename GetMargin<ParticleCurrentSolver>::UpperMargin
+                > BlockArea;
 
-    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-        pmacc::math::CT::volume< SuperCellSize >::type::value * workerMultiplier
-    >::value;
+            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                pmacc::math::CT::volume< SuperCellSize >::type::value * workerMultiplier
+                >::value;
 
-    using Strategy = currentSolver::traits::GetStrategy_t< FrameSolver> ;
+            using Strategy = currentSolver::traits::GetStrategy_t< FrameSolver> ;
 
-    auto const depositionKernel = currentSolver::KernelComputeCurrent<
-        numWorkers,
-        BlockArea
-    >{};
+            auto const depositionKernel = currentSolver::KernelComputeCurrent<
+                numWorkers,
+                BlockArea
+            >{};
 
-    typename T_Species::ParticlesBoxType pBox = species.getParticlesBuffer( ).device( ).getParticlesBox( );
-    FieldJ::DataBoxType jBox = buffer.device( ).data( ).getDataBox( );
-    FrameSolver solver( DELTA_T );
+            FieldJ::DataBoxType jBox = jDevData.getDataBox( );
+            typename T_Species::ParticlesBoxType pBox = parDev.getParticlesBox( );
+            FrameSolver solver( DELTA_T );
 
-    auto const deposit = currentSolver::Deposit< Strategy >{};
-    deposit.template execute<
-        T_area,
-        numWorkers
-    >(
-        cellDescription,
-        depositionKernel,
-        solver,
-        jBox,
-        pBox
+            auto const deposit = currentSolver::Deposit< Strategy >{};
+            deposit.template execute<
+                T_area,
+                numWorkers
+            >(
+                cellDescription,
+                depositionKernel,
+                solver,
+                jBox,
+                pBox
+            );
+        },
+        TaskProperties::Builder()
+           .label("Deposit")
+           .scheduling_tags({ SCHED_CUPLA }),
+
+        buffer.device().data(),
+        species.getParticlesBuffer().device()
     );
 }
 
