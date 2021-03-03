@@ -576,7 +576,6 @@ public:
         CurrentBackground{ *cellDescription }( currentStep );
 
         CurrentDeposition{ }( currentStep );
-        Environment<>::get().waitForAllTasks();
 
         CurrentInterpolationAndAdditionToEMF{ }( currentStep );
 

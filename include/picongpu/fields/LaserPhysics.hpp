@@ -220,6 +220,9 @@ namespace fields
         {
             builder.label("LaserPhysics");
             builder.scheduling_tags({ SCHED_CUPLA });
+
+            DataConnector & dc = Environment< >::get( ).DataConnector( );
+            builder.add( dc.get< FieldE >( FieldE::getName(), true )->device().data() );
         }
     };
 } // namespace fields
