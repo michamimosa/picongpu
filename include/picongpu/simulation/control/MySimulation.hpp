@@ -140,6 +140,9 @@ public:
 
             ("devices,d", po::value<std::vector<uint32_t> > (&devices)->multitoken(), "number of devices in each dimension")
 
+            ("threads", po::value<uint32_t>(&n_threads)->default_value(1), "number of cpu threads")
+            ("streams", po::value<uint32_t>(&n_streams)->default_value(1), "number of accelerator streams")
+
             ("grid,g", po::value<std::vector<uint32_t> > (&gridSize)->multitoken(),
              "size of the simulation grid")
 
@@ -216,6 +219,7 @@ public:
             isPeriodic[i] = periodic[i];
         }
 
+        Environment<>::get().initScheduler( n_threads, n_streams );
         Environment<simDim>::get().initDevices(gpus, isPeriodic);
         pmacc::GridController< simDim > & gc = pmacc::Environment<simDim>::get().GridController();
 
@@ -316,7 +320,6 @@ public:
     {
         namespace nvmem = pmacc::nvidia::memory;
 
-      
         DataConnector &dc = Environment<>::get().DataConnector();
         initFields(dc);
 
@@ -686,6 +689,9 @@ protected:
     float_64 windowMovePoint;
     bool showVersionOnce;
     bool autoAdjustGrid = true;
+
+    uint32_t n_threads;
+    uint32_t n_streams;
 
 private:
 

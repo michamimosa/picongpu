@@ -51,8 +51,6 @@ namespace
         spdlog::set_pattern("[thread %t] %^[%l]%$ %v");
         spdlog::set_level( spdlog::level::info );
 
-        pmacc::Environment<>::get().initScheduler( 8, 8 );
-
         switch( parserStatus )
         {
             case ArgsParser::Status::error:
