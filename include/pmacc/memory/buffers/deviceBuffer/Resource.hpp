@@ -260,7 +260,7 @@ struct ReadGuard<
 
     size_t * get_device_pointer()
     {
-        this->size.get_device_pointer();
+        return this->size.get_device_pointer();
     }
 };
 

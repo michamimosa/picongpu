@@ -105,6 +105,8 @@ struct DeviceBufferSize
     {
         if( device_current_size )
             return device_current_size->get();
+        else
+            return 0;
     }
 
     bool is_on_device()
