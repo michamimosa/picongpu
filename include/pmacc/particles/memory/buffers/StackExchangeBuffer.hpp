@@ -57,18 +57,21 @@ struct DeviceGuard;
          * @param stack Exchange
          */
         StackExchangeBuffer(
-            mem::ExchangeBuffer< FRAME, DIM1, mem::grid_buffer::data::Access > stack,
-            mem::ExchangeBuffer< FRAMEINDEX, DIM1, mem::grid_buffer::data::Access > stackIndexer
+            mem::ExchangeBuffer< FRAME, DIM1, mem::grid_buffer::data::Access > const & stack,
+            mem::ExchangeBuffer< FRAMEINDEX, DIM1, mem::grid_buffer::data::Access > const & stackIndexer
         ) :
             stack(stack),
             stackIndexer(stackIndexer)
         {}
 
         void setCurrentSize(const size_t size)
-        {
-            stack.host()->size().set(size);
+        {            
+            if( auto host = stack.host() )
+                host->size().set(size);
             stack.device().size().set(size);
-            stackIndexer.host()->size().set(size);
+
+            if( auto host = stackIndexer.host() )
+                host->size().set(size);
             stackIndexer.device().size().set(size);
         }
 
@@ -168,16 +171,17 @@ struct DeviceGuard;
             friend class redGrapes::trait::BuildProperties< DeviceGuard >;
 
             DeviceGuard( StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const & b )
-                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b) {}
+                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b)
+            {}
 
             size_t getCurrentSize()
             {
-                return this->stackIndexer.getDeviceBuffer().size().get();
+                return this->stackIndexer.device().size().get();
             }
 
             size_t getParticlesCurrentSize()
             {
-                return this->stack.getDeviceBuffer().size().get();
+                return this->stack.device().size().get();
             }
 
             /**
@@ -187,13 +191,13 @@ struct DeviceGuard;
              */
             ExchangePushDataBox<vint_t, FRAME, DIM> getPushDataBox()
             {
-                PMACC_ASSERT(this->stack.getDeviceBuffer().size().is_on_device());
-                PMACC_ASSERT(this->stackIndexer.getDeviceBuffer().size().is_on_device());
+                PMACC_ASSERT(this->stack.device().size().is_on_device());
+                PMACC_ASSERT(this->stackIndexer.device().size().is_on_device());
 
                 return ExchangePushDataBox<vint_t, FRAME, DIM>(
                     this->stack.device().data().getBasePointer(),
                     (vint_t*) this->stack.device().size().get_device_pointer(),
-                    this->stack.device().data().getDataSpace().productOfComponents(),
+                    this->stack.device().getDataSpace().productOfComponents(),
                     PushDataBox<vint_t, FRAMEINDEX>(
                         this->stackIndexer.device().data().getBasePointer(),
                         (vint_t*) this->stackIndexer.device()
@@ -210,8 +214,8 @@ struct DeviceGuard;
             getPopDataBox()
             {
                 return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                    this->stack.getDeviceBuffer().data().getDataBox(),
-                    this->stackIndexer.getDeviceBuffer().data().getDataBox());
+                    this->stack.device().data().getDataBox(),
+                    this->stackIndexer.device().data().getDataBox());
             }
         };
 

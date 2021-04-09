@@ -101,7 +101,8 @@ namespace pmacc
     {
         if( particlesBuffer.hasSendExchange( exchangeType ) )
         {
-            particlesBuffer.getSendExchangeStack( exchangeType ).setCurrentSize( 0 );
+            auto sendExchangeStack = particlesBuffer.getSendExchangeStack( exchangeType );
+            sendExchangeStack.setCurrentSize( 0 );
 
             Environment<>::task(
                 [ cellDescription= this->cellDescription, exchangeType ]
@@ -130,13 +131,13 @@ namespace pmacc
                 },
 
 		TaskProperties::Builder()
-                    .label("KernelCopyGuardToExchange")
+                    .label("KernelCopyGuardToExchange(" + pmacc::type::ExchangeTypeNames{}[exchangeType] + ")")
                     .scheduling_tags({ SCHED_CUPLA }),
 
-                particlesBuffer.device(),
-		particlesBuffer.getSendExchangeStack( exchangeType ).device()
+                particlesBuffer.device(), // TODO: exchange_type, data place
+		sendExchangeStack.device()
             );
-	}	
+	}
     }
 
     template<typename T_ParticleDescription, class MappingDesc, typename T_DeviceHeap>
@@ -144,20 +145,26 @@ namespace pmacc
     {
         if( particlesBuffer.hasReceiveExchange( exchangeType ) )
         {
+            auto recvExchangeStack = particlesBuffer.getReceiveExchangeStack( exchangeType );
+
             size_t numParticles = 0u;
+
             if( Environment<>::get().isMpiDirectEnabled() )
-                numParticles = particlesBuffer.getReceiveExchangeStack( exchangeType ).device().getCurrentSize();
+                numParticles = recvExchangeStack.device().getCurrentSize();
             else
-                numParticles = particlesBuffer.getReceiveExchangeStack( exchangeType ).host().getCurrentSize();
+                numParticles = recvExchangeStack.host().getCurrentSize();
 
             if( numParticles != 0u )
             {
                 Environment<>::task(
-                    [ cellDescription=this->cellDescription, numParticles, exchangeType ] (
+                    [
+                        cellDescription=this->cellDescription,
+                        numParticles,
+                        exchangeType
+                    ](
                         auto parDevice,
                         auto parExchangeDevice
-                    )
-                    {
+                    ){
                         ExchangeMapping<
                             GUARD,
                             MappingDesc
@@ -178,16 +185,16 @@ namespace pmacc
                             parExchangeDevice.getPopDataBox( ),
                             mapper
                         );
-		    },
+                    },
 
                     TaskProperties::Builder()
-                        .label("ParticlesBase::insertParticles()")
+                        .label("KernelInsertParticles(" + pmacc::type::ExchangeTypeNames{}[exchangeType] + ")")
                         .scheduling_tags({ SCHED_CUPLA }),
 
-                    particlesBuffer.device(),
-                    particlesBuffer.getReceiveExchangeStack( exchangeType ).device()
-		);
-	    }
+                    particlesBuffer.device(),//TODO: exchange_type, data_place
+                    recvExchangeStack.device()
+                );
+            }
         }
     }
 

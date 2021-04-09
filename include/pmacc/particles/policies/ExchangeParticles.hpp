@@ -36,7 +36,7 @@ namespace policies {
     {
         template< class T_Particles >
         void
-        handleOutgoing(T_Particles& par, int32_t direction) const
+        handleOutgoing(T_Particles& par, uint32_t direction) const
         {
             size_t size, max_size;
             do
@@ -47,7 +47,7 @@ namespace policies {
                 size = par
                     .getParticlesBuffer()
                     .getSendExchangeStack( direction )
-                    .device()
+                    .host()
                     .getParticlesCurrentSize();
 
                 max_size = par
@@ -62,7 +62,7 @@ namespace policies {
 
         template< class T_Particles >
         void
-        handleIncoming(T_Particles& par, int32_t direction) const
+        handleIncoming(T_Particles& par, uint32_t direction) const
         {
             size_t size, max_size;
             do

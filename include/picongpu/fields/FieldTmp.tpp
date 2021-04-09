@@ -291,41 +291,19 @@ namespace picongpu
 
     void FieldTmp::bashField( uint32_t exchangeType )
     {
-        Environment<>::task(
-            [ exchangeType ]( auto buffer )
-            {
-                pmacc::fields::operations::CopyGuardToExchange{ }(
-                    buffer,
-                    SuperCellSize{ },
-                    exchangeType
-                );
-            },
-
-            TaskProperties::Builder()
-                .label("FieldTmp::bashField()")
-                .scheduling_tags({ SCHED_CUPLA }),
-
-            this->getGridBuffer()
+        pmacc::fields::operations::CopyGuardToExchange{ }(
+            this->getGridBuffer(),
+            SuperCellSize{ },
+            exchangeType
         );
     }
 
     void FieldTmp::insertField( uint32_t exchangeType )
     {
-        Environment<>::task(
-            [ exchangeType ]( auto buffer )
-	    {
-                pmacc::fields::operations::AddExchangeToBorder{ }(
-                    buffer,
-                    SuperCellSize{ },
-                    exchangeType
-                );
-            },
-
-            TaskProperties::Builder()
-                .label("FieldTmpa::insertField()")
-                .scheduling_tags({ SCHED_CUPLA }),
-
-            this->getGridBuffer()
+        pmacc::fields::operations::AddExchangeToBorder{ }(
+            this->getGridBuffer(),
+            SuperCellSize{ },
+            exchangeType
         );
     }
 

@@ -182,6 +182,19 @@ namespace operations
             uint32_t const exchangeType
         ) const
         {
+            auto gridLayout = destBuffer.getGridLayout();
+
+            Environment<>::task(
+                [
+                   superCellSize,
+                   gridLayout,
+                   exchangeType
+                ](
+                   auto devData,
+                   auto exDevData
+                )
+                {
+
             boost::ignore_unused( superCellSize );
 
             using SuperCellSize = T_SuperCellSize;
@@ -198,11 +211,11 @@ namespace operations
              * @warning pmacc restriction: all dimension must have the some number of guarding
              * supercells
              */
-            auto const numGuardSuperCells = destBuffer.getGridLayout().getGuard() /
+            auto const numGuardSuperCells = gridLayout.getGuard() /
                 SuperCellSize::toRT();
 
             MappingDesc const mappingDesc(
-                destBuffer.getGridLayout().getDataSpace(),
+                gridLayout.getDataSpace(),
                 numGuardSuperCells
             );
 
@@ -226,11 +239,20 @@ namespace operations
                 mapper.getGridDim( ),
                 numWorkers
             )(
-                destBuffer.device( ).data( ).getDataBox( ),
-                destBuffer.getReceiveExchange( exchangeType )->device( ).data( ).getDataBox( ),
-                destBuffer.getReceiveExchange( exchangeType )->device( ).data( ).getDataSpace( ),
+                devData.getDataBox( ),
+                exDevData.getDataBox( ),
+                exDevData.getDataSpace( ),
                 direction,
                 mapper
+            );
+                },
+
+                TaskProperties::Builder()
+                    .label("KernelCopyGuardToExchange")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                destBuffer.device().data().write().access_directions( Mask(exchangeType) ),
+                destBuffer.getReceiveExchange( exchangeType )->device().data().read()
             );
         }
     };

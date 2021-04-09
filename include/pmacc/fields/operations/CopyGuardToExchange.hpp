@@ -176,51 +176,71 @@ namespace operations
             uint32_t const exchangeType
         ) const
         {
-            boost::ignore_unused( superCellSize );
+            auto gridLayout = srcBuffer.getGridLayout();
 
-            using SuperCellSize = T_SuperCellSize;
+            Environment<>::task(
+                [
+                   superCellSize,
+                   gridLayout,
+                   exchangeType
+                ](
+                   auto devData,
+                   auto exDevData
+                )
+                {
+                    boost::ignore_unused( superCellSize );
 
-            constexpr int dim = T_SuperCellSize::dim;
+                    using SuperCellSize = T_SuperCellSize;
 
-            using MappingDesc = MappingDescription<
-                dim,
-                SuperCellSize
-            >;
+                    constexpr int dim = T_SuperCellSize::dim;
 
-            /* use only the x dimension to determine the number of supercells in the guard
-             * pmacc restriction: all dimension must have the some number of guarding
-             * supercells.
-             */
-            auto const numGuardSuperCells = srcBuffer.getGridLayout().getGuard() /
-                SuperCellSize::toRT();
+                    using MappingDesc = MappingDescription<
+                        dim,
+                        SuperCellSize
+                    >;
 
-            MappingDesc const mappingDesc(
-                srcBuffer.getGridLayout().getDataSpace(),
-                numGuardSuperCells
-            );
+                    /* use only the x dimension to determine the number of supercells in the guard
+                     * pmacc restriction: all dimension must have the some number of guarding
+                     * supercells.
+                     */
+                    auto const numGuardSuperCells = gridLayout.getGuard() / SuperCellSize::toRT();
 
-            ExchangeMapping<
-                GUARD,
-                MappingDesc
-            > mapper( mappingDesc, exchangeType );
+                    MappingDesc const mappingDesc(
+                        gridLayout.getDataSpace(),
+                        numGuardSuperCells
+                    );
 
-            DataSpace< dim > const direction = Mask::getRelativeDirections< dim >(
-                mapper.getExchangeType( )
-            );
+                    ExchangeMapping<
+                        GUARD,
+                        MappingDesc
+                    > mapper( mappingDesc, exchangeType );
 
-            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                pmacc::math::CT::volume< SuperCellSize >::type::value
-            >::value;
+                    DataSpace< dim > const direction = Mask::getRelativeDirections< dim >(
+                        mapper.getExchangeType( )
+                    );
 
-            PMACC_KERNEL( KernelCopyGuardToExchange< numWorkers >{ } )(
-                mapper.getGridDim( ),
-                numWorkers
-            )(
-                srcBuffer.getSendExchange( exchangeType )->device( ).data( ).getDataBox( ),
-                srcBuffer.device( ).data( ).getDataBox( ),
-                srcBuffer.getSendExchange( exchangeType )->device( ).data( ).getDataSpace( ),
-                direction,
-                mapper
+                    constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                        pmacc::math::CT::volume< SuperCellSize >::type::value
+                    >::value;
+
+                    PMACC_KERNEL( KernelCopyGuardToExchange< numWorkers >{ } )(
+                        mapper.getGridDim( ),
+                        numWorkers
+                    )(
+                        exDevData.getDataBox( ),
+                        devData.getDataBox( ),
+                        exDevData.getDataSpace( ),
+                        direction,
+                        mapper
+                    );
+                },
+
+                TaskProperties::Builder()
+                    .label("KernelCopyGuardToExchange")
+                    .scheduling_tags({ SCHED_CUPLA }),
+
+                srcBuffer.device().data().read().access_directions( Mask(exchangeType) ),
+                srcBuffer.getSendExchange( exchangeType )->device().data().write()
             );
         }
     };

@@ -159,19 +159,18 @@ GridLayout<simDim> FieldJ::getGridLayout( )
 void FieldJ::communication( )
 {
     for (uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
-    {
         if ( buffer.hasSendExchange( i ) )
         {
             bashField( i );
             buffer.send( i );
         }
 
+    for (uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
         if ( buffer.hasReceiveExchange( i ) )
         {
             buffer.recv( i );
             insertField( i );
         }
-    }
 
     if( fieldJrecv != nullptr )
         fieldJrecv->communication();
@@ -339,41 +338,19 @@ void FieldJ::addCurrentToEMF( T_CurrentInterpolation& myCurrentInterpolation )
 
 void FieldJ::bashField( uint32_t exchangeType )
 {
-    Environment<>::task(
-        [ exchangeType ]( auto buffer )
-	{
-            pmacc::fields::operations::CopyGuardToExchange{ }(
-                buffer,
-                SuperCellSize{ },
-                exchangeType
-            );
-	},
-
-        TaskProperties::Builder()
-            .label("FieldJ::bashField()")
-            .scheduling_tags({ SCHED_CUPLA }),
-
-        this->getGridBuffer()
+    pmacc::fields::operations::CopyGuardToExchange{ }(
+        this->getGridBuffer(),
+        SuperCellSize{ },
+        exchangeType
     );
 }
 
 void FieldJ::insertField( uint32_t exchangeType )
 {
-    Environment<>::task(
-        [ exchangeType ]( auto buffer )
-	{
-            pmacc::fields::operations::AddExchangeToBorder{ }(
-                buffer,
-                SuperCellSize{ },
-                exchangeType
-            );
-	},
-
-        TaskProperties::Builder()
-            .label("FieldJ::insertField()")
-            .scheduling_tags({ SCHED_CUPLA }),
-
-        this->getGridBuffer()
+    pmacc::fields::operations::AddExchangeToBorder{ }(
+        this->getGridBuffer(),
+        SuperCellSize{ },
+        exchangeType
     );
 }
 
