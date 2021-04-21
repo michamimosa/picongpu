@@ -20,7 +20,6 @@ void fast_copy(
     size_t size
 )
 {
-    cuplaStream_t cuda_stream = 0;
     CUDA_CHECK(cuplaMemcpyAsync(dst,
                                src,
                                size * sizeof (T),
@@ -39,7 +38,6 @@ void copy(
     DataSpace<DIM1> const & size
 )
 {
-    cuplaStream_t cuda_stream = 0;
     CUDA_CHECK(cuplaMemcpyAsync(dst.getPointer(),
                                src.getPointer(),
                                size[0] * sizeof (T),
