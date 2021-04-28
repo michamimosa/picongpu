@@ -219,8 +219,9 @@ public:
             isPeriodic[i] = periodic[i];
         }
 
-        Environment<>::get().initScheduler( n_threads, n_streams );
         Environment<simDim>::get().initDevices(gpus, isPeriodic);
+        Environment<>::get().initScheduler( n_threads, n_streams );
+
         pmacc::GridController< simDim > & gc = pmacc::Environment<simDim>::get().GridController();
 
         DataSpace<simDim> myGPUpos(gc.getPosition());
