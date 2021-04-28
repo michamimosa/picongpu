@@ -317,6 +317,53 @@ device_set_value_big(
     );
 }
 
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy,
+    bool T_is_small
+>
+struct FillHelper
+{
+    auto operator() (
+        device_buffer::WriteGuard<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        > const & device_buffer,
+        T_Item value
+    )
+    {
+        return device_set_value_big( device_buffer, value );
+    }
+};
+
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy
+>
+struct FillHelper<
+    T_Item,
+    T_dim,
+    T_DataAccessPolicy,
+    true
+>
+{
+    auto operator() (
+        device_buffer::WriteGuard<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        > const & device_buffer,
+        T_Item value
+    )
+    {
+        return device_set_value_small( device_buffer, value );
+    }
+};
+
 template<
     typename T_Item,
     std::size_t T_dim,
@@ -336,12 +383,15 @@ auto fill(
      isSmall = (sizeof(T_Item) <= 128)
     }; //if we use const variable the compiler create warnings
 
-    if( isSmall )
-        device_set_value_small( device_buffer, value );
-    else
-        device_set_value_big( device_buffer, value );
+    FillHelper<
+        T_Item,
+        T_dim,
+        T_DataAccessPolicy,
+        isSmall
+    >
+    {}
+    ( device_buffer, value );
 }
-
 
 template<
     typename T_Item,

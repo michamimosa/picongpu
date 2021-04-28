@@ -204,7 +204,7 @@ private:
     /* define field plugins */
     using UnspecializedFieldPlugins = bmpl::vector<
 #if( PMACC_CUDA_ENABLED == 1 )
-        SliceFieldPrinterMulti< bmpl::_1 >
+        //SliceFieldPrinterMulti< bmpl::_1 >
 #endif
     >;
 

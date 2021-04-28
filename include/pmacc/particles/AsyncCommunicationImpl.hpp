@@ -53,7 +53,7 @@ namespace pmacc{
 
                 size_t n_exchanges = traits::NumberOfExchanges< T_Particles::Dim >::value;
 
-                for(int i = 1; i < n_exchanges; ++i)
+                for(size_t i = 1; i < n_exchanges; ++i)
                 {                    
                     if( particles.getParticlesBuffer().hasSendExchange( i ) )
                         handleExchanged.handleOutgoing( particles, i );
@@ -61,7 +61,7 @@ namespace pmacc{
                         handleNotExchanged.handleOutgoing( particles, i );
                 }
 
-                for(int i = 1; i < n_exchanges; ++i)
+                for(size_t i = 1; i < n_exchanges; ++i)
                 {
                     if( particles.getParticlesBuffer().hasReceiveExchange( i ) )
                         handleExchanged.handleIncoming( particles, i );

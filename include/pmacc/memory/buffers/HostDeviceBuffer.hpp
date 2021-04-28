@@ -132,7 +132,6 @@ template <
 struct WriteGuard
     : protected ReadGuard< T_Item, T_dim, T_DataAccessPolicy >
 {
-    operator ReadGuard< T_Item, T_dim, T_DataAccessPolicy >() const noexcept { return this->read(); }
     auto write() const noexcept { return *this; }
 
     auto host() const noexcept { return this->host_buf.write(); }
@@ -169,6 +168,8 @@ template <
 struct HostDeviceBuffer
     : host_device_buffer::WriteGuard< T_Item, T_dim, T_DataAccessPolicy >
 {    
+    using DataBoxType = DataBox< PitchedBox< T_Item, T_dim > >;
+
     HostDeviceBuffer(
         DataSpace< T_dim > capacity,
         bool size_on_device = false

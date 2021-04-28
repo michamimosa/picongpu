@@ -30,9 +30,9 @@
 #include <pmacc/particles/meta/FindByNameOrType.hpp>
 
 #include "picongpu/particles/traits/GetIonizerList.hpp"
-#if( PMACC_CUDA_ENABLED == 1 )
-#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.hpp"
-#endif
+//#if( PMACC_CUDA_ENABLED == 1 )
+//#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.hpp"
+//#endif
 #include "picongpu/particles/traits/GetPhotonCreator.hpp"
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.hpp"
 #include "picongpu/particles/creation/creation.hpp"
@@ -414,6 +414,8 @@ struct CallIonization
  *
  * @tparam T_ElectronSpecies type or name as boost::mpl::string of electron particle species
  */
+
+/*
 template<typename T_ElectronSpecies>
 struct CallBremsstrahlung
 {
@@ -451,6 +453,7 @@ struct CallBremsstrahlung
      * \param cellDesc logical block information like dimension and cell sizes
      * \param currentStep the current time step
      */
+/*
     template<typename T_CellDescription, typename ScaledSpectrumMap>
     HINLINE void operator()(
         T_CellDescription cellDesc,
@@ -462,9 +465,9 @@ struct CallBremsstrahlung
         DataConnector &dc = Environment<>::get().DataConnector();
 
         /* alias for pointer on source species */
-        auto electronSpeciesPtr = dc.get< ElectronSpecies >( ElectronFrameType::getName(), true );
+  //      auto electronSpeciesPtr = dc.get< ElectronSpecies >( ElectronFrameType::getName(), true );
         /* alias for pointer on destination species */
-        auto photonSpeciesPtr = dc.get< PhotonSpecies >( PhotonFrameType::getName(), true );
+/*        auto photonSpeciesPtr = dc.get< PhotonSpecies >( PhotonFrameType::getName(), true );
 
         const float_X targetZ = GetAtomicNumbers<IonSpecies>::type::numberOfProtons;
 
@@ -482,6 +485,7 @@ struct CallBremsstrahlung
     }
 
 };
+*/
 #endif
 
 /** Handles the synchrotron radiation emission of photons from electrons

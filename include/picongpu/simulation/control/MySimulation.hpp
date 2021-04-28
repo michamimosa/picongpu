@@ -73,8 +73,8 @@
 #include <pmacc/random/RNGProvider.hpp>
 
 #if( PMACC_CUDA_ENABLED == 1 )
-#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
-#   include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"
+//#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
+//#   include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"
 #endif
 
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.hpp"
@@ -364,6 +364,7 @@ public:
             this->synchrotronFunctions.init();
         }
 #if( PMACC_CUDA_ENABLED == 1 )
+/*
         // Initialize bremsstrahlung lookup tables, if there are species containing bremsstrahlung photons
         if(!bmpl::empty<AllBremsstrahlungPhotonsSpecies>::value)
         {
@@ -375,6 +376,7 @@ public:
 
             this->bremsstrahlungPhotonAngle.init();
         }
+*/
 #endif
 
 #if( BOOST_LANG_CUDA || BOOST_COMP_HIP)
@@ -463,7 +465,7 @@ public:
 
 #if( BOOST_LANG_CUDA || BOOST_COMP_HIP)
         /* add CUDA streams to the StreamController for concurrent execution */
-        Environment<>::get().StreamController().addStreams(6);
+        //Environment<>::get().StreamController().addStreams(6);
 #endif
     }
 
@@ -562,6 +564,7 @@ public:
         SynchrotronRadiation{ *cellDescription, synchrotronFunctions }( currentStep );
 
 #if( PMACC_CUDA_ENABLED == 1 )
+/*
             Bremsstrahlung{
                 *cellDescription,
                 scaledBremsstrahlungSpectrumMap,
@@ -569,6 +572,7 @@ public:
             }(
                 currentStep
             );
+*/
 #endif
 
         ParticlePush{ }( currentStep );
@@ -662,8 +666,10 @@ protected:
 #if( PMACC_CUDA_ENABLED == 1 )
     // creates lookup tables for the bremsstrahlung effect
     // map<atomic number, scaled bremsstrahlung spectrum>
+    /*
     std::map<float_X, particles::bremsstrahlung::ScaledSpectrum> scaledBremsstrahlungSpectrumMap;
     particles::bremsstrahlung::GetPhotonAngle bremsstrahlungPhotonAngle;
+    */
 #endif
 
     // Synchrotron functions (used in synchrotronPhotons module)
@@ -757,6 +763,6 @@ private:
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.tpp"
 
 #if( PMACC_CUDA_ENABLED == 1 )
-#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.tpp"
-#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.tpp"
+//#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.tpp"
+//#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.tpp"
 #endif

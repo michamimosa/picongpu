@@ -107,6 +107,7 @@ namespace maxwellSolver
             {
                 Environment<>::task(
                     [
+                        this,
                         currentStep,
                         cellDescription = this->cellDescription
                     ](
@@ -167,6 +168,7 @@ namespace maxwellSolver
 
                 Environment<>::task(
                     [
+                        this,
                         currentStep,
                         cellDescription = this->cellDescription
                     ](

@@ -32,7 +32,7 @@ namespace pmacc
 
 template< typename T_DeviceHeap >
 MallocMCBuffer< T_DeviceHeap >::MallocMCBuffer( const std::shared_ptr<DeviceHeap>& deviceHeap ) :
-    hostData( std::shared_ptr< char >( nullptr ) )
+    hostData( std::shared_ptr< char >( nullptr ) ),
     /* currently mallocMC has only one heap */
     deviceHeapInfo( deviceHeap->getHeapLocations( )[ 0 ] ),
     hostBufferOffset( 0 )

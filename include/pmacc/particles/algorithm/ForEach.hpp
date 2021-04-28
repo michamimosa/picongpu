@@ -169,20 +169,21 @@ namespace detail
         T_Functor functor
     )
     {
-        auto cellDescription = species.getCellDescription();
-        using MappingDesc = decltype( cellDescription );
+        //MappingDesc cellDescription = species.getCellDescription();
 
         Environment<>::task(
             [
-                functor = std::move(functor),
-                cellDescription
+                functor = std::move(functor)
             ](
-                auto parDevice
+                auto parDevice,
+                auto species
             ){
+                using MappingDesc = decltype( species.getCellDescription() );
+
                 AreaMapping<
                     CORE + BORDER,
                     MappingDesc
-                > mapper( cellDescription );
+                > mapper( species.getCellDescription() );
 
                 using SuperCellSize = typename MappingDesc::SuperCellSize;
 
