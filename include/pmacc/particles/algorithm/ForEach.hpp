@@ -173,10 +173,10 @@ namespace detail
 
         Environment<>::task(
             [
-                functor = std::move(functor)
+                functor = std::move(functor),
+                species
             ](
-                auto parDevice,
-                auto species
+                auto parDevice
             ){
                 using MappingDesc = decltype( species.getCellDescription() );
 
