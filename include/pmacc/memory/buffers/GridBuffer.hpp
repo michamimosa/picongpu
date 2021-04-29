@@ -215,7 +215,7 @@ struct GridBuffer
         sendMask = this->receiveMask.getMirroredMask();
         Mask send = receive.getMirroredMask();
 
-        auto n_ex = -12 * (int) T_dim + 6 * (int) T_dim * (int) T_dim + 9;
+        uint32_t n_ex = -12 * (int) T_dim + 6 * (int) T_dim * (int) T_dim + 9;
         for (uint32_t ex = 1; ex < n_ex; ++ex)
         {
             if (send.isSet(ex))
