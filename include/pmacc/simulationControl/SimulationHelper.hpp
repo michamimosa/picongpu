@@ -276,11 +276,10 @@ public:
              */
             while (currentStep < Environment<>::get().SimulationDescription().getRunSteps())
             {
+                Environment<>::get().waitForAllTasks();
                 tRound.toggleStart();
                 runOneStep(currentStep);
-
-                //Environment<>::get().waitForAllTasks();
-
+                Environment<>::get().waitForAllTasks();
                 tRound.toggleEnd();
                 roundAvg += tRound.getInterval();
 
