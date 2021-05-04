@@ -395,8 +395,16 @@ struct DeviceGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellS
 
     using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::ParticlesBoxType;
 
+    uint32_t area;
+    Mask directions;
+    
     DeviceGuard(ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const & b)
-        : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b) {}
+        : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b),
+          area{ CORE + BORDER + GUARD }
+    {
+        for( int i=1; i < 27; ++i)
+            this->directions = this->directions + Mask(i);
+    }
 
     /**
      * Returns a ParticlesBox for device frame data.
@@ -409,6 +417,24 @@ struct DeviceGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellS
             this->superCells.device().data().getDataBox(),
             this->m_deviceHeap->getAllocatorHandle()
         );
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_dataPlace( uint32_t area ) const
+    {
+        auto n = *this;
+        n.area = area;
+        n.directions = this->directions;
+        return n;
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_directions( Mask directions ) const
+    {
+        auto n = *this;
+        n.area = this->area;
+        n.directions = directions;
+        return n;
     }
 };
 
@@ -428,7 +454,7 @@ struct redGrapes::trait::BuildProperties<
         pmacc::particles_buffer::HostGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const & buf
     )
     {
-        builder.add( buf.superCells.host().data() );
+        builder.add( buf.superCells.host().data() );//.access_dataPlace( buf.area ).access_directions( buf.exchangeType ) );
     }
 };
 
@@ -443,7 +469,7 @@ struct redGrapes::trait::BuildProperties<
         pmacc::particles_buffer::DeviceGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& buf
     )
     {
-        builder.add( buf.superCells.device().data() );
+        builder.add( buf.superCells.device().data().access_dataPlace( buf.area ).access_directions( buf.directions ) );
     }
 };
 

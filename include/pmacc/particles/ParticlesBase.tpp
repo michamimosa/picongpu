@@ -134,7 +134,7 @@ namespace pmacc
                     .label("KernelCopyGuardToExchange(" + pmacc::type::ExchangeTypeNames{}[exchangeType] + ")")
                     .scheduling_tags({ SCHED_CUPLA }),
 
-                particlesBuffer.device(), // TODO: exchange_type, data place
+                particlesBuffer.device().access_dataPlace( GUARD ).access_directions( exchangeType ),
 		sendExchangeStack.device()
             );
 	}
@@ -191,7 +191,7 @@ namespace pmacc
                         .label("KernelInsertParticles(" + pmacc::type::ExchangeTypeNames{}[exchangeType] + ")")
                         .scheduling_tags({ SCHED_CUPLA }),
 
-                    particlesBuffer.device(),//TODO: exchange_type, data_place
+                    particlesBuffer.device().access_dataPlace( BORDER ).access_directions( exchangeType ),
                     recvExchangeStack.device()
                 );
             }

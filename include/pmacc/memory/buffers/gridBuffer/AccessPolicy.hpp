@@ -495,6 +495,25 @@ public:
     {
         return ReadGuard( *this, exchangeType, dataPlace, guardingCells, gridLayout );
     }
+
+
+    //! only reduces resource access, not memory offset
+    auto access_dataPlace( uint32_t area ) const
+    {
+        auto n = *this;
+        n.area = area;
+        n.directions = this->directions;
+        return n;
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_directions( Mask directions ) const
+    {
+        auto n = *this;
+        n.area = this->area;
+        n.directions = directions;
+        return n;
+    }
 };
 
 template < typename Buffer >
@@ -564,6 +583,24 @@ public:
     )
     {
         return WriteGuard( *this, exchangeType, dataPlace, guardingCells, gridLayout );
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_dataPlace( uint32_t area ) const
+    {
+        auto n = *this;
+        n.area = area;
+        n.directions = this->directions;
+        return n;
+    }
+
+    //! only reduces resource access, not memory offset
+    auto access_directions( Mask directions ) const
+    {
+        auto n = *this;
+        n.area = this->area;
+        n.directions = directions;
+        return n;
     }
 };
 
