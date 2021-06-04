@@ -22,7 +22,8 @@
 #pragma once
 
 // Bremsstrahlung is available only with CUDA
-#if(PMACC_CUDA_ENABLED == 1)
+#if 0
+//( PMACC_CUDA_ENABLED == 1 )
 
 #    include "picongpu/particles/ParticlesFunctors.hpp"
 #    include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"

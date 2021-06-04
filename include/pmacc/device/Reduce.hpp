@@ -72,80 +72,109 @@ namespace pmacc
                 typedef typename boost::remove_const<
                     typename boost::remove_reference<typename traits::GetValueType<Src>::ValueType>::type>::type Type;
 
-                uint32_t blockcount = optimalThreadsPerBlock(n, sizeof(Type));
+                Environment<>::task(
+                    [this, func, src, n](auto deviceData) mutable {
+                        uint32_t blockcount = optimalThreadsPerBlock(n, sizeof(Type));
 
-                uint32_t n_buffer = byte / sizeof(Type);
+                        uint32_t n_buffer = byte / sizeof(Type);
 
-                uint32_t threads = n_buffer * blockcount
-                    * 2; /* x2 is used thus we can use all byte in Buffer, after we calculate threads/2 */
+                        uint32_t threads = n_buffer * blockcount
+                            * 2; /* x2 is used thus we can use all byte in Buffer, after we calculate threads/2 */
 
+                        if(threads > n)
+                            threads = n;
 
-                if(threads > n)
-                    threads = n;
-                Type* dest = (Type*) reduceBuffer->getDeviceBuffer().getBasePointer();
+                        Type* dest = (Type*) deviceData.getBasePointer();
 
-                uint32_t blocks = threads / 2 / blockcount;
-                if(blocks == 0)
-                    blocks = 1;
-                callReduceKernel<Type>(
-                    blocks,
-                    blockcount,
-                    blockcount * sizeof(Type),
-                    src,
-                    n,
-                    dest,
-                    func,
-                    pmacc::math::operation::Assign());
-                n = blocks;
-                blockcount = optimalThreadsPerBlock(n, sizeof(Type));
-                blocks = n / 2 / blockcount;
-                if(blocks == 0 && n > 1)
-                    blocks = 1;
+                        uint32_t blocks = threads / 2 / blockcount;
+                        if(blocks == 0)
+                            blocks = 1;
 
+                        Environment<>::task(
+                            [this, blocks, blockcount, src, dest, n, func](auto deviceData) {
+                                callReduceKernel<Type>(
+                                    blocks,
+                                    blockcount,
+                                    blockcount * sizeof(Type),
+                                    src,
+                                    n,
+                                    dest,
+                                    func,
+                                    pmacc::math::operation::Assign());
+                            },
+                            TaskProperties::Builder().scheduling_tags({SCHED_CUPLA}),
+                            deviceData.write());
 
-                while(blocks != 0)
-                {
-                    if(blocks > 1)
-                    {
-                        uint32_t blockOffset = ceil((double) blocks / blockcount);
-                        uint32_t useBlocks = blocks - blockOffset;
-                        uint32_t problemSize = n - (blockOffset * blockcount);
-                        Type* srcPtr = dest + (blockOffset * blockcount);
+                        n = blocks;
+                        blockcount = optimalThreadsPerBlock(n, sizeof(Type));
+                        blocks = n / 2 / blockcount;
 
-                        callReduceKernel<Type>(
-                            useBlocks,
-                            blockcount,
-                            blockcount * sizeof(Type),
-                            srcPtr,
-                            problemSize,
-                            dest,
-                            func,
-                            func);
-                        blocks = blockOffset * blockcount;
-                    }
-                    else
-                    {
-                        callReduceKernel<Type>(
-                            blocks,
-                            blockcount,
-                            blockcount * sizeof(Type),
-                            dest,
-                            n,
-                            dest,
-                            func,
-                            pmacc::math::operation::Assign());
-                    }
+                        if(blocks == 0 && n > 1)
+                            blocks = 1;
 
-                    n = blocks;
-                    blockcount = optimalThreadsPerBlock(n, sizeof(Type));
-                    blocks = n / 2 / blockcount;
-                    if(blocks == 0 && n > 1)
-                        blocks = 1;
-                }
+                        while(blocks != 0)
+                        {
+                            if(blocks > 1)
+                            {
+                                uint32_t blockOffset = ceil((double) blocks / blockcount);
+                                uint32_t useBlocks = blocks - blockOffset;
+                                uint32_t problemSize = n - (blockOffset * blockcount);
+                                Type* srcPtr = dest + (blockOffset * blockcount);
+
+                                Environment<>::task(
+                                    [this, useBlocks, blockcount, srcPtr, dest, n, problemSize, func](
+                                        auto deviceData) {
+                                        callReduceKernel<Type>(
+                                            useBlocks,
+                                            blockcount,
+                                            blockcount * sizeof(Type),
+                                            srcPtr,
+                                            problemSize,
+                                            dest,
+                                            func,
+                                            func);
+                                    },
+                                    TaskProperties::Builder().scheduling_tags({SCHED_CUPLA}),
+                                    deviceData.write());
+
+                                blocks = blockOffset * blockcount;
+                            }
+                            else
+                            {
+                                Environment<>::task(
+                                    [this, blocks, blockcount, src, dest, n, func](auto deviceData) {
+                                        callReduceKernel<Type>(
+                                            blocks,
+                                            blockcount,
+                                            blockcount * sizeof(Type),
+                                            dest,
+                                            n,
+                                            dest,
+                                            func,
+                                            pmacc::math::operation::Assign());
+                                    },
+                                    TaskProperties::Builder().scheduling_tags({SCHED_CUPLA}),
+                                    deviceData.write());
+                            }
+
+                            n = blocks;
+                            blockcount = optimalThreadsPerBlock(n, sizeof(Type));
+                            blocks = n / 2 / blockcount;
+                            if(blocks == 0 && n > 1)
+                                blocks = 1;
+                        }
+                    },
+                    TaskProperties::Builder().label("reduce kernels"),
+
+                    reduceBuffer->device().data());
 
                 reduceBuffer->deviceToHost();
-                __getTransactionEvent().waitForFinished();
-                return *((Type*) (reduceBuffer->getHostBuffer().getBasePointer()));
+
+                return Environment<>::task(
+                           [](auto hostData) { return *((Type*) (hostData.getBasePointer())); },
+                           TaskProperties::Builder().label("read reduceBuffer"),
+                           reduceBuffer->host().data().read())
+                    .get();
             }
 
             virtual ~Reduce()
@@ -270,6 +299,8 @@ namespace pmacc
                 return getThreadsPerBlock(std::min(sharedBorder, n));
             }
 
+            friend class redGrapes::trait::BuildProperties<pmacc::device::Reduce>;
+            
             /*global gpu buffer for reduce steps*/
             GridBuffer<char, DIM1>* reduceBuffer;
             /*buffer size limit in bytes on gpu*/
@@ -280,3 +311,14 @@ namespace pmacc
 
     } // namespace device
 } // namespace pmacc
+
+template<>
+struct redGrapes::trait::BuildProperties<pmacc::device::Reduce>
+{
+    template<typename Builder>
+    static void build(Builder& builder, pmacc::device::Reduce const& reduce)
+    {
+        builder.add(*reduce.reduceBuffer);
+    }
+};
+

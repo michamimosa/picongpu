@@ -23,7 +23,6 @@
 
 /* #includes in "test/memoryUT.cu" */
 
-
 namespace pmacc
 {
     namespace test
@@ -52,29 +51,32 @@ namespace pmacc
                         {
                             ::pmacc::DataSpace<T_Dim::value> const dataSpace
                                 = ::pmacc::DataSpace<T_Dim::value>::create(nElementsPerDim[i]);
-                            ::pmacc::HostBuffer<Data, T_Dim::value>* hostBufferIntern
-                                = new ::pmacc::HostBufferIntern<Data, T_Dim::value>(dataSpace);
-                            ::pmacc::DeviceBuffer<Data, T_Dim::value>* deviceBufferIntern
-                                = new ::pmacc::DeviceBufferIntern<Data, T_Dim::value>(dataSpace);
 
-                            hostBufferIntern->reset();
+                            ::pmacc::memory::HostBuffer<Data, T_Dim::value> hostBuffer(dataSpace);
+                            ::pmacc::memory::DeviceBuffer<Data, T_Dim::value> deviceBuffer(dataSpace);
 
-                            for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
-                            {
-                                hostBufferIntern->getPointer()[i] = static_cast<Data>(i);
-                            }
+                            ::pmacc::Environment<>::task(
+                                [dataSpace](auto buf) {
+                                    for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
+                                    {
+                                        hostBufferIntern->getPointer()[i] = static_cast<Data>(i);
+                                    }
+                                },
+                                hostBuffer.write());
 
-                            deviceBufferIntern->copyFrom(*hostBufferIntern);
-                            hostBufferIntern->reset();
-                            hostBufferIntern->copyFrom(*deviceBufferIntern);
+                            ::pmacc::memory::buffers::copy( deviceBuffer.write(), hostBuffer.read() );
+                            ::pmacc::memory::buffers::reset( hostBuffer.write() );
+                            ::pmacc::memory::buffers::copy( hostBuffer.write(), deviceBuffer.read() );
 
-                            for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents()); ++i)
-                            {
-                                REQUIRE(hostBufferIntern->getPointer()[i] == static_cast<Data>(i));
-                            }
-
-                            delete hostBufferIntern;
-                            delete deviceBufferIntern;
+                            ::pmacc::Environment<>::task(
+                                    [dataSpace](auto bufData) {
+                                        for(size_t i = 0; i < static_cast<size_t>(dataSpace.productOfComponents());
+                                            ++i)
+                                        {
+                                            REQUIRE(bufData->getPointer()[i] == static_cast<Data>(i));
+                                        }
+                                    },
+                                    hostBuffer.data().read());
                         }
                     }
 

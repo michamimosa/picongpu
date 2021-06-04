@@ -1,4 +1,5 @@
-/* Copyright 2013-2021 Rene Widera, Maximilian Knespel, Alexander Grund
+/* Copyright 2013-2020 Rene Widera, Maximilian Knespel, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -33,6 +34,11 @@
 #include <pmacc/mappings/simulation/SubGrid.hpp>
 #include <pmacc/memory/buffers/GridBuffer.hpp>
 #include <pmacc/memory/dataTypes/Mask.hpp>
+#include <pmacc/mappings/kernel/AreaMapping.hpp>
+
+#include "Evolution.hpp"
+
+#include "GatherSlice.hpp"
 #include <pmacc/traits/NumberOfExchanges.hpp>
 
 #include <string>
@@ -52,21 +58,22 @@ namespace gol
         GatherSlice gather;
 
         /* for storing black (dead) and white (alive) data for gol */
-        Buffer* buff1; /* Buffer(@see types.h) for swapping between old and new world */
-        Buffer* buff2; /* like evolve(buff2 &, const buff1) would work internally */
+        std::optional<Buffer> buff1; /* Buffer(\see types.h) for swapping between old and new world */
+        std::optional<Buffer> buff2; /* like evolve(buff2 &, const buff1) would work internally */
         uint32_t steps;
 
         bool isMaster;
 
     public:
-        Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic)
+        Simulation(uint32_t rule, int32_t steps, Space gridSize, Space devices, Space periodic, size_t n_threads)
             : evo(rule)
             , steps(steps)
             , gridSize(gridSize)
             , isMaster(false)
-            , buff1(nullptr)
-            , buff2(nullptr)
         {
+            // initialize Resource Manager
+            pmacc::Environment<>::get().initScheduler(n_threads + 1, 4);
+
             /* -First this initializes the GridController with number of 'devices'*
              *  and 'periodic'ity. The init-routine will then create and manage   *
              *  the MPI processes and communication group and topology.           *
@@ -100,16 +107,16 @@ namespace gol
 
         void finalize()
         {
+            std::cout << "finalize simulation..." << std::endl;
             gather.finalize();
-            __delete(buff1);
-            __delete(buff2);
         }
 
         void init()
         {
+            std::cout << "Simulation init..." << std::endl;
             /* subGrid holds global and
-             * local SimulationSize and where the local SimArea is in the greater
-             * scheme using Offsets from global LEFT, TOP, FRONT
+             * local SimulationSize and where the local SimArea is in the greater         * scheme using Offsets from
+             * global LEFT, TOP, FRONT
              */
             const SubGrid<DIM2>& subGrid = Environment<DIM2>::get().SubGrid();
 
@@ -152,8 +159,8 @@ namespace gol
              * This is saved by init to be used by the kernel to identify itself. */
             evo.init(layout.getDataSpace(), Space::create(1));
 
-            buff1 = new Buffer(layout, false);
-            buff2 = new Buffer(layout, false);
+            buff1 = Buffer(layout, false);
+            buff2 = Buffer(layout, false);
 
             /* Set up the future data exchange. In this case we need to copy the
              * border cells of our neighbors to our guard cells, since we only read
@@ -189,13 +196,14 @@ namespace gol
             /* Calls kernel to initialize random generator. Game of Life is then  *
              * initialized using uniform random numbers. With 10% (second arg)    *
              * white points. World will be written to buffer in first argument    */
-            evo.initEvolution(buff1->getDeviceBuffer().getDataBox(), 0.1);
+            evo.initEvolution(buff1->device(), 0.1f);
         }
 
         void start()
         {
-            Buffer* read = buff1;
-            Buffer* write = buff2;
+            Buffer& read = *buff1;
+            Buffer& write = *buff2;
+
             for(uint32_t i = 0; i < steps; ++i)
             {
                 oneStep(i, read, write);
@@ -204,30 +212,38 @@ namespace gol
         }
 
     private:
-        void oneStep(uint32_t currentStep, Buffer* read, Buffer* write)
+        void oneStep(uint32_t currentStep, Buffer& current, Buffer& next)
         {
-            auto splitEvent = __getTransactionEvent();
-            /* GridBuffer 'read' will use 'splitEvent' to schedule transaction    *
-             * tasks from the Borders of the neighboring areas to the Guards of   *
-             * this local Area added by 'addExchange'. All transactions in        *
-             * Transaction Manager will then be done in parallel to the           *
-             * calculations in the core. In order to synchronize the data         *
-             * transfer for the case the core calculation is finished earlier,    *
-             * GridBuffer.asyncComm returns a transaction handle we can check     */
-            auto send = read->asyncCommunication(splitEvent);
-            evo.run<CORE>(read->getDeviceBuffer().getDataBox(), write->getDeviceBuffer().getDataBox());
-            /* Join communication with worker tasks, Now all next tasks run sequential */
-            __setTransactionEvent(send);
-            /* Calculate Borders */
-            evo.run<BORDER>(read->getDeviceBuffer().getDataBox(), write->getDeviceBuffer().getDataBox());
-            write->deviceToHost();
+            current.communication();
 
-            /* gather::operator() gathers all the buffers and assembles those to  *
-             * a complete picture discarding the guards.                          */
-            auto picture = gather(write->getHostBuffer().getDataBox());
-            PngCreator png;
+            evo.run<CORE>(current.device().read(), next.device().write());
+            evo.run<BORDER>(current.device().read(), next.device().write());
+
+            // copy Device -> Host
+            pmacc::mem::buffer::copy(next.host().write(), next.device().read());
+
+            auto pic = Environment<>::task(
+                           [this](auto data) {
+                               /* gather::operator() gathers all the buffers and assembles those to  *
+                                * a complete picture discarding the guards.                          */
+
+                               return gather(data.getDataBox());
+                           },
+                           pmacc::TaskProperties::Builder().label("Gather"),
+                           next.host().data().read())
+                           .get();
+
             if(isMaster)
-                png(currentStep, picture, gridSize);
+            {
+                Environment<>::task(
+                    [this, currentStep, pic] {
+                        PngCreator png;
+                        png(currentStep, pic, gridSize);
+                    },
+                    pmacc::TaskProperties::Builder().label("Write Png"))
+                    .get();
+            }
         }
-    };
+    }; // class Simulation
+
 } // namespace gol

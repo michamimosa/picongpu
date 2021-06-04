@@ -24,6 +24,8 @@
 #include "pmacc/dataManagement/ISimulationData.hpp"
 
 #include <cstdint>
+#include <redGrapes/resource/ioresource.hpp>
+
 #include <string>
 
 #if(PMACC_CUDA_ENABLED == 1 || ALPAKA_ACC_GPU_HIP_ENABLED == 1)
@@ -42,7 +44,9 @@ namespace pmacc
 
         MallocMCBuffer(const std::shared_ptr<DeviceHeap>& deviceHeap);
 
-        virtual ~MallocMCBuffer();
+        virtual ~MallocMCBuffer()
+        {
+        }
 
         SimulationDataId getUniqueId() override
         {
@@ -62,9 +66,9 @@ namespace pmacc
         void synchronize() override;
 
     private:
-        char* hostPtr;
-        int64_t hostBufferOffset;
-        mallocMC::HeapInfo deviceHeapInfo;
+        rg::IOResource<char> hostData; // is a shared_ptr< char >
+        rg::IOResource<int64_t> hostBufferOffset;
+        rg::IOResource<mallocMC::HeapInfo> deviceHeapInfo;
     };
 
 

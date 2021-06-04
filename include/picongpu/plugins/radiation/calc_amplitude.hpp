@@ -112,8 +112,9 @@ namespace picongpu
                     const vector_64 beta_dot(
                         (beta - particle.get_beta<When::now + 1>())
                         / delta_t); // numeric differentiation (backward difference)
-                    const Exponent exponent; // instance of the Exponent class // ???is a static class and no instance
-                                             // possible??? const One_minus_beta_times_n one_minus_beta_times_n;
+                    const Exponent
+                        exponent; // instance of the Exponent class // ???is a static class and no instance possible???
+                                  // const One_minus_beta_times_n one_minus_beta_times_n;
                     const picongpu::float_64 factor(exponent(1.0 / (One_minus_beta_times_n()(n, particle))));
                     // factor=1/(1-beta*n)^g   g=2 for DFT and g=3 for FFT
                     return (n % ((n - beta) % beta_dot)) * factor;

@@ -19,6 +19,7 @@
  */
 
 #include "Simulation.hpp"
+
 #include "types.hpp"
 
 #include <pmacc/Environment.hpp>
@@ -46,6 +47,7 @@ int main(int argc, char** argv)
     std::vector<uint32_t> gridSize; /* same but with -g */
     std::vector<uint32_t> periodic;
     uint32_t steps;
+    size_t n_threads;
     std::string rule; /* Game of Life Simulation Rules like 23/3 */
 
     po::options_description desc("Allowed options");
@@ -68,7 +70,10 @@ int main(int argc, char** argv)
         "non-empty")(
         "periodic,p",
         po::value<std::vector<uint32_t>>(&periodic)->multitoken(),
-        "specifying whether the grid is periodic (1) or not (0) in each dimension, default: no periodic dimensions");
+        "specifying whether the grid is periodic (1) or not (0) in each dimension, default: no periodic dimensions")(
+        "threads,t",
+        po::value<size_t>(&n_threads),
+        "number of threads");
 
     /* parse command line options and config file and store values in vm */
     po::variables_map vm;
@@ -81,7 +86,6 @@ int main(int argc, char** argv)
         std::cerr << desc << "\n";
         return false;
     }
-
 
     /* fill periodic with 0 */
     while(periodic.size() < DIM2)
@@ -118,6 +122,7 @@ int main(int argc, char** argv)
     std::string stayAliveIf = rule.substr(0, gPoint);
     std::string newBornIf = rule.substr(gPoint + 1, strLen - gPoint - 1);
 
+    spdlog::set_pattern("[thread %t] [%l] %v");
 
     for(unsigned int i = 0; i < newBornIf.length(); ++i)
     {
@@ -141,14 +146,24 @@ int main(int argc, char** argv)
     }
     std::cout << "newborn if=" << newBornIf << " stay alive if=" << stayAliveIf << " mask=" << ruleMask << std::endl;
 
-    /* start game of life simulation */
-    gol::Simulation sim(ruleMask, steps, grid, gpus, endless);
-    sim.init();
-    sim.start();
-    sim.finalize();
+    spdlog::set_level(spdlog::level::trace);
 
-    /* finalize the pmacc context */
-    pmacc::Environment<>::get().finalize();
+    try
+    {
+        /* start game of life simulation */
+        gol::Simulation sim(ruleMask, steps, grid, gpus, endless, n_threads);
+        sim.init();
+        sim.start();
+        sim.finalize();
+
+        /* finalize the pmacc context */
+        pmacc::Environment<>::get().finalize();
+    }
+    catch(std::exception const& e)
+    {
+        spdlog::error(e.what());
+        // pmacc::functor_backtrace(std::cerr);
+    }
 
     return 0;
 }

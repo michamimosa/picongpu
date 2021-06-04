@@ -1,4 +1,5 @@
-/* Copyright 2013-2021 Felix Schmitt, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Felix Schmitt, Rene Widera, Benjamin Worpitz,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -22,12 +23,21 @@
 #pragma once
 
 #include "pmacc/assert.hpp"
-#include "pmacc/memory/buffers/Exchange.hpp"
+#include "pmacc/memory/buffers/gridBuffer/Exchange.hpp"
 #include "pmacc/particles/memory/boxes/ExchangePopDataBox.hpp"
 #include "pmacc/particles/memory/boxes/ExchangePushDataBox.hpp"
 
 namespace pmacc
 {
+    namespace stack_exchange_buffer
+    {
+        template<class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct HostGuard;
+
+        template<class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct DeviceGuard;
+    } // namespace stack_exchange_buffer
+
     /**
      * Can be used for creating several DataBox types from an Exchange.
      *
@@ -40,145 +50,207 @@ namespace pmacc
         /**
          * Create a stack from any ExchangeBuffer<FRAME,DIM>.
          *
-         * If the stack's internal GridBuffer has no sizeOnDevice, no device querys are allowed.
+         * If the stack's internal GridBuffer has no sizeOnDevice, no device
+         * querys are allowed.
          *
          * @param stack Exchange
          */
-        StackExchangeBuffer(Exchange<FRAME, DIM1>& stack, Exchange<FRAMEINDEX, DIM1>& stackIndexer)
+        StackExchangeBuffer(
+            mem::ExchangeBuffer<FRAME, DIM1, mem::grid_buffer::data::Access> const& stack,
+            mem::ExchangeBuffer<FRAMEINDEX, DIM1, mem::grid_buffer::data::Access> const& stackIndexer)
             : stack(stack)
             , stackIndexer(stackIndexer)
         {
         }
 
-        /**
-         * Returns a PushDataBox for the internal HostBuffer.
-         *
-         * @return PushDataBox for host buffer
-         */
-        ExchangePushDataBox<vint_t, FRAME, DIM> getHostExchangePushDataBox()
-        {
-            return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                stack.getHostBuffer().getBasePointer(),
-                stack.getHostBuffer().getCurrentSizePointer(),
-                stack.getHostBuffer().getDataSpace().productOfComponents(),
-                PushDataBox<vint_t, FRAMEINDEX>(
-                    stackIndexer.getHostBuffer().getBasePointer(),
-                    stackIndexer.getHostBuffer().getCurrentSizePointer()));
-        }
-
-        /**
-         * Returns a PopDataBox for the internal HostBuffer.
-         *
-         * @return PopDataBox for host buffer
-         */
-        ExchangePopDataBox<vint_t, FRAME, DIM> getHostExchangePopDataBox()
-        {
-            return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                stack.getHostBuffer().getDataBox(),
-                stackIndexer.getHostBuffer().getDataBox());
-        }
-
-        /**
-         * Returns a PushDataBox for the internal DeviceBuffer.
-         *
-         * @return PushDataBox for device buffer
-         */
-        ExchangePushDataBox<vint_t, FRAME, DIM> getDeviceExchangePushDataBox()
-        {
-            PMACC_ASSERT(stack.getDeviceBuffer().hasCurrentSizeOnDevice() == true);
-            PMACC_ASSERT(stackIndexer.getDeviceBuffer().hasCurrentSizeOnDevice() == true);
-            return ExchangePushDataBox<vint_t, FRAME, DIM>(
-                stack.getDeviceBuffer().getBasePointer(),
-                (vint_t*) stack.getDeviceBuffer().getCurrentSizeOnDevicePointer(),
-                stack.getDeviceBuffer().getDataSpace().productOfComponents(),
-                PushDataBox<vint_t, FRAMEINDEX>(
-                    stackIndexer.getDeviceBuffer().getBasePointer(),
-                    (vint_t*) stackIndexer.getDeviceBuffer().getCurrentSizeOnDevicePointer()));
-        }
-
-        /**
-         * Returns a PopDataBox for the internal DeviceBuffer.
-         *
-         * @return PopDataBox for device buffer
-         */
-        ExchangePopDataBox<vint_t, FRAME, DIM> getDeviceExchangePopDataBox()
-        {
-            return ExchangePopDataBox<vint_t, FRAME, DIM>(
-                stack.getDeviceBuffer().getDataBox(),
-                stackIndexer.getDeviceBuffer().getDataBox());
-        }
-
         void setCurrentSize(const size_t size)
         {
-            // do host and device setCurrentSize parallel
-            EventTask split = __getTransactionEvent();
-            EventTask e1;
+            if(auto host = stack.host())
+                host->size().set(size);
+            stack.device().size().set(size);
 
-            if(!Environment<>::get().isMpiDirectEnabled())
-            {
-                __startTransaction(split);
-                stackIndexer.getHostBuffer().setCurrentSize(size);
-                stack.getHostBuffer().setCurrentSize(size);
-                e1 = __endTransaction();
-            }
-
-            __startTransaction(split);
-            stackIndexer.getDeviceBuffer().setCurrentSize(size);
-            EventTask e2 = __endTransaction();
-            __startTransaction(split);
-            stack.getDeviceBuffer().setCurrentSize(size);
-            EventTask e3 = __endTransaction();
-
-            __setTransactionEvent(e1 + e2 + e3);
-        }
-
-        size_t getHostCurrentSize()
-        {
-            size_t result = 0u;
-            if(Environment<>::get().isMpiDirectEnabled())
-                result = stackIndexer.getDeviceBuffer().getCurrentSize();
-            else
-                result = stackIndexer.getHostBuffer().getCurrentSize();
-
-            return result;
-        }
-
-        size_t getDeviceCurrentSize()
-        {
-            return stackIndexer.getDeviceBuffer().getCurrentSize();
-        }
-
-        size_t getDeviceParticlesCurrentSize()
-        {
-            return stack.getDeviceBuffer().getCurrentSize();
-        }
-
-        size_t getHostParticlesCurrentSize()
-        {
-            if(Environment<>::get().isMpiDirectEnabled())
-                return stack.getDeviceBuffer().getCurrentSize();
-
-            return stack.getHostBuffer().getCurrentSize();
+            if(auto host = stackIndexer.host())
+                host->size().set(size);
+            stackIndexer.device().size().set(size);
         }
 
         size_t getMaxParticlesCount()
         {
-            size_t result = 0u;
             if(Environment<>::get().isMpiDirectEnabled())
-                result = stack.getDeviceBuffer().getDataSpace().productOfComponents();
+                return stack.device().getDataSpace().productOfComponents();
             else
-                result = stack.getHostBuffer().getDataSpace().productOfComponents();
-
-            return result;
+                return stack.host()->getDataSpace().productOfComponents();
         }
 
-    private:
-        Exchange<FRAME, DIM1>& getExchangeBuffer()
+        auto host() const
+        {
+            return stack_exchange_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>(*this);
+        }
+
+        auto device() const
+        {
+            return stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>(*this);
+        }
+
+    protected:
+        auto getExchangeBuffer()
         {
             return stack;
         }
 
-        Exchange<FRAME, DIM1>& stack;
-        Exchange<FRAMEINDEX, DIM1>& stackIndexer;
+        mem::ExchangeBuffer<FRAME, DIM1, mem::grid_buffer::data::Access> stack;
+        mem::ExchangeBuffer<FRAMEINDEX, DIM1, mem::grid_buffer::data::Access> stackIndexer;
     };
+
+    namespace stack_exchange_buffer
+    {
+        /*
+         * Acces Guard that only allows access to host side databoxes
+         */
+        template<class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct HostGuard : private StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>
+        {
+            friend class redGrapes::trait::BuildProperties<HostGuard>;
+
+            HostGuard(StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const& b)
+                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b)
+            {
+            }
+
+            size_t getCurrentSize()
+            {
+                if(Environment<>::get().isMpiDirectEnabled())
+                    return this->stackIndexer.device().size().get();
+                else
+                    return this->stackIndexer.host()->size().get();
+            }
+
+            size_t getParticlesCurrentSize()
+            {
+                if(Environment<>::get().isMpiDirectEnabled())
+                    return this->stack.device().size().get();
+                else
+                    return this->stack.host()->size().get();
+            }
+
+            /**
+             * Returns a PushDataBox for the internal HostBuffer.
+             *
+             * @return PushDataBox for host buffer
+             */
+            ExchangePushDataBox<vint_t, FRAME, DIM> getPushDataBox()
+            {
+                return ExchangePushDataBox<vint_t, FRAME, DIM>(
+                    this->stack.host()->data().getBasePointer(),
+                    this->stack.host()->size().get_host_pointer(),
+                    this->stack.host()->getDataSpace().productOfComponents(),
+                    PushDataBox<vint_t, FRAMEINDEX>(
+                        this->stackIndexer.host()->data().getBasePointer(),
+                        this->stackIndexer.host()->size().get_host_pointer()));
+            }
+
+            /**
+             * Returns a PopDataBox for the internal HostBuffer.
+             *
+             * @return PopDataBox for host buffer
+             */
+            ExchangePopDataBox<vint_t, FRAME, DIM> getPopDataBox()
+            {
+                return ExchangePopDataBox<vint_t, FRAME, DIM>(
+                    this->stack.host()->data().getDataBox(),
+                    this->stackIndexer.host()->data().getDataBox());
+            }
+        };
+
+        /*
+         * Acces Guard that only allows access to device side databoxes
+         */
+        template<class FRAME, class FRAMEINDEX, unsigned DIM>
+        struct DeviceGuard : private StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>
+        {
+            friend class redGrapes::trait::BuildProperties<DeviceGuard>;
+
+            DeviceGuard(StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const& b)
+                : StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>(b)
+            {
+            }
+
+            size_t getCurrentSize()
+            {
+                return this->stackIndexer.device().size().get();
+            }
+
+            size_t getParticlesCurrentSize()
+            {
+                return this->stack.device().size().get();
+            }
+
+            /**
+             * Returns a PushDataBox for the internal DeviceBuffer.
+             *
+             * @return PushDataBox for device buffer
+             */
+            ExchangePushDataBox<vint_t, FRAME, DIM> getPushDataBox()
+            {
+                PMACC_ASSERT(this->stack.device().size().is_on_device());
+                PMACC_ASSERT(this->stackIndexer.device().size().is_on_device());
+
+                return ExchangePushDataBox<vint_t, FRAME, DIM>(
+                    this->stack.device().data().getBasePointer(),
+                    (vint_t*) this->stack.device().size().get_device_pointer(),
+                    this->stack.device().getDataSpace().productOfComponents(),
+                    PushDataBox<vint_t, FRAMEINDEX>(
+                        this->stackIndexer.device().data().getBasePointer(),
+                        (vint_t*) this->stackIndexer.device().size().get_device_pointer()));
+            }
+
+            /**
+             * Returns a PopDataBox for the internal DeviceBuffer.
+             *
+             * @return PopDataBox for device buffer
+             */
+            ExchangePopDataBox<vint_t, FRAME, DIM> getPopDataBox()
+            {
+                return ExchangePopDataBox<vint_t, FRAME, DIM>(
+                    this->stack.device().data().getDataBox(),
+                    this->stackIndexer.device().data().getDataBox());
+            }
+        };
+
+    } // namespace stack_exchange_buffer
+
 } // namespace pmacc
+
+template<class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<pmacc::StackExchangeBuffer<FRAME, FRAMEINDEX, DIM>>
+{
+    template<typename Builder>
+    static void build(Builder& builder, pmacc::StackExchangeBuffer<FRAME, FRAMEINDEX, DIM> const& buf)
+    {
+        builder.add(buf.stack);
+        builder.add(buf.stackIndexer);
+    }
+};
+
+template<class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<pmacc::stack_exchange_buffer::HostGuard<FRAME, FRAMEINDEX, DIM>>
+{
+    template<typename Builder>
+    static void build(Builder& builder, pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf)
+    {
+        builder.add(buf.stack.host());
+        builder.add(buf.stackIndexer.host());
+    }
+};
+
+template<class FRAME, class FRAMEINDEX, unsigned DIM>
+struct redGrapes::trait::BuildProperties<pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM>>
+{
+    template<typename Builder>
+    static void build(Builder& builder, pmacc::stack_exchange_buffer::DeviceGuard<FRAME, FRAMEINDEX, DIM> const& buf)
+    {
+        builder.add(buf.stack.device());
+        builder.add(buf.stackIndexer.device());
+    }
+};
+

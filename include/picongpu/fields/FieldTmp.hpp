@@ -1,5 +1,5 @@
-/* Copyright 2013-2021 Axel Huebl, Rene Widera, Richard Pausch,
- *                     Benjamin Worpitz, Pawel Ordyna
+/* Copyright 2013-2020 Axel Huebl, Rene Widera, Richard Pausch,
+ *                     Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -77,26 +77,18 @@ namespace picongpu
         virtual ~FieldTmp() = default;
 
         //! Get a reference to the host-device buffer for the field values
-        HINLINE GridBuffer<ValueType, simDim>& getGridBuffer();
+        HINLINE pmacc::mem::GridBuffer<ValueType, simDim>& getGridBuffer();
 
         //! Get the grid layout
         HINLINE GridLayout<simDim> getGridLayout();
 
-        //! Get the host data box for the field values
-        HINLINE DataBoxType getHostDataBox();
-
-        //! Get the device data box for the field values
-        HINLINE DataBoxType getDeviceDataBox();
-
         /** Start asynchronous send of field values
          *
          * Add data from the local guard of the GPU to the border of the neighboring GPUs.
-         * This method can be called before or after asyncCommunicationGather without
+         * This method can be called before or after communicationGather without
          * explicit handling to avoid race conditions between both methods.
-         *
-         * @param serialEvent event to depend on
          */
-        HINLINE virtual EventTask asyncCommunication(EventTask serialEvent);
+        HINLINE virtual void communication();
 
         /** Reset the host-device buffer for field values
          *
@@ -148,7 +140,7 @@ namespace picongpu
          * This method can be called before or after asyncCommunication without
          * explicit handling to avoid race conditions between both methods.
          */
-        HINLINE EventTask asyncCommunicationGather(EventTask serialEvent);
+        HINLINE void communicationGather();
 
         /** Compute current density created by a species in an area
          *
@@ -176,19 +168,24 @@ namespace picongpu
          */
         HINLINE void insertField(uint32_t exchangeType);
 
+        auto host()
+        {
+            return fieldTmp->host();
+        }
+        auto device()
+        {
+            return fieldTmp->device();
+        }
+
     private:
         //! Host-device buffer for current density values
-        std::unique_ptr<GridBuffer<ValueType, simDim>> fieldTmp;
+        std::unique_ptr<pmacc::mem::GridBuffer<ValueType, simDim>> fieldTmp;
 
         //! Buffer for receiving near-boundary values
-        std::unique_ptr<GridBuffer<ValueType, simDim>> fieldTmpRecv;
+        std::unique_ptr<pmacc::mem::GridBuffer<ValueType, simDim>> fieldTmpRecv;
 
         //! Index of the temporary field
         uint32_t m_slotId;
-
-        //! Events for communication
-        EventTask m_scatterEv;
-        EventTask m_gatherEv;
 
         //! Tags for communication
         uint32_t m_commTagScatter;

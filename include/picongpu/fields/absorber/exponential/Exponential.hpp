@@ -86,8 +86,8 @@ namespace picongpu
                      * @param currentStep current time iteration
                      * @param deviceBox field box
                      */
-                    template<class BoxedMemory>
-                    void run(uint32_t currentStep, BoxedMemory deviceBox)
+                    template<class DeviceBuffer>
+                    void run(uint32_t currentStep, DeviceBuffer deviceBuffer)
                     {
                         const uint32_t numSlides = MovingWindow::getInstance().getSlideCounter(currentStep);
                         for(uint32_t i = 1; i < NumberOfExchanges<simDim>::value; ++i)
@@ -136,12 +136,21 @@ namespace picongpu
                                 if(MovingWindow::getInstance().isSlidingWindowActive(currentStep) && i == BOTTOM)
                                     continue;
 
-                                ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, i);
-                                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                                    pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
+                                Environment<>::task(
+                                    [cellDescription = this->cellDescription, i, absorber_strength, thickness](auto deviceData)
+                                    {
+                                        ExchangeMapping<GUARD, MappingDesc> mapper(cellDescription, i);
+                                        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                                            pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
 
-                                PMACC_KERNEL(KernelAbsorbBorder<numWorkers>{})
-                                (mapper.getGridDim(), numWorkers)(deviceBox, thickness, absorber_strength, mapper);
+                                        PMACC_KERNEL(KernelAbsorbBorder<numWorkers>{})
+                                        (mapper.getGridDim(),
+                                         numWorkers)(deviceData.getDataBox(), thickness, absorber_strength, mapper);
+                                    },
+                                    TaskProperties::Builder()
+                                        .label("ExponentialDamping::KernelAbsorbBorder")
+                                        .scheduling_tags({SCHED_CUPLA}),
+                                    deviceBuffer.data());
                             }
                         }
                     }

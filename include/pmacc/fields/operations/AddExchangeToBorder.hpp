@@ -22,9 +22,9 @@
 
 #pragma once
 
-#include "pmacc/fields/tasks/FieldFactory.hpp"
-#include "pmacc/mappings/kernel/ExchangeMapping.hpp"
+
 #include "pmacc/mappings/kernel/MappingDescription.hpp"
+#include "pmacc/mappings/kernel/ExchangeMapping.hpp"
 #include "pmacc/math/Vector.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 #include "pmacc/types.hpp"
@@ -158,37 +158,48 @@ namespace pmacc
                     T_SuperCellSize const& superCellSize,
                     uint32_t const exchangeType) const
                 {
-                    boost::ignore_unused(superCellSize);
+                    auto gridLayout = destBuffer.getGridLayout();
 
-                    using SuperCellSize = T_SuperCellSize;
+                    Environment<>::task(
+                        [superCellSize, gridLayout, exchangeType](auto devData, auto exDevData) {
+                            boost::ignore_unused(superCellSize);
 
-                    constexpr int dim = T_SuperCellSize::dim;
+                            using SuperCellSize = T_SuperCellSize;
 
-                    using MappingDesc = MappingDescription<dim, SuperCellSize>;
+                            constexpr int dim = T_SuperCellSize::dim;
 
-                    /* use only the x dimension to determine the number of supercells in the GUARD
-                     *
-                     * @warning pmacc restriction: all dimension must have the some number of guarding
-                     * supercells
-                     */
-                    auto const numGuardSuperCells = destBuffer.getGridLayout().getGuard() / SuperCellSize::toRT();
+                            using MappingDesc = MappingDescription<dim, SuperCellSize>;
 
-                    MappingDesc const mappingDesc(destBuffer.getGridLayout().getDataSpace(), numGuardSuperCells);
+                            /* use only the x dimension to determine the number of supercells in the GUARD
+                             *
+                             * @warning pmacc restriction: all dimension must have the some number of guarding
+                             * supercells
+                             */
+                            auto const numGuardSuperCells = gridLayout.getGuard() / SuperCellSize::toRT();
 
-                    ExchangeMapping<GUARD, MappingDesc> mapper(mappingDesc, exchangeType);
+                            MappingDesc const mappingDesc(gridLayout.getDataSpace(), numGuardSuperCells);
 
-                    constexpr uint32_t numWorkers
-                        = pmacc::traits::GetNumWorkers<pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
+                            ExchangeMapping<GUARD, MappingDesc> mapper(mappingDesc, exchangeType);
 
-                    const DataSpace<dim> direction = Mask::getRelativeDirections<dim>(mapper.getExchangeType());
+                            constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                                pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
 
-                    PMACC_KERNEL(KernelAddExchangeToBorder<numWorkers>{})
-                    (mapper.getGridDim(), numWorkers)(
-                        destBuffer.getDeviceBuffer().getDataBox(),
-                        destBuffer.getReceiveExchange(exchangeType).getDeviceBuffer().getDataBox(),
-                        destBuffer.getReceiveExchange(exchangeType).getDeviceBuffer().getDataSpace(),
-                        direction,
-                        mapper);
+                            const DataSpace<dim> direction
+                                = Mask::getRelativeDirections<dim>(mapper.getExchangeType());
+
+                            PMACC_KERNEL(KernelAddExchangeToBorder<numWorkers>{})
+                            (mapper.getGridDim(), numWorkers)(
+                                devData.getDataBox(),
+                                exDevData.getDataBox(),
+                                exDevData.getDataSpace(),
+                                direction,
+                                mapper);
+                        },
+
+                        TaskProperties::Builder().label("KernelCopyGuardToExchange").scheduling_tags({SCHED_CUPLA}),
+
+                        destBuffer.device().data().write().access_directions(Mask(exchangeType)),
+                        destBuffer.getReceiveExchange(exchangeType)->device().data().read());
                 }
             };
 

@@ -42,13 +42,11 @@
 #include "picongpu/unitless/fieldBackground.unitless"
 #include "picongpu/unitless/synchrotronPhotons.unitless"
 #if(PMACC_CUDA_ENABLED == 1)
-#    include "picongpu/unitless/bremsstrahlung.unitless"
+//#    include "picongpu/unitless/bremsstrahlung.unitless"
 #endif
 
-#include "picongpu/unitless/fileOutput.unitless"
-#include "picongpu/unitless/checkpoints.unitless"
-#include "picongpu/unitless/png.unitless"
-#include "picongpu/unitless/radiation.unitless"
-#include "picongpu/unitless/transitionRadiation.unitless"
-
-// clang-format on
+//#include "picongpu/unitless/fileOutput.unitless"
+//#include "picongpu/unitless/checkpoints.unitless"
+//#include "picongpu/unitless/png.unitless"
+//#include "picongpu/unitless/radiation.unitless"
+//#include "picongpu/unitless/transitionRadiation.unitless"

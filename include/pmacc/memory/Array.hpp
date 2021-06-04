@@ -78,18 +78,24 @@ namespace pmacc
              * all members are uninitialized
              */
             Array() = default;
-
             /** constructor
              *
              * initialize each member with the given value
              *
              * @param value element assigned to each member
              */
+            /*
             template<typename... T_Args>
             HDINLINE Array(T_Args&&... args)
             {
                 for(size_type i = 0; i < size(); ++i)
                     reinterpret_cast<T_Type*>(m_data)[i] = std::move(T_Type{std::forward<T_Args>(args)...});
+            }
+*/
+            HDINLINE Array( T_Type const & value )
+            {
+                for( size_type i = 0; i < size(); ++i )
+                    reinterpret_cast< T_Type* >( m_data )[ i ] = value;
             }
 
             /** get N-th value

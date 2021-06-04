@@ -1,5 +1,5 @@
-/* Copyright 2013-2021 Felix Schmitt, Rene Widera, Benjamin Worpitz,
- *                     Alexander Grund
+/* Copyright 2013-2020 Felix Schmitt, Rene Widera, Benjamin Worpitz,
+ *                     Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -31,6 +31,7 @@
 #include "pmacc/particles/memory/buffers/ParticlesBuffer.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 #include "pmacc/traits/NumberOfExchanges.hpp"
+#include "pmacc/exec/kernelEvents.hpp"
 
 #include <memory>
 
@@ -49,16 +50,16 @@ namespace pmacc
     public:
         /* Type of used particles buffer
          */
-        typedef ParticlesBuffer<
+        using BufferType = ParticlesBuffer<
             ParticleDescription,
             typename MappingDesc::SuperCellSize,
             T_DeviceHeap,
-            MappingDesc::Dim>
-            BufferType;
+            MappingDesc::Dim>;
 
         /* Type of frame in particles buffer
          */
         typedef typename BufferType::FrameType FrameType;
+
         /* Type of border frame in a particle buffer
          */
         typedef typename BufferType::FrameTypeBorder FrameTypeBorder;
@@ -67,7 +68,8 @@ namespace pmacc
          */
         typedef typename BufferType::ParticlesBoxType ParticlesBoxType;
 
-        /* Policies for handling particles in guard cells */
+        /* Policies for handling particles in guard cells
+         */
         typedef typename ParticleDescription::HandleGuardRegion HandleGuardRegion;
 
         enum
@@ -77,25 +79,24 @@ namespace pmacc
             TileSize = math::CT::volume<typename MappingDesc::SuperCellSize>::type::value
         };
 
-        /* Mark this simulation data as a particle type */
+        /* Mark this simulation data as a particle type
+         */
         typedef ParticlesTag SimulationDataTag;
 
     protected:
-        BufferType* particlesBuffer;
+        BufferType particlesBuffer;
 
         ParticlesBase(const std::shared_ptr<T_DeviceHeap>& deviceHeap, MappingDesc description)
             : SimulationFieldHelper<MappingDesc>(description)
-            , particlesBuffer(NULL)
+            , particlesBuffer(
+                  deviceHeap,
+                  description.getGridLayout().getDataSpace(),
+                  MappingDesc::SuperCellSize::toRT())
         {
-            particlesBuffer = new BufferType(
-                deviceHeap,
-                description.getGridLayout().getDataSpace(),
-                MappingDesc::SuperCellSize::toRT());
         }
 
         virtual ~ParticlesBase()
         {
-            delete this->particlesBuffer;
         }
 
         /* Shift all particle in a AREA
@@ -104,19 +105,21 @@ namespace pmacc
         template<uint32_t AREA>
         void shiftParticles()
         {
-            StrideMapping<AREA, 3, MappingDesc> mapper(this->cellDescription);
-            ParticlesBoxType pBox = particlesBuffer->getDeviceParticleBox();
+            Environment<>::task(
+                [cellDescription = this->cellDescription](auto parDevice) {
+                    StrideMapping<AREA, 3, MappingDesc> mapper(cellDescription);
 
-            constexpr uint32_t numWorkers
-                = traits::GetNumWorkers<math::CT::volume<typename FrameType::SuperCellSize>::type::value>::value;
-            __startTransaction(__getTransactionEvent());
-            do
-            {
-                PMACC_KERNEL(KernelShiftParticles<numWorkers>{})
-                (mapper.getGridDim(), numWorkers)(pBox, mapper);
-            } while(mapper.next());
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume<typename FrameType::SuperCellSize>::type::value>::value;
 
-            __setTransactionEvent(__endTransaction());
+                    do
+                    {
+                        PMACC_KERNEL(KernelShiftParticles<numWorkers>{})
+                        (mapper.getGridDim(), numWorkers)(parDevice.getParticlesBox(), mapper);
+                    } while(mapper.next());
+                },
+                TaskProperties::Builder().label("shiftParticles").scheduling_tags({SCHED_CUPLA}),
+                particlesBuffer.device());
         }
 
         /* fill gaps in a AREA
@@ -125,15 +128,19 @@ namespace pmacc
         template<uint32_t AREA>
         void fillGaps()
         {
-            AreaMapping<AREA, MappingDesc> mapper(this->cellDescription);
+            Environment<>::task(
+                [cellDescription = this->cellDescription](auto parDevice) {
+                    AreaMapping<AREA, MappingDesc> mapper(cellDescription);
 
-            constexpr uint32_t numWorkers
-                = traits::GetNumWorkers<math::CT::volume<typename FrameType::SuperCellSize>::type::value>::value;
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume<typename FrameType::SuperCellSize>::type::value>::value;
 
-            PMACC_KERNEL(KernelFillGaps<numWorkers>{})
-            (mapper.getGridDim(), numWorkers)(particlesBuffer->getDeviceParticleBox(), mapper);
+                    PMACC_KERNEL(KernelFillGaps<numWorkers>{})
+                    (mapper.getGridDim(), numWorkers)(parDevice.getParticlesBox(), mapper);
+                },
+                TaskProperties::Builder().label("fillGaps").scheduling_tags({SCHED_CUPLA}),
+                particlesBuffer.device());
         }
-
 
     public:
         /* fill gaps in a the complete simulation area (include GUARD)
@@ -173,22 +180,11 @@ namespace pmacc
          */
         void insertParticles(uint32_t exchangeType);
 
-        ParticlesBoxType getDeviceParticlesBox()
-        {
-            return particlesBuffer->getDeviceParticleBox();
-        }
-
-        ParticlesBoxType getHostParticlesBox(const int64_t memoryOffset)
-        {
-            return particlesBuffer->getHostParticleBox(memoryOffset);
-        }
-
         /* Get the particles buffer which is used for the particles.
          */
         BufferType& getParticlesBuffer()
         {
-            PMACC_ASSERT(particlesBuffer != nullptr);
-            return *particlesBuffer;
+            return particlesBuffer;
         }
 
         /* set all internal objects to initial state*/

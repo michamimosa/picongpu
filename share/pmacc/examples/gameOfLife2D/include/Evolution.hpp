@@ -35,6 +35,13 @@
 #include <pmacc/random/methods/methods.hpp>
 #include <pmacc/traits/GetNumWorkers.hpp>
 
+#include <pmacc/mappings/threads/ForEachIdx.hpp>
+#include <pmacc/mappings/threads/IdxConfig.hpp>
+#include <pmacc/Environment.hpp>
+#include <pmacc/memory/buffers/DeviceBuffer.hpp>
+#include <pmacc/exec/kernelEvents.hpp>
+
+
 #include <memory>
 
 namespace gol
@@ -192,29 +199,56 @@ namespace gol
             mapping = std::make_unique<T_MappingDesc>(layout, guardSize);
         }
 
-        template<typename DBox>
-        void initEvolution(DBox const& writeBox, float const fraction)
+        void initEvolution(
+            pmacc::mem::device_buffer::WriteGuard<uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access> buf,
+            float const fraction)
         {
-            AreaMapping<CORE + BORDER, T_MappingDesc> mapper(*mapping);
-            constexpr uint32_t numWorkers
-                = traits::GetNumWorkers<math::CT::volume<typename T_MappingDesc::SuperCellSize>::type::value>::value;
+            Environment<>::task(
+                [this, fraction](auto buf) {
+                    AreaMapping<CORE + BORDER, T_MappingDesc> mapper(*mapping);
 
-            GridController<DIM2>& gc = Environment<DIM2>::get().GridController();
-            uint32_t seed = gc.getGlobalSize() + gc.getGlobalRank();
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume<typename T_MappingDesc::SuperCellSize>::type::value>::value;
 
-            PMACC_KERNEL(kernel::RandomInit<numWorkers>{})
-            (mapper.getGridDim(), numWorkers)(writeBox, seed, fraction, mapper);
+                    GridController<DIM2>& gc = Environment<DIM2>::get().GridController();
+                    uint32_t seed = gc.getGlobalSize() + gc.getGlobalRank();
+
+                    PMACC_KERNEL(kernel::RandomInit<numWorkers>{})
+                    (mapper.getGridDim(), numWorkers)(buf.getDataBox(), seed, fraction, mapper);
+                },
+                TaskProperties::Builder().label("Evolution::initEvolution()").scheduling_tags({SCHED_CUPLA}),
+                buf.write().data().access_dataPlace(CORE + BORDER));
         }
 
-        template<uint32_t Area, typename DBox>
-        void run(DBox const& readBox, DBox const& writeBox)
+        template<uint32_t T_Area>
+        void run(
+            pmacc::mem::device_buffer::ReadGuard<uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access> readBuffer,
+            pmacc::mem::device_buffer::WriteGuard<uint8_t, DIM2, pmacc::mem::grid_buffer::data::Access> writeBuffer)
         {
-            AreaMapping<Area, T_MappingDesc> mapper(*mapping);
-            constexpr uint32_t numWorkers
-                = traits::GetNumWorkers<math::CT::volume<typename T_MappingDesc::SuperCellSize>::type::value>::value;
+            std::string l("run ()");
+            switch(T_Area)
+            {
+            case BORDER:
+                l = std::string("run&lt;BORDER&gt;()");
+                break;
+            case CORE:
+                l = std::string("run&lt;CORE&gt;()");
+                break;
+            }
 
-            PMACC_KERNEL(kernel::Evolution<numWorkers>{})
-            (mapper.getGridDim(), numWorkers)(readBox, writeBox, rule, mapper);
+            Environment<>::task(
+                [this](auto readBuffer, auto writeBuffer) {
+                    AreaMapping<T_Area, T_MappingDesc> mapper(*mapping);
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume<typename T_MappingDesc::SuperCellSize>::type::value>::value;
+
+                    PMACC_KERNEL(kernel::Evolution<numWorkers>{})
+                    (mapper.getGridDim(), numWorkers)(readBuffer.getDataBox(), writeBuffer.getDataBox(), rule, mapper);
+                },
+                TaskProperties::Builder().label(std::move(l)).scheduling_tags({SCHED_CUPLA}),
+                readBuffer.read().data().access_dataPlace(
+                    (uint32_t)(T_Area == CORE) ? (CORE + BORDER) : (CORE + BORDER + GUARD)),
+                writeBuffer.write().data().access_dataPlace(T_Area));
         }
     };
 

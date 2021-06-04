@@ -1,5 +1,5 @@
-/* Copyright 2019-2021 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz,
- *                     Sergei Bastrakov, Klaus Steiniger
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz,
+ *                     Sergei Bastrakov, Klaus Steiniger, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -90,13 +90,11 @@ namespace picongpu
                     auto incidentFieldSolver = fields::incidentField::Solver{cellDescription};
                     // update B by half step, to step = currentStep + 0.5, so step for E_inc = currentStep
                     incidentFieldSolver.updateBHalf(static_cast<float_X>(currentStep));
-                    EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
 
                     updateE<CORE>(currentStep);
                     // Incident field solver update does not use exchanged B, so does not have to wait for it
                     // update E by full step, to step = currentStep + 1, so step for B_inc = currentStep + 0.5
                     incidentFieldSolver.updateE(static_cast<float_X>(currentStep) + 0.5_X);
-                    __setTransactionEvent(eRfieldB);
                     updateE<BORDER>(currentStep);
                 }
 
@@ -112,31 +110,30 @@ namespace picongpu
                     if(absorber.getKind() == absorber::Absorber::Kind::Exponential)
                     {
                         auto& exponentialImpl = absorberImpl->asExponentialImpl();
-                        exponentialImpl.run(currentStep, fieldE->getDeviceDataBox());
+                        exponentialImpl.run(currentStep, fieldE->device());
                     }
+
                     if(laserProfiles::Selected::INIT_TIME > 0.0_X)
-                        LaserPhysics{}(currentStep);
+                        Environment<>::fun_task(LaserPhysics{}, currentStep);
 
                     // Incident field solver update does not use exchanged E, so does not have to wait for it
                     auto incidentFieldSolver = fields::incidentField::Solver{cellDescription};
                     // update B by half step, to step currentStep + 1.5, so step for E_inc = currentStep + 1
                     incidentFieldSolver.updateBHalf(static_cast<float_X>(currentStep) + 1.0_X);
 
-                    EventTask eRfieldE = fieldE->asyncCommunication(__getTransactionEvent());
+                    fieldE->communication();
 
                     // First and second halves of B update are explained inside update_beforeCurrent()
                     updateBFirstHalf<CORE>(currentStep);
-                    __setTransactionEvent(eRfieldE);
                     updateBFirstHalf<BORDER>(currentStep);
 
                     if(absorber.getKind() == absorber::Absorber::Kind::Exponential)
                     {
                         auto& exponentialImpl = absorberImpl->asExponentialImpl();
-                        exponentialImpl.run(currentStep, fieldB->getDeviceDataBox());
+                        exponentialImpl.run(currentStep, fieldB->device());
                     }
 
-                    EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
-                    __setTransactionEvent(eRfieldB);
+                    fieldB->communication();
                 }
 
                 static pmacc::traits::StringProperty getStringProperties()
@@ -201,30 +198,41 @@ namespace picongpu
                 template<uint32_t T_Area>
                 void updateBHalf(uint32_t const currentStep, bool const updatePsiB)
                 {
-                    constexpr auto numWorkers = getNumWorkers();
-                    using Kernel = yee::KernelUpdateB<numWorkers, BlockDescription<CurlE>>;
-                    AreaMapper<T_Area> mapper{cellDescription};
+                    Environment<>::task(
+                        [this, currentStep, updatePsiB](auto fieldEDeviceData, auto fieldBDeviceData)
+                        {
+                            constexpr auto numWorkers = getNumWorkers();
+                            using Kernel = yee::KernelUpdateB<numWorkers, BlockDescription<CurlE>>;
+                            AreaMapper<T_Area> mapper{cellDescription};
 
-                    // The ugly transition from run-time to compile-time polymorphism is contained here
-                    auto& absorber = absorber::Absorber::get();
-                    if(absorber.getKind() == absorber::Absorber::Kind::Pml)
-                    {
-                        auto& pmlImpl = absorberImpl->asPmlImpl();
-                        auto const updateFunctor
-                            = pmlImpl.getUpdateBHalfFunctor<CurlE, T_Area>(currentStep, updatePsiB);
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(),
-                         numWorkers)(mapper, updateFunctor, fieldE->getDeviceDataBox(), fieldB->getDeviceDataBox());
-                    }
-                    else
-                    {
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(), numWorkers)(
-                            mapper,
-                            yee::UpdateBHalfFunctor<CurlE>{},
-                            fieldE->getDeviceDataBox(),
-                            fieldB->getDeviceDataBox());
-                    }
+                            // The ugly transition from run-time to compile-time polymorphism is contained here
+                            auto& absorber = absorber::Absorber::get();
+                            if(absorber.getKind() == absorber::Absorber::Kind::Pml)
+                            {
+                                auto& pmlImpl = absorberImpl->asPmlImpl();
+                                auto const updateFunctor
+                                    = pmlImpl.getUpdateBHalfFunctor<CurlE, T_Area>(currentStep, updatePsiB);
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    updateFunctor,
+                                    fieldEDeviceData.getDataBox(),
+                                    fieldBDeviceData.getDataBox());
+                            }
+                            else
+                            {
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    yee::UpdateBHalfFunctor<CurlE>{},
+                                    fieldEDeviceData.getDataBox(),
+                                    fieldBDeviceData.getDataBox());
+                            }
+                        },
+                        TaskProperties::Builder().label("Yee::updateBHalf()").scheduling_tags({SCHED_CUPLA}),
+
+                        fieldE->device().data(),
+                        fieldB->device().data());
                 }
 
                 /** Propagate E values in the given area by a time step.
@@ -245,31 +253,43 @@ namespace picongpu
                     PMACC_CASSERT_MSG(
                         Courant_Friedrichs_Levy_condition_failure____check_your_grid_param_file,
                         (SPEED_OF_LIGHT * SPEED_OF_LIGHT * DELTA_T * DELTA_T * INV_CELL2_SUM) <= 1.0
-                            && sizeof(T_CurlE*) != 0);
+                            && sizeof(SuperCellSize*) != 0);
 
-                    constexpr auto numWorkers = getNumWorkers();
-                    using Kernel = yee::KernelUpdateE<numWorkers, BlockDescription<CurlB>>;
-                    auto mapper = AreaMapper<T_Area>{cellDescription};
+                    Environment<>::task(
+                        [this, currentStep](auto fieldEDeviceData, auto fieldBDeviceData)
+                        {
+                            constexpr auto numWorkers = getNumWorkers();
+                            using Kernel = yee::KernelUpdateE<numWorkers, BlockDescription<CurlB>>;
+                            auto mapper = AreaMapper<T_Area>{cellDescription};
 
-                    // The ugly transition from run-time to compile-time polymorphism is contained here
-                    auto& absorber = absorber::Absorber::get();
-                    if(absorber.getKind() == absorber::Absorber::Kind::Pml)
-                    {
-                        auto& pmlImpl = absorberImpl->asPmlImpl();
-                        auto const updateFunctor = pmlImpl.getUpdateEFunctor<CurlB, T_Area>(currentStep);
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(),
-                         numWorkers)(mapper, updateFunctor, fieldB->getDeviceDataBox(), fieldE->getDeviceDataBox());
-                    }
-                    else
-                    {
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(), numWorkers)(
-                            mapper,
-                            yee::UpdateEFunctor<CurlB>{},
-                            fieldB->getDeviceDataBox(),
-                            fieldE->getDeviceDataBox());
-                    }
+                            // The ugly transition from run-time to compile-time polymorphism is contained here
+                            auto& absorber = absorber::Absorber::get();
+                            if(absorber.getKind() == absorber::Absorber::Kind::Pml)
+                            {
+                                auto& pmlImpl = absorberImpl->asPmlImpl();
+                                auto const updateFunctor = pmlImpl.getUpdateEFunctor<CurlB, T_Area>(currentStep);
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    updateFunctor,
+                                    fieldBDeviceData.getDataBox(),
+                                    fieldEDeviceData.getDataBox());
+                            }
+                            else
+                            {
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    yee::UpdateEFunctor<CurlB>{},
+                                    fieldBDeviceData.getDataBox(),
+                                    fieldEDeviceData.getDataBox());
+                            }
+                        },
+
+                        TaskProperties::Builder().label("Yee::updateE()").scheduling_tags({SCHED_CUPLA}),
+
+                        fieldE->device().data(),
+                        fieldB->device().data());
                 }
 
                 //! Get number of workers for kernels

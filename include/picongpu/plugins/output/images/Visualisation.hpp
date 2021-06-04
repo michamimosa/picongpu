@@ -1,4 +1,4 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch, Felix Schmitt
+/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch, Felix Schmitt, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -103,7 +103,6 @@ namespace picongpu
 #endif
         }
     };
-
 
     /* outdated drift normalization */
     template<>
@@ -702,40 +701,63 @@ namespace picongpu
             if(simDim == DIM3)
                 localDomainOffset = Environment<simDim>::get().SubGrid().getLocalDomain().offset[sliceDim];
 
+            PMACC_ASSERT(cellDescription != nullptr);
+
             constexpr uint32_t cellsPerSupercell = pmacc::math::CT::volume<SuperCellSize>::type::value;
             constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<cellsPerSupercell>::value;
 
-            PMACC_ASSERT(cellDescription != nullptr);
+            Environment<>::task(
+                [this, localDomainOffset, numWorkers](auto fieldE, auto fieldB, auto fieldJ, auto img) {
+                    AreaMapping<CORE + BORDER, MappingDesc> mapper(*cellDescription);
 
-            AreaMapping<CORE + BORDER, MappingDesc> mapper(*cellDescription);
+                    // create image fields
+                    PMACC_KERNEL(KernelPaintFields<numWorkers>{})
+                    (mapper.getGridDim(), numWorkers)(
+                        fieldE.getDataBox(),
+                        fieldB.getDataBox(),
+                        fieldJ.getDataBox(),
+                        img.getDataBox(),
+                        m_transpose,
+                        sliceOffset,
+                        localDomainOffset,
+                        sliceDim,
+                        mapper);
+                },
 
-            // create image fields
-            PMACC_KERNEL(KernelPaintFields<numWorkers>{})
-            (mapper.getGridDim(), numWorkers)(
-                fieldE->getDeviceDataBox(),
-                fieldB->getDeviceDataBox(),
-                fieldJ->getDeviceDataBox(),
-                img->getDeviceBuffer().getDataBox(),
-                m_transpose,
-                sliceOffset,
-                localDomainOffset,
-                sliceDim,
-                mapper);
+                TaskProperties::Builder().label("KernelPaintFields").scheduling_tags({SCHED_CUPLA}),
 
-            // find maximum for img.x()/y and z and return it as float3_X
-            int elements = img->getGridLayout().getDataSpace().productOfComponents();
+                fieldE->device().data().read().access_dataPlace(CORE + BORDER),
+                fieldB->device().data().read().access_dataPlace(CORE + BORDER),
+                fieldJ->device().data().read().access_dataPlace(CORE + BORDER),
+                img->device().data().write().access_dataPlace(CORE + BORDER));
 
-            // Add one dimension access to 2d DataBox
-            typedef DataBoxDim1Access<typename GridBuffer<float3_X, DIM2>::DataBoxType> D1Box;
-            D1Box d1access(img->getDeviceBuffer().getDataBox(), img->getGridLayout().getDataSpace());
+            auto size = img->getGridLayout().getDataSpace();
+            int elements = size.productOfComponents();
 
 #if(EM_FIELD_SCALE_CHANNEL1 == -1 || EM_FIELD_SCALE_CHANNEL2 == -1 || EM_FIELD_SCALE_CHANNEL3 == -1)
-            // reduce with functor max
-            float3_X max = reduce(pmacc::math::operation::Max(), d1access, elements);
-            // reduce with functor min
-            // float3_X min = reduce(pmacc::math::operation::Min(),
-            //                    d1access,
-            //                    elements);
+
+            // find maximum for img.x()/y and z and return it as float3_X
+            float3_X max = Environment<>::task(
+                               [this, size, elements](auto imgDevData, auto& reduce) {
+                                   // Add one dimension access to 2d DataBox
+                                   typedef DataBoxDim1Access<typename GridBuffer<float3_X, DIM2>::DataBoxType> D1Box;
+                                   D1Box d1access(imgDevData.getDataBox(), size);
+
+                                   // reduce with functor max
+                                   return reduce(pmacc::math::operation::Max(), d1access, elements);
+
+                                   // reduce with functor min
+                                   // float3_X min = reduce(nvidia::functors::Min(),
+                                   //                    d1access,
+                                   //                    elements);
+                               },
+
+                               TaskProperties::Builder().label("reduce(Max())"),
+
+                               img->device().data().read(),
+                               std::ref(reduce))
+                               .get();
+
 #    if(EM_FIELD_SCALE_CHANNEL1 != -1)
             max.x() = float_X(1.0);
 #    endif
@@ -746,58 +768,88 @@ namespace picongpu
             max.z() = float_X(1.0);
 #    endif
 
-            /* We don't know the size of the supercell plane at compile time
-             * (because of the runtime dimension selection in any plugin),
-             * thus we must use a one dimension kernel and no mapper
-             */
-            PMACC_KERNEL(vis_kernels::DivideAnyCell<numWorkers, cellsPerSupercell>{})
-            ((elements + cellsPerSupercell - 1u) / cellsPerSupercell, numWorkers)(d1access, elements, max);
+            Environment<>::task(
+                [this, size, elements, numWorkers, cellsPerSupercell, max](auto imgDevData) {
+                    // Add one dimension access to 2d DataBox
+                    typedef DataBoxDim1Access<typename GridBuffer<float3_X, DIM2>::DataBoxType> D1Box;
+                    D1Box d1access(imgDevData.getDataBox(), size);
+
+                    /* We don't know the size of the supercell plane at compile time
+                     * (because of the runtime dimension selection in any plugin),
+                     * thus we must use a one dimension kernel and no mapper
+                     */
+                    PMACC_KERNEL(vis_kernels::DivideAnyCell<numWorkers, cellsPerSupercell>{})
+                    ((elements + cellsPerSupercell - 1u) / cellsPerSupercell, numWorkers)(d1access, elements, max);
+                },
+                TaskProperties::Builder().label("DivideAnyCell").scheduling_tags({SCHED_CUPLA}),
+                img->device().data());
+
 #endif
 
-            // convert channels to RGB
-            PMACC_KERNEL(vis_kernels::ChannelsToRGB<numWorkers, cellsPerSupercell>{})
-            ((elements + cellsPerSupercell - 1u) / cellsPerSupercell, numWorkers)(d1access, elements);
+            Environment<>::task(
+                [this, size, elements, numWorkers, localDomainOffset, cellsPerSupercell, max](
+                    auto imgDevData,
+                    auto parDev) {
+                    // Add one dimension access to 2d DataBox
+                    typedef DataBoxDim1Access<typename GridBuffer<float3_X, DIM2>::DataBoxType> D1Box;
+                    D1Box d1access(imgDevData.getDataBox(), size);
 
-            // add density color channel
-            DataSpace<simDim> blockSize(MappingDesc::SuperCellSize::toRT());
-            DataSpace<DIM2> blockSize2D(blockSize[m_transpose.x()], blockSize[m_transpose.y()]);
+                    // convert channels to RGB
+                    PMACC_KERNEL(vis_kernels::ChannelsToRGB<numWorkers, cellsPerSupercell>{})
+                    ((elements + cellsPerSupercell - 1u) / cellsPerSupercell, numWorkers)(d1access, elements);
 
-            // create image particles
-            PMACC_KERNEL(KernelPaintParticles3D<numWorkers>{})
-            (mapper.getGridDim(), numWorkers, blockSize2D.productOfComponents() * sizeof(float_X))(
-                particles->getDeviceParticlesBox(),
-                img->getDeviceBuffer().getDataBox(),
-                m_transpose,
-                sliceOffset,
-                localDomainOffset,
-                sliceDim,
-                mapper);
+                    // add density color channel
+                    DataSpace<simDim> blockSize(MappingDesc::SuperCellSize::toRT());
+                    DataSpace<DIM2> blockSize2D(blockSize[m_transpose.x()], blockSize[m_transpose.y()]);
+
+                    AreaMapping<CORE + BORDER, MappingDesc> mapper(*cellDescription);
+
+                    // create image particles
+                    PMACC_KERNEL(KernelPaintParticles3D<numWorkers>{})
+                    (mapper.getGridDim(), numWorkers, blockSize2D.productOfComponents() * sizeof(float_X))(
+                        parDev.getParticlesBox(),
+                        imgDevData.getDataBox(),
+                        m_transpose,
+                        sliceOffset,
+                        localDomainOffset,
+                        sliceDim,
+                        mapper);
+                },
+
+                TaskProperties::Builder().scheduling_tags({SCHED_CUPLA}).label("KernelPaintParticles3D"),
+
+                img->device().data().write(),
+                particles->getParticlesBuffer().device());
 
             // send the RGB image back to host
             img->deviceToHost();
 
+            Environment<>::task(
+                [this, size, window, currentStep](auto hostData, GatherSlice& gather) {
+                    header->update(*cellDescription, window, m_transpose, currentStep);
 
-            header->update(*cellDescription, window, m_transpose, currentStep);
+                    auto hostBox = hostData.getDataBox();
 
+                    if(picongpu::white_box_per_GPU)
+                    {
+                        hostBox[0][0] = float3_X(1.0, 1.0, 1.0);
+                        hostBox[size.y() - 1][0] = float3_X(1.0, 1.0, 1.0);
+                        hostBox[0][size.x() - 1] = float3_X(1.0, 1.0, 1.0);
+                        hostBox[size.y() - 1][size.x() - 1] = float3_X(1.0, 1.0, 1.0);
+                    }
 
-            __getTransactionEvent().waitForFinished(); // wait for copy picture
+                    auto resultBox = gather(hostBox, *header);
 
-            DataSpace<DIM2> size = img->getGridLayout().getDataSpace();
+                    if(isMaster)
+                    {
+                        m_output(resultBox.shift(header->window.offset), header->window.size, *header);
+                    }
+                },
 
-            auto hostBox = img->getHostBuffer().getDataBox();
+                TaskProperties::Builder().label("Write PNG"),
 
-            if(picongpu::white_box_per_GPU)
-            {
-                hostBox[0][0] = float3_X(1.0, 1.0, 1.0);
-                hostBox[size.y() - 1][0] = float3_X(1.0, 1.0, 1.0);
-                hostBox[0][size.x() - 1] = float3_X(1.0, 1.0, 1.0);
-                hostBox[size.y() - 1][size.x() - 1] = float3_X(1.0, 1.0, 1.0);
-            }
-            auto resultBox = gather(hostBox, *header);
-            if(isMaster)
-            {
-                m_output(resultBox.shift(header->window.offset), header->window.size, *header);
-            }
+                img->host().data(),
+                std::ref(gather));
         }
 
         void init()

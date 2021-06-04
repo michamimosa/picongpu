@@ -65,9 +65,9 @@ namespace pmacc
         };
 
         template<typename T_Data>
-        EventTask asyncCommunication(T_Data& data, EventTask parent)
+        void asyncCommunication(T_Data& data)
         {
-            return AsyncCommunication<T_Data>()(data, parent);
+            return AsyncCommunication<T_Data>()(data);
         }
 
     } // namespace communication

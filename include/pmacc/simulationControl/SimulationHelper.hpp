@@ -146,13 +146,13 @@ namespace pmacc
             /* trigger checkpoint notification */
             if(!checkpointPeriod.empty() && pluginSystem::containsStep(seqCheckpointPeriod, currentStep))
             {
+                // avoid deadlock between not finished PMacc tasks and MPI_Barrier
+                Environment<>::get().waitForAllTasks();
+
                 /* first synchronize: if something failed, we can spare the time
                  * for the checkpoint writing */
                 CUDA_CHECK(cuplaDeviceSynchronize());
                 CUDA_CHECK(cuplaGetLastError());
-
-                // avoid deadlock between not finished PMacc tasks and MPI_Barrier
-                __getTransactionEvent().waitForFinished();
 
                 GridController<DIM>& gc = Environment<DIM>::get().GridController();
                 /* can be spared for better scalings, but allows to spare the
@@ -167,13 +167,16 @@ namespace pmacc
 
                 Environment<DIM>::get().PluginConnector().checkpointPlugins(currentStep, checkpointDirectory);
 
+                /* avoid deadlock between not finished PMacc tasks and MPI_Barrier */
+                Environment<>::get().waitForAllTasks();
+
                 /* important synchronize: only if no errors occured until this
                  * point guarantees that a checkpoint is usable */
                 CUDA_CHECK(cuplaDeviceSynchronize());
                 CUDA_CHECK(cuplaGetLastError());
 
                 /* avoid deadlock between not finished PMacc tasks and MPI_Barrier */
-                __getTransactionEvent().waitForFinished();
+                Environment<>::get().waitForAllTasks();
 
                 /* \todo in an ideal world with MPI-3, this would be an
                  * MPI_Ibarrier call and this function would return a MPI_Request
@@ -232,6 +235,7 @@ namespace pmacc
             {
                 resetAll(0);
                 uint32_t currentStep = fillSimulation();
+
                 Environment<>::get().SimulationDescription().setCurrentStep(currentStep);
 
                 tInit.toggleEnd();
@@ -270,8 +274,11 @@ namespace pmacc
                  */
                 while(currentStep < Environment<>::get().SimulationDescription().getRunSteps())
                 {
+                    Environment<>::get().waitForAllTasks();
                     tRound.toggleStart();
                     runOneStep(currentStep);
+                    Environment<>::get().waitForAllTasks();
+
                     tRound.toggleEnd();
                     roundAvg += tRound.getInterval();
 
@@ -287,7 +294,7 @@ namespace pmacc
                 }
 
                 // simulatation end
-                Environment<>::get().Manager().waitForAllTasks();
+                Environment<>::get().waitForAllTasks();
 
                 tSimCalculation.toggleEnd();
 
@@ -409,7 +416,7 @@ namespace pmacc
                     std::cout << "SIGNAL: received." << std::endl;
 
                 // avoid deadlocks with collective MPI calls
-                Environment<>::get().Manager().waitForAllTasks();
+                Environment<>::get().waitForAllTasks();
                 // wait for possible more signals
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000u));
 

@@ -31,8 +31,10 @@
 #include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/math/operation.hpp>
 #include <pmacc/type/Area.hpp>
+#include <pmacc/memory/buffers/copy/DeviceToDevice.hpp>
 
 #include <boost/program_options.hpp>
+#include <akrzemi/optional.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -77,9 +79,10 @@ namespace picongpu
                         {
                             // Allocate a duplicate field buffer and copy the values
                             DataConnector& dc = Environment<>::get().DataConnector();
-                            auto field = dc.get<Field>(Field::getName(), true);
-                            auto const& gridBuffer = field->getGridBuffer();
-                            duplicateBuffer = pmacc::makeDeepCopy(gridBuffer.getDeviceBuffer());
+                            auto& field = *dc.get<Field>(Field::getName(), true);
+
+                            duplicateBuffer = DeviceBuffer( field.getGridBuffer().device().getDataSpace() );
+                            pmacc::mem::buffer::copy( duplicateBuffer->write(), field.getGridBuffer().device() );
                         }
                     }
 
@@ -96,8 +99,7 @@ namespace picongpu
                         // Always add to the field, conditionally make a copy of the old values first
                         if(useDuplicateField)
                         {
-                            auto& gridBuffer = field.getGridBuffer();
-                            duplicateBuffer->copyFrom(gridBuffer.getDeviceBuffer());
+                            pmacc::mem::buffer::copy( duplicateBuffer->write(), field.getGridBuffer().device().read() );
                             restoreFromDuplicateField = true;
                         }
                         apply(step, pmacc::math::operation::Add(), field);
@@ -119,8 +121,7 @@ namespace picongpu
                          */
                         if(restoreFromDuplicateField)
                         {
-                            auto& gridBuffer = field.getGridBuffer();
-                            gridBuffer.getDeviceBuffer().copyFrom(*duplicateBuffer);
+                            pmacc::mem::buffer::copy( field.getGridBuffer().device().write(), duplicateBuffer->read() );
                             restoreFromDuplicateField = false;
                         }
                         else
@@ -132,16 +133,16 @@ namespace picongpu
                     bool isEnabled;
 
                     //! Flag to store duplicate of field when the background is enabled
-                    bool useDuplicateField;
+                    bool useDuplicateField; // todo: deprecated when using optional?
 
                     //! Flag to restore from the duplicate field: true if it is enabled and up-to-date
                     bool restoreFromDuplicateField;
 
                     //! Buffer type to store duplicated values
-                    using DeviceBuffer = typename Field::Buffer::DBuffer;
+                    using DeviceBuffer = pmacc::mem::DeviceBuffer< typename Field::ValueType, simDim >;
 
                     //! Buffer to store duplicated values, only used when useDuplicateField is true
-                    std::unique_ptr<DeviceBuffer> duplicateBuffer;
+                    std::optional< DeviceBuffer > duplicateBuffer;
 
                     //! Mapping for kernels
                     MappingDesc const cellDescription;

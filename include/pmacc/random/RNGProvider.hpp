@@ -49,7 +49,7 @@ namespace pmacc
             typedef typename RNGMethod::StateType RNGState;
 
         public:
-            typedef HostDeviceBuffer<RNGState, dim> Buffer;
+            typedef mem::HostDeviceBuffer<RNGState, dim> Buffer;
             typedef typename Buffer::DataBoxType DataBoxType;
             typedef RNGHandle<RNGProvider> Handle;
 
@@ -70,8 +70,8 @@ namespace pmacc
             RNGProvider(const Space& size, const std::string& uniqueId = "");
             virtual ~RNGProvider()
             {
-                __delete(buffer)
             }
+
             /**
              * Initializes the random number generators
              * Must be called before usage
@@ -111,13 +111,9 @@ namespace pmacc
             Buffer& getStateBuffer();
 
         private:
-            /**
-             * Gets the device data box
-             */
-            DataBoxType getDeviceDataBox();
-
             const Space m_size;
-            Buffer* buffer;
+            Buffer buffer;
+
             const std::string m_uniqueId;
         };
 

@@ -1,5 +1,5 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
- *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
+ *                     Richard Pausch, Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -33,7 +33,6 @@
 #include <pmacc/Environment.hpp>
 #include <pmacc/fields/operations/AddExchangeToBorder.hpp>
 #include <pmacc/fields/operations/CopyGuardToExchange.hpp>
-#include <pmacc/fields/tasks/FieldFactory.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 #include <pmacc/math/Vector.hpp>
 #include <pmacc/particles/memory/boxes/ParticlesBox.hpp>
@@ -122,9 +121,8 @@ namespace picongpu
         const DataSpace<simDim> endRecvGuard = interpolationUpperMargin;
         if(originRecvGuard != DataSpace<simDim>::create(0) || endRecvGuard != DataSpace<simDim>::create(0))
         {
-            fieldJrecv = std::make_unique<GridBuffer<ValueType, simDim>>(
-                buffer.getDeviceBuffer(),
-                cellDescription.getGridLayout());
+            fieldJrecv
+                = std::make_unique<GridBuffer<ValueType, simDim>>(buffer.device(), cellDescription.getGridLayout());
 
             /*go over all directions*/
             for(uint32_t i = 1; i < NumberOfExchanges<simDim>::value; ++i)
@@ -155,24 +153,24 @@ namespace picongpu
         return cellDescription.getGridLayout();
     }
 
-    EventTask FieldJ::asyncCommunication(EventTask serialEvent)
+    void FieldJ::communication()
     {
-        EventTask ret;
-        __startTransaction(serialEvent);
-        FieldFactory::getInstance().createTaskFieldReceiveAndInsert(*this);
-        ret = __endTransaction();
+        for(uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
+            if(buffer.hasSendExchange(i))
+            {
+                bashField(i);
+                buffer.send(i);
+            }
 
-        __startTransaction(serialEvent);
-        FieldFactory::getInstance().createTaskFieldSend(*this);
-        ret += __endTransaction();
+        for(uint32_t i = 1; i < pmacc::traits::NumberOfExchanges<simDim>::value; ++i)
+            if(buffer.hasReceiveExchange(i))
+            {
+                buffer.recv(i);
+                insertField(i);
+            }
 
         if(fieldJrecv != nullptr)
-        {
-            EventTask eJ = fieldJrecv->asyncCommunication(ret);
-            return eJ;
-        }
-        else
-            return ret;
+            fieldJrecv->communication();
     }
 
     void FieldJ::reset(uint32_t)
@@ -181,7 +179,7 @@ namespace picongpu
 
     void FieldJ::synchronize()
     {
-        buffer.deviceToHost();
+        pmacc::mem::buffer::copy(this->host().write(), this->device().read());
     }
 
     SimulationDataId FieldJ::getUniqueId()
@@ -218,70 +216,95 @@ namespace picongpu
 
     void FieldJ::assign(ValueType value)
     {
-        buffer.getDeviceBuffer().setValue(value);
+        pmacc::mem::buffer::fill(this->device(), std::move(value));
         // fieldJ.reset(false);
     }
 
     template<uint32_t T_area, class T_Species>
     void FieldJ::computeCurrent(T_Species& species, uint32_t)
     {
-        using FrameType = typename T_Species::FrameType;
-        typedef typename pmacc::traits::Resolve<typename GetFlagType<FrameType, current<>>::type>::type
-            ParticleCurrentSolver;
+        Environment<>::task(
+            [cellDescription = this->cellDescription](auto jDevData, auto parDev) {
 
-        using FrameSolver
-            = currentSolver::ComputePerFrame<ParticleCurrentSolver, Velocity, MappingDesc::SuperCellSize>;
+#if BOOST_COMP_HIP && PIC_COMPUTE_CURRENT_THREAD_LIMITER
+                // HIP-clang creates wrong results if more threads than particles in a frame will be used
+                constexpr int workerMultiplier = 1;
+#else
+                /* tuning parameter to use more workers than cells in a supercell
+                 * valid domain: 1 <= workerMultiplier
+                 */
+                constexpr int workerMultiplier = 2;
+#endif
 
-        typedef SuperCellDescription<
-            typename MappingDesc::SuperCellSize,
-            typename GetMargin<ParticleCurrentSolver>::LowerMargin,
-            typename GetMargin<ParticleCurrentSolver>::UpperMargin>
-            BlockArea;
+                using FrameType = typename T_Species::FrameType;
+                typedef typename pmacc::traits::Resolve<typename GetFlagType<FrameType, current<>>::type>::type
+                    ParticleCurrentSolver;
 
-        using Strategy = currentSolver::traits::GetStrategy_t<FrameSolver>;
+                using FrameSolver
+                    = currentSolver::ComputePerFrame<ParticleCurrentSolver, Velocity, MappingDesc::SuperCellSize>;
 
-        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-            pmacc::math::CT::volume<SuperCellSize>::type::value * Strategy::workerMultiplier>::value;
+                typedef SuperCellDescription<
+                    typename MappingDesc::SuperCellSize,
+                    typename GetMargin<ParticleCurrentSolver>::LowerMargin,
+                    typename GetMargin<ParticleCurrentSolver>::UpperMargin>
+                    BlockArea;
 
-        auto const depositionKernel = currentSolver::KernelComputeCurrent<numWorkers, BlockArea>{};
+                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                    pmacc::math::CT::volume<SuperCellSize>::type::value * workerMultiplier>::value;
 
-        typename T_Species::ParticlesBoxType pBox = species.getDeviceParticlesBox();
-        FieldJ::DataBoxType jBox = buffer.getDeviceBuffer().getDataBox();
-        FrameSolver solver(DELTA_T);
+                using Strategy = currentSolver::traits::GetStrategy_t<FrameSolver>;
 
-        auto const deposit = currentSolver::Deposit<Strategy>{};
-        deposit.template execute<T_area, numWorkers>(cellDescription, depositionKernel, solver, jBox, pBox);
+                auto const depositionKernel = currentSolver::KernelComputeCurrent<numWorkers, BlockArea>{};
+
+                FieldJ::DataBoxType jBox = jDevData.getDataBox();
+                typename T_Species::ParticlesBoxType pBox = parDev.getParticlesBox();
+                FrameSolver solver(DELTA_T);
+
+                auto const deposit = currentSolver::Deposit<Strategy>{};
+                deposit.template execute<T_area, numWorkers>(cellDescription, depositionKernel, solver, jBox, pBox);
+            },
+            TaskProperties::Builder().label("Deposit").scheduling_tags({SCHED_CUPLA}),
+
+            buffer.device().data(),
+            species.getParticlesBuffer().device());
     }
 
     template<uint32_t T_area, class T_CurrentInterpolationFunctor>
     void FieldJ::addCurrentToEMF(T_CurrentInterpolationFunctor myCurrentInterpolationFunctor)
     {
         DataConnector& dc = Environment<>::get().DataConnector();
-        auto fieldE = dc.get<FieldE>(FieldE::getName(), true);
-        auto fieldB = dc.get<FieldB>(FieldB::getName(), true);
 
-        AreaMapping<T_area, MappingDesc> mapper(cellDescription);
+        Environment<>::task(
+            [cellDescription = this->cellDescription, myCurrentInterpolationFunctor](auto fieldE, auto fieldB, auto buffer) {
+                AreaMapping<T_area, MappingDesc> mapper(cellDescription);
 
-        constexpr uint32_t numWorkers
-            = pmacc::traits::GetNumWorkers<pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
+                constexpr uint32_t numWorkers
+                    = pmacc::traits::GetNumWorkers<pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
 
-        PMACC_KERNEL(currentSolver::KernelAddCurrentToEMF<numWorkers>{})
-        (mapper.getGridDim(), numWorkers)(
-            fieldE->getDeviceDataBox(),
-            fieldB->getDeviceDataBox(),
-            buffer.getDeviceBuffer().getDataBox(),
-            myCurrentInterpolationFunctor,
-            mapper);
+                PMACC_KERNEL(currentSolver::KernelAddCurrentToEMF<numWorkers>{})
+                (mapper.getGridDim(), numWorkers)(
+                    fieldE.getDataBox(),
+                    fieldB.getDataBox(),
+                    buffer.getDataBox(),
+                    myCurrentInterpolationFunctor,
+                    mapper);
+            },
+
+            TaskProperties::Builder().label("FieldJ::addCurrentToEMF()").scheduling_tags({SCHED_CUPLA}),
+
+            dc.get<FieldE>(FieldE::getName(), true)->device().data(),
+            dc.get<FieldB>(FieldB::getName(), true)->device().data(),
+            this->device().data());
     }
 
     void FieldJ::bashField(uint32_t exchangeType)
     {
-        pmacc::fields::operations::CopyGuardToExchange{}(buffer, SuperCellSize{}, exchangeType);
+        pmacc::fields::operations::CopyGuardToExchange{}(this->getGridBuffer(), SuperCellSize{}, exchangeType);
     }
 
     void FieldJ::insertField(uint32_t exchangeType)
     {
-        pmacc::fields::operations::AddExchangeToBorder{}(buffer, SuperCellSize{}, exchangeType);
+        pmacc::fields::operations::AddExchangeToBorder{}(this->getGridBuffer(), SuperCellSize{}, exchangeType);
     }
 
 } // namespace picongpu

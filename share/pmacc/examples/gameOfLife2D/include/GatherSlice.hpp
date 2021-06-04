@@ -25,6 +25,7 @@
 #include <pmacc/mappings/simulation/GridController.hpp>
 #include <pmacc/memory/boxes/PitchedBox.hpp>
 #include <pmacc/types.hpp> // DIM*
+#include <pmacc/Environment.hpp>
 
 #include <mpi.h>
 
@@ -91,44 +92,44 @@ namespace gol
          */
         bool init(const MessageHeader mHeader, bool isActive)
         {
-            header = mHeader;
+            return Environment<>::task(
+                    [this, mHeader, isActive] {
+                        header = mHeader;
 
-            int countRanks = Environment<DIM2>::get().GridController().getGpuNodes().productOfComponents();
-            std::vector<int> gatherRanks(countRanks);
-            std::vector<int> groupRanks(countRanks);
-            mpiRank = Environment<DIM2>::get().GridController().getGlobalRank();
-            if(!isActive)
-                mpiRank = -1;
+                        int countRanks = Environment<DIM2>::get().GridController().getGpuNodes().productOfComponents();
+                        std::vector<int> gatherRanks(countRanks);
+                        std::vector<int> groupRanks(countRanks);
+                        mpiRank = Environment<DIM2>::get().GridController().getGlobalRank();
+                        if(!isActive)
+                            mpiRank = -1;
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
+                        MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
 
-            for(int i = 0; i < countRanks; ++i)
-            {
-                if(gatherRanks[i] != -1)
-                {
-                    groupRanks[numRanks] = gatherRanks[i];
-                    numRanks++;
-                }
-            }
+                        for(int i = 0; i < countRanks; ++i)
+                        {
+                            if(gatherRanks[i] != -1)
+                            {
+                                groupRanks[numRanks] = gatherRanks[i];
+                                numRanks++;
+                            }
+                        }
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_Group group;
-            MPI_Group newgroup;
-            MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
-            MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+                        MPI_Group group;
+                        MPI_Group newgroup;
+                        MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
+                        MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+                        MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
 
-            MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
+                        if(mpiRank != -1)
+                        {
+                            MPI_Comm_rank(comm, &mpiRank);
+                            isMPICommInitialized = true;
+                        }
 
-            if(mpiRank != -1)
-            {
-                MPI_Comm_rank(comm, &mpiRank);
-                isMPICommInitialized = true;
-            }
-
-            return mpiRank == 0;
+                        return mpiRank == 0;
+                    },
+                    TaskProperties::Builder().label("Gather init").scheduling_tags({SCHED_MPI}))
+                .get();
         }
 
         template<class Box>
@@ -150,30 +151,32 @@ namespace gol
             if(fullData == nullptr && mpiRank == 0)
                 fullData = (char*) new ValueType[header.nodeSize.productOfComponents() * numRanks];
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_CHECK(MPI_Gather(
-                fakeHeader,
-                sizeof(MessageHeader),
-                MPI_CHAR,
-                recvHeader,
-                sizeof(MessageHeader),
-                MPI_CHAR,
-                0,
-                comm));
+            Environment<>::task(
+                    [this, recvHeader, fakeHeader, data] {
+                        MPI_CHECK(MPI_Gather(
+                            fakeHeader,
+                            sizeof(MessageHeader),
+                            MPI_CHAR,
+                            recvHeader,
+                            sizeof(MessageHeader),
+                            MPI_CHAR,
+                            0,
+                            comm));
 
-            const size_t elementsCount = header.nodeSize.productOfComponents() * sizeof(ValueType);
+                        const size_t elementsCount = header.nodeSize.productOfComponents() * sizeof(ValueType);
 
-            MPI_CHECK(MPI_Gather(
-                (char*) (data.getPointer()),
-                elementsCount,
-                MPI_CHAR,
-                fullData,
-                elementsCount,
-                MPI_CHAR,
-                0,
-                comm));
-
+                        MPI_CHECK(MPI_Gather(
+                            (char*) (data.getPointer()),
+                            elementsCount,
+                            MPI_CHAR,
+                            fullData,
+                            elementsCount,
+                            MPI_CHAR,
+                            0,
+                            comm));
+                    },
+                    TaskProperties::Builder().label("MPI_Gather()").scheduling_tags({SCHED_MPI}))
+                .get();
 
             if(mpiRank == 0)
             {
@@ -186,7 +189,6 @@ namespace gol
                     Space(),
                     header.simSize,
                     header.simSize.x() * sizeof(ValueType)));
-
 
                 for(int i = 0; i < numRanks; ++i)
                 {

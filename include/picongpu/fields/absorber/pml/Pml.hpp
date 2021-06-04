@@ -102,7 +102,7 @@ namespace picongpu
                     {
                         AreaMapper<T_Area> mapper{cellDescription};
                         return UpdateEFunctor<T_CurlB>{
-                            psiE->getDeviceOuterLayerBox(),
+                            psiE->device().getOuterLayerBox(),
                             getLocalParameters(mapper, currentStep)};
                     }
 
@@ -122,7 +122,7 @@ namespace picongpu
                     {
                         AreaMapper<T_Area> mapper{cellDescription};
                         return UpdateBHalfFunctor<T_CurlE>{
-                            psiB->getDeviceOuterLayerBox(),
+                            psiB->device().getOuterLayerBox(),
                             getLocalParameters(mapper, currentStep),
                             updatePsiB};
                     }

@@ -22,7 +22,6 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
-
 #include "picongpu/fields/FieldB.hpp"
 #include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/FieldJ.hpp"
@@ -58,7 +57,6 @@
 
 #include <pmacc/assert.hpp>
 #include <pmacc/dimensions/GridLayout.hpp>
-#include <pmacc/eventSystem/EventSystem.hpp>
 #include <pmacc/functor/Call.hpp>
 #include <pmacc/mappings/kernel/MappingDescription.hpp>
 #include <pmacc/mappings/simulation/GridController.hpp>
@@ -78,8 +76,8 @@
 #include <vector>
 
 #if(PMACC_CUDA_ENABLED == 1)
-#    include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"
-#    include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
+//#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
+//#   include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"
 #endif
 
 #include "picongpu/particles/InitFunctors.hpp"
@@ -142,6 +140,8 @@ namespace picongpu
                 "print version information once and start")
                 ("devices,d", po::value<std::vector<uint32_t>>(&devices)->multitoken(),
                  "number of devices in each dimension")
+                ("threads", po::value<uint32_t>(&n_threads)->default_value(1), "number of cpu threads")
+                ("streams", po::value<uint32_t>(&n_streams)->default_value(1), "number of accelerator streams")
                 ("grid,g", po::value<std::vector<uint32_t>>(&gridSize)->multitoken(),
                  "size of the simulation grid")
                 ("gridDist",  po::value<std::vector<std::string>>(&gridDistribution)->multitoken(),
@@ -156,6 +156,7 @@ namespace picongpu
                  "periodic dimensions")
                 ("moving,m", po::value<bool>(&slidingWindow)->zero_tokens(),
                  "enable sliding/moving window")
+
                 /* For now we still use the compile-time movePoint variable to set
                  * the default value and provide backward compatibility
                  */
@@ -219,6 +220,8 @@ namespace picongpu
             }
 
             Environment<simDim>::get().initDevices(gpus, isPeriodic);
+            Environment<>::get().initScheduler(n_threads, n_streams);
+
             pmacc::GridController<simDim>& gc = pmacc::Environment<simDim>::get().GridController();
 
             DataSpace<simDim> myGPUpos(gc.getPosition());
@@ -356,17 +359,14 @@ namespace picongpu
                 this->synchrotronFunctions.init();
             }
 #if(PMACC_CUDA_ENABLED == 1)
-            // Initialize bremsstrahlung lookup tables, if there are species containing bremsstrahlung photons
-            if(!bmpl::empty<AllBremsstrahlungPhotonsSpecies>::value)
-            {
-                meta::ForEach<
-                    AllBremsstrahlungPhotonsSpecies,
-                    particles::bremsstrahlung::FillScaledSpectrumMap<bmpl::_1>>
-                    fillScaledSpectrumMap;
-                fillScaledSpectrumMap(this->scaledBremsstrahlungSpectrumMap);
-
-                this->bremsstrahlungPhotonAngle.init();
-            }
+/*
+        // Initialize bremsstrahlung lookup tables, if there are species containing bremsstrahlung photons
+        if(!bmpl::empty<AllBremsstrahlungPhotonsSpecies>::value)
+        {
+            namespace nvmem = pmacc::nvidia::memory;
+            this->bremsstrahlungPhotonAngle.init();
+        }
+*/
 #endif
 
 #if(BOOST_LANG_CUDA || BOOST_COMP_HIP)
@@ -443,7 +443,7 @@ namespace picongpu
 
 #if(BOOST_LANG_CUDA || BOOST_COMP_HIP)
             /* add CUDA streams to the StreamController for concurrent execution */
-            Environment<>::get().StreamController().addStreams(6);
+            // Environment<>::get().StreamController().addStreams(6);
 #endif
         }
 
@@ -513,10 +513,8 @@ namespace picongpu
             auto fieldB = dc.get<FieldB>(FieldB::getName(), true);
 
             // generate valid GUARDS (overwrite)
-            EventTask eRfieldE = fieldE->asyncCommunication(__getTransactionEvent());
-            __setTransactionEvent(eRfieldE);
-            EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
-            __setTransactionEvent(eRfieldB);
+            fieldE->communication();
+            fieldB->communication();
 
             return step;
         }
@@ -534,17 +532,25 @@ namespace picongpu
             MomentumBackup{}(currentStep);
             CurrentReset{}(currentStep);
             Collision{deviceHeap}(currentStep);
+
             ParticleIonization{*cellDescription}(currentStep);
             PopulationKinetics{}(currentStep);
             SynchrotronRadiation{*cellDescription, synchrotronFunctions}(currentStep);
+
 #if(PMACC_CUDA_ENABLED == 1)
-            Bremsstrahlung{*cellDescription, scaledBremsstrahlungSpectrumMap, bremsstrahlungPhotonAngle}(currentStep);
+/*
+            Bremsstrahlung{
+                *cellDescription,
+                scaledBremsstrahlungSpectrumMap,
+                bremsstrahlungPhotonAngle
+            }(
+                currentStep
+            );
+*/
 #endif
-            EventTask commEvent;
-            ParticlePush{}(currentStep, commEvent);
+            ParticlePush{}(currentStep);
             fieldBackground.subtract(currentStep);
             myFieldSolver->update_beforeCurrent(currentStep);
-            __setTransactionEvent(commEvent);
             CurrentBackground{*cellDescription}(currentStep);
             CurrentDeposition{}(currentStep);
             currentInterpolationAndAdditionToEMF(currentStep);
@@ -629,8 +635,10 @@ namespace picongpu
 #if(PMACC_CUDA_ENABLED == 1)
         // creates lookup tables for the bremsstrahlung effect
         // map<atomic number, scaled bremsstrahlung spectrum>
+        /*
         std::map<float_X, particles::bremsstrahlung::ScaledSpectrum> scaledBremsstrahlungSpectrumMap;
         particles::bremsstrahlung::GetPhotonAngle bremsstrahlungPhotonAngle;
+        */
 #endif
 
         // Synchrotron functions (used in synchrotronPhotons module)
@@ -657,6 +665,9 @@ namespace picongpu
         bool showVersionOnce;
         bool autoAdjustGrid = true;
         uint32_t numRanksPerDevice = 1u;
+
+        uint32_t n_threads;
+        uint32_t n_streams;
 
     private:
         /** Get available memory on device
@@ -737,6 +748,6 @@ namespace picongpu
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.tpp"
 
 #if(PMACC_CUDA_ENABLED == 1)
-#    include "picongpu/particles/bremsstrahlung/Bremsstrahlung.tpp"
-#    include "picongpu/particles/bremsstrahlung/ScaledSpectrum.tpp"
+//#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.tpp"
+//#   include "picongpu/particles/bremsstrahlung/ScaledSpectrum.tpp"
 #endif

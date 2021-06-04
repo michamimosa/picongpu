@@ -1,4 +1,4 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -32,6 +32,9 @@
 #include <mpi.h>
 #include <sys/stat.h>
 
+#include <redGrapes/access/io.hpp>
+#include <redGrapes/resource/resource.hpp>
+#include <redGrapes/property/trait.hpp>
 
 namespace picongpu
 {
@@ -52,7 +55,6 @@ namespace picongpu
 
         ~GatherSlice()
         {
-            reset();
         }
 
         /*
@@ -60,58 +62,62 @@ namespace picongpu
          */
         bool init(bool isActive)
         {
-            static int masterRankOffset = 0;
+            Environment<>::get().waitForAllTasks();
 
-            /* free old communicator if `init()` is called again */
-            if(isMPICommInitialized)
-            {
-                reset();
-            }
+            return Environment<>::task(
+                       [this, isActive] {
+                           static int masterRankOffset = 0;
 
-            int countRanks = Environment<simDim>::get().GridController().getGpuNodes().productOfComponents();
-            std::vector<int> gatherRanks(countRanks);
-            std::vector<int> groupRanks(countRanks);
-            mpiRank = Environment<simDim>::get().GridController().getGlobalRank();
-            if(!isActive)
-                mpiRank = -1;
+                           /* free old communicator if `init()` is called again */
+                           if(isMPICommInitialized)
+                           {
+                               reset();
+                           }
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
+                           int countRanks
+                               = Environment<simDim>::get().GridController().getGpuNodes().productOfComponents();
+                           std::vector<int> gatherRanks(countRanks);
+                           std::vector<int> groupRanks(countRanks);
+                           mpiRank = Environment<simDim>::get().GridController().getGlobalRank();
+                           if(!isActive)
+                               mpiRank = -1;
 
-            for(int i = 0; i < countRanks; ++i)
-            {
-                if(gatherRanks[i] != -1)
-                {
-                    groupRanks[numRanks] = gatherRanks[i];
-                    numRanks++;
-                }
-            }
+                           MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &gatherRanks[0], 1, MPI_INT, MPI_COMM_WORLD));
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_Group group = MPI_GROUP_NULL;
-            MPI_Group newgroup = MPI_GROUP_NULL;
-            MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
-            MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+                           for(int i = 0; i < countRanks; ++i)
+                           {
+                               if(gatherRanks[i] != -1)
+                               {
+                                   groupRanks[numRanks] = gatherRanks[i];
+                                   numRanks++;
+                               }
+                           }
 
-            MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
+                           MPI_Group group = MPI_GROUP_NULL;
+                           MPI_Group newgroup = MPI_GROUP_NULL;
+                           MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
+                           MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
 
-            if(mpiRank != -1)
-            {
-                MPI_Comm_rank(comm, &mpiRank);
-                isMPICommInitialized = true;
-            }
-            MPI_CHECK(MPI_Group_free(&group));
-            MPI_CHECK(MPI_Group_free(&newgroup));
+                           MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
 
-            masterRankOffset++;
-            /* avoid that only rank zero is the master
-             * this reduces the load of rank zero
-             */
-            masterRank = (masterRankOffset % numRanks);
+                           if(mpiRank != -1)
+                           {
+                               MPI_Comm_rank(comm, &mpiRank);
+                               isMPICommInitialized = true;
+                           }
+                           MPI_CHECK(MPI_Group_free(&group));
+                           MPI_CHECK(MPI_Group_free(&newgroup));
 
-            return mpiRank == masterRank;
+                           masterRankOffset++;
+                           /* avoid that only rank zero is the master
+                            * this reduces the load of rank zero
+                            */
+                           masterRank = (masterRankOffset % numRanks);
+
+                           return mpiRank == masterRank;
+                       },
+                       TaskProperties::Builder().label("Gather init").scheduling_tags({SCHED_MPI}))
+                .get();
         }
 
         template<class Box>
@@ -133,18 +139,20 @@ namespace picongpu
             if(fullData == nullptr && mpiRank == masterRank)
                 fullData = (char*) new ValueType[header.sim.size.productOfComponents()];
 
-
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_CHECK(MPI_Gather(
-                fakeHeader,
-                MessageHeader::bytes,
-                MPI_CHAR,
-                recvHeader,
-                MessageHeader::bytes,
-                MPI_CHAR,
-                masterRank,
-                comm));
+            Environment<>::task(
+                [this, fakeHeader, recvHeader] {
+                    MPI_CHECK(MPI_Gather(
+                        fakeHeader,
+                        MessageHeader::bytes,
+                        MPI_CHAR,
+                        recvHeader,
+                        MessageHeader::bytes,
+                        MPI_CHAR,
+                        masterRank,
+                        comm));
+                },
+                TaskProperties::Builder().label("MPI_Gather").scheduling_tags({SCHED_MPI}))
+                .get();
 
             std::vector<int> counts(numRanks);
             std::vector<int> displs(numRanks);
@@ -159,23 +167,26 @@ namespace picongpu
 
             const size_t elementsCount = header.node.maxSize.productOfComponents() * sizeof(ValueType);
 
-            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-            __getTransactionEvent().waitForFinished();
-            MPI_CHECK(MPI_Gatherv(
-                (char*) (data.getPointer()),
-                elementsCount,
-                MPI_CHAR,
-                fullData,
-                &counts[0],
-                &displs[0],
-                MPI_CHAR,
-                masterRank,
-                comm));
-
+            Environment<>::task(
+                [this, data, elementsCount, &counts, &displs] {
+                    MPI_CHECK(MPI_Gatherv(
+                        (char*) (data.getPointer()),
+                        elementsCount,
+                        MPI_CHAR,
+                        fullData,
+                        &counts[0],
+                        &displs[0],
+                        MPI_CHAR,
+                        masterRank,
+                        comm));
+                },
+                TaskProperties::Builder().label("MPI_Gatherv").scheduling_tags({SCHED_MPI}))
+                .get();
 
             if(mpiRank == masterRank)
             {
                 log<picLog::DOMAINS>("Master create image");
+
                 if(filteredData == nullptr)
                     filteredData = (char*) new ValueType[header.sim.size.productOfComponents()];
 
@@ -193,6 +204,7 @@ namespace picongpu
                     log<picLog::DOMAINS>("part image with offset %1%byte=%2%elements | size %3%  | offset %4%")
                         % displs[i] % (displs[i] / sizeof(ValueType)) % head->node.maxSize.toString()
                         % head->node.offset.toString();
+
                     Box srcBox = Box(PitchedBox<ValueType, DIM2>(
                         (ValueType*) (fullData + displs[i]),
                         DataSpace<DIM2>(),
@@ -227,29 +239,37 @@ namespace picongpu
             }
         }
 
+        friend class redGrapes::trait::BuildProperties<GatherSlice>;
+
     private:
         /*reset this object und set all values to initial state*/
         void reset()
         {
             mpiRank = -1;
             numRanks = 0;
+
             if(filteredData != nullptr)
                 delete[] filteredData;
             filteredData = nullptr;
+
             if(fullData != nullptr)
                 delete[] fullData;
             fullData = nullptr;
+
             if(isMPICommInitialized)
             {
-                // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-                __getTransactionEvent().waitForFinished();
+                // Environment<>::get().waitForAllTasks();
                 MPI_CHECK(MPI_Comm_free(&comm));
             }
+
             isMPICommInitialized = false;
         }
 
         char* filteredData;
         char* fullData;
+
+        redGrapes::Resource<redGrapes::access::IOAccess> resource;
+
         MPI_Comm comm;
         int mpiRank;
         int numRanks;
@@ -258,3 +278,15 @@ namespace picongpu
     };
 
 } // namespace picongpu
+
+template<>
+struct redGrapes::trait::BuildProperties<picongpu::GatherSlice>
+{
+    template<typename Builder>
+    static void build(Builder& builder, picongpu::GatherSlice const& gather)
+    {
+        if(gather.mpiRank == gather.masterRank)
+            builder.add(gather.resource.make_access(redGrapes::access::IOAccess::write));
+    }
+};
+

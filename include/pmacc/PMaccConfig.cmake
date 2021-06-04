@@ -172,6 +172,12 @@ endif()
 #       wrapper
 set(PMacc_LIBRARIES ${PMacc_LIBRARIES} ${cupla_LIBRARIES})
 
+###############################################################################
+# RedGrapes
+###############################################################################
+find_package(redGrapes REQUIRED CONFIG PATHS "${PMacc_DIR}/../../thirdParty/redGrapes")
+set(PMacc_INCLUDE_DIRS ${PMacc_INCLUDE_DIRS} ${redGrapes_INCLUDE_DIRS})
+set(PMacc_LIBRARIES ${PMacc_LIBRARIES} ${redGrapes_LIBRARIES})
 
 ###############################################################################
 # CPU Architecture: available instruction sets for e.g. SIMD extensions

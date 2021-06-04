@@ -24,18 +24,21 @@
 
 #include "picongpu/simulation_defines.hpp"
 
-#include "picongpu/plugins/BinEnergyParticles.hpp"
+
 #include "picongpu/plugins/CountParticles.hpp"
-#include "picongpu/plugins/Emittance.hpp"
+/*
+#include "picongpu/plugins/EnergyParticles.hpp"
+#include "picongpu/plugins/multi/Master.hpp"
 #include "picongpu/plugins/EnergyFields.hpp"
 #include "picongpu/plugins/EnergyParticles.hpp"
 #include "picongpu/plugins/SumCurrents.hpp"
-#include "picongpu/plugins/multi/Master.hpp"
+#include "picongpu/plugins/BinEnergyParticles.hpp"
+#include "picongpu/plugins/Emittance.hpp"
+#include "picongpu/plugins/transitionRadiation/TransitionRadiation.hpp"
+*/
 #include "picongpu/plugins/output/images/PngCreator.hpp"
 #include "picongpu/plugins/output/images/Visualisation.hpp"
-#include "picongpu/plugins/transitionRadiation/TransitionRadiation.hpp"
 
-#include <pmacc/assert.hpp>
 /* That's an abstract plugin for image output with the possibility
  * to store the image as png file or send it via a sockets to a server.
  *
@@ -43,8 +46,9 @@
  */
 #include "picongpu/plugins/PngPlugin.hpp"
 
-#if(ENABLE_ADIOS == 1)
-#    include "picongpu/plugins/adios/ADIOSWriter.hpp"
+/*
+#if (ENABLE_ADIOS == 1)
+#   include "picongpu/plugins/adios/ADIOSWriter.hpp"
 #endif
 
 #if(ENABLE_OPENPMD == 1)
@@ -83,6 +87,7 @@
 #include "picongpu/plugins/ILightweightPlugin.hpp"
 #include "picongpu/plugins/ISimulationPlugin.hpp"
 #include "picongpu/plugins/ResourceLog.hpp"
+*/
 
 #include <pmacc/mappings/kernel/MappingDescription.hpp>
 
@@ -149,40 +154,37 @@ namespace picongpu
 
         /* define stand alone plugins */
         using StandAlonePlugins = bmpl::vector<
+            /*
             Checkpoint,
             EnergyFields
-#if(ENABLE_ADIOS == 1)
-            ,
-            plugins::multi::Master<adios::ADIOSWriter>
-#endif
+    #if (ENABLE_ADIOS == 1)
+            , plugins::multi::Master< adios::ADIOSWriter >
+    #endif
 
-#if(ENABLE_OPENPMD == 1)
-            ,
-            plugins::multi::Master<openPMD::openPMDWriter>
-#endif
+    #if (ENABLE_OPENPMD == 1)
+            , plugins::multi::Master< openPMD::openPMDWriter >
+    #endif
 
-#if(PMACC_CUDA_ENABLED == 1)
-            ,
-            SumCurrents,
-            ChargeConservation
-#    if(SIMDIM == DIM3)
-            ,
-            IntensityPlugin
-#    endif
-#endif
+    #if( PMACC_CUDA_ENABLED == 1 )
+            , SumCurrents
+            , ChargeConservation
+    #   if(SIMDIM==DIM3)
+            , IntensityPlugin
+    #   endif
+    #endif
 
-#if(ENABLE_ISAAC == 1) && (SIMDIM == DIM3)
-            ,
-            isaacP::IsaacPlugin
-#endif
-            ,
-            ResourceLog>;
+    #if (ENABLE_ISAAC == 1) && (SIMDIM==DIM3)
+            , isaacP::IsaacPlugin
+    #endif
+            , ResourceLog
+            */
+            >;
 
 
         /* define field plugins */
         using UnspecializedFieldPlugins = bmpl::vector<
 #if(PMACC_CUDA_ENABLED == 1)
-            SliceFieldPrinterMulti<bmpl::_1>
+        // SliceFieldPrinterMulti< bmpl::_1 >
 #endif
             >;
 
@@ -197,11 +199,14 @@ namespace picongpu
 
         /* define species plugins */
         using UnspecializedSpeciesPlugins = bmpl::vector<
-            plugins::multi::Master<EnergyParticles<bmpl::_1>>,
-            plugins::multi::Master<CalcEmittance<bmpl::_1>>,
-            plugins::multi::Master<BinEnergyParticles<bmpl::_1>>,
+            /*
+            plugins::multi::Master< EnergyParticles<bmpl::_1> >,
+            plugins::multi::Master< CalcEmittance<bmpl::_1> >,
+            plugins::multi::Master< BinEnergyParticles<bmpl::_1> >,
+            */
             CountParticles<bmpl::_1>,
-            PngPlugin<Visualisation<bmpl::_1, PngCreator>>,
+            PngPlugin<Visualisation<bmpl::_1, PngCreator>>
+            /*
             plugins::transitionRadiation::TransitionRadiation<bmpl::_1>
 #if(ENABLE_OPENPMD == 1)
             ,
@@ -226,6 +231,7 @@ namespace picongpu
             PerSuperCell<bmpl::_1>
 #    endif
 #endif
+            */
             >;
 
         using CombinedUnspecializedSpeciesPlugins =

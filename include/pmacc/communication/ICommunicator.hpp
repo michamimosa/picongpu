@@ -36,7 +36,7 @@ namespace pmacc
     public:
         /*! returns available communication partners
          *
-         * returns a mask with neighbors, e.g. if there is a right neighbor result.isSet(RIGHT) returns true
+         * @return a mask with neighbors, e.g. if there is a right neighbor result.isSet(RIGHT) returns true
          */
         virtual const Mask& getCommunicationMask() const = 0;
 
@@ -53,20 +53,17 @@ namespace pmacc
          */
         virtual bool setStateAfterSlides(size_t numSlides) = 0;
 
-        //!\todo Interface should not depend on MPI!
-
-        /*! starts sending via MPI (non-blocking)
+        /*! start a sending task
          *
          * @param[in] ex                direction to send (enum ExchangeType)
          * @param[in] send_data         pointer to data; should have at least send_data_count bytes
          * @param[in] send_data_count   message size in bytes to sent
          * @param[in] tag               user-defined tag; only message with the same tag can be exchanged (i.e.
-         * startSend and startReceive must use the same tag) @returns an request for testing if this operation has
-         * already finished
+         *                              startSend and startReceive must use the same tag)
          */
-        virtual MPI_Request* startSend(uint32_t ex, const char* send_data, size_t send_data_count, uint32_t tag) = 0;
+        virtual void send(uint32_t ex, char const* send_data, size_t send_data_count, uint32_t tag) = 0;
 
-        /*! starts receiving via MPI (non-blocking)
+        /*! start a receiving task
          *
          * If recv_data_max is less then send_data_count (on other host) multiple startReceive are needed!
          *
@@ -74,10 +71,10 @@ namespace pmacc
          * @param[in] recv_data         pointer to data; should have at least recv_data_max bytes
          * @param[in] recv_data_max     maximum message size in bytes to receive
          * @param[in] tag               user-defined tag; only message with the same tag can be exchanged (i.e.
-         * startSend and startReceive must use the same tag) @returns an request for testing if this operation has
-         * already finished
+         *                              startSend and startReceive must use the same tag)
+         * @return number of received bytes
          */
-        virtual MPI_Request* startReceive(uint32_t ex, char* recv_data, size_t recv_data_max, uint32_t tag) = 0;
+        virtual size_t recv(uint32_t ex, char* recv_data, size_t recv_data_max, uint32_t tag) = 0;
 
         virtual int getRank() = 0;
 

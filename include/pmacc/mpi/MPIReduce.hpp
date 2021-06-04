@@ -102,7 +102,8 @@ namespace pmacc
                     mpiRank = -1;
 
                 // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-                __getTransactionEvent().waitForFinished();
+                // fixme: anything todo in redGrapes?
+
                 MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &reduceRank[0], 1, MPI_INT, MPI_COMM_WORLD));
 
                 for(int i = 0; i < countRanks; ++i)
@@ -128,6 +129,57 @@ namespace pmacc
                 }
                 MPI_CHECK(MPI_Group_free(&group));
                 MPI_CHECK(MPI_Group_free(&newgroup));
+
+                Environment<>::task(
+                    [this, isActive] {
+                        if(isMPICommInitialized)
+                        {
+                            MPI_CHECK(MPI_Comm_free(&comm));
+                            mpiRank = -1;
+                            numRanks = 0;
+                            isMPICommInitialized = false;
+                        }
+
+                        int countRanks;
+                        MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &countRanks));
+                        std::vector<int> reduceRank(countRanks);
+                        std::vector<int> groupRanks(countRanks);
+                        MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank));
+
+                        if(!isActive)
+                            mpiRank = -1;
+
+                        // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
+                        //__getTransactionEvent().waitForFinished();
+
+                        MPI_CHECK(MPI_Allgather(&mpiRank, 1, MPI_INT, &reduceRank[0], 1, MPI_INT, MPI_COMM_WORLD));
+
+                        for(int i = 0; i < countRanks; ++i)
+                        {
+                            if(reduceRank[i] != -1)
+                            {
+                                groupRanks[numRanks] = reduceRank[i];
+                                numRanks++;
+                            }
+                        }
+
+                        MPI_Group group = MPI_GROUP_NULL;
+                        MPI_Group newgroup = MPI_GROUP_NULL;
+                        MPI_CHECK(MPI_Comm_group(MPI_COMM_WORLD, &group));
+                        MPI_CHECK(MPI_Group_incl(group, numRanks, &groupRanks[0], &newgroup));
+
+                        MPI_CHECK(MPI_Comm_create(MPI_COMM_WORLD, newgroup, &comm));
+
+                        if(mpiRank != -1)
+                        {
+                            MPI_CHECK(MPI_Comm_rank(comm, &mpiRank));
+                            isMPICommInitialized = true;
+                        }
+                        MPI_CHECK(MPI_Group_free(&group));
+                        MPI_CHECK(MPI_Group_free(&newgroup));
+                    },
+                    TaskProperties::Builder().scheduling_tags({SCHED_MPI}))
+                    .get();
             }
 
             /* Reduce elements on cpu memory
@@ -149,14 +201,19 @@ namespace pmacc
                     participate(true);
                 typedef Type ValueType;
 
-                method(
-                    func,
-                    dest,
-                    src,
-                    n * ::pmacc::mpi::getMPI_StructAsArray<ValueType>().sizeMultiplier,
-                    ::pmacc::mpi::getMPI_StructAsArray<ValueType>().dataType,
-                    ::pmacc::mpi::getMPI_Op<Functor>(),
-                    comm);
+                Environment<>::task(
+                    [func, dest, src, n, method, comm = this->comm] {
+                        method(
+                            func,
+                            dest,
+                            src,
+                            n * ::pmacc::mpi::getMPI_StructAsArray<ValueType>().sizeMultiplier,
+                            ::pmacc::mpi::getMPI_StructAsArray<ValueType>().dataType,
+                            ::pmacc::mpi::getMPI_Op<Functor>(),
+                            comm);
+                    },
+                    TaskProperties::Builder().scheduling_tags({SCHED_MPI}).label("MPI Reduce Method")
+                ).get();
             }
 
             /* Reduce elements on cpu memory

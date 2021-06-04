@@ -84,7 +84,7 @@ namespace picongpu
                     /* implement ISimulationData members */
                     void synchronize() override
                     {
-                        m_energyHistogram->deviceToHost();
+                        pmacc::mem::buffer::copy(m_energyHistogram->host(), m_energyHistogram->device());
                     }
 
                     SimulationDataId getUniqueId() override

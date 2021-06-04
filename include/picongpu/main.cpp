@@ -19,13 +19,12 @@
  */
 
 #include <pmacc/boost_workaround.hpp>
+#include <pmacc/Environment.hpp>
+#include <pmacc/types.hpp>
 
 #include <picongpu/simulation_defines.hpp>
 
 #include "picongpu/ArgsParser.hpp"
-
-#include <pmacc/Environment.hpp>
-#include <pmacc/types.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -47,6 +46,9 @@ namespace
         simulation_starter::SimStarter sim;
         auto const parserStatus = sim.parseConfigs(argc, argv);
         int errorCode = EXIT_FAILURE;
+
+        spdlog::set_pattern("[thread %t] %^[%l]%$ %v");
+        spdlog::set_level(spdlog::level::info);
 
         switch(parserStatus)
         {

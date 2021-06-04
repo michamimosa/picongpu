@@ -1,5 +1,6 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
- *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Felix Schmitt,
+ *                     Richard Pausch, Benjamin Worpitz, Sergei Bastrakov,
+ *                     Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -31,7 +32,6 @@
 
 #include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/dimensions/SuperCellDescription.hpp>
-#include <pmacc/eventSystem/EventSystem.hpp>
 #include <pmacc/mappings/kernel/AreaMapping.hpp>
 #include <pmacc/mappings/kernel/ExchangeMapping.hpp>
 #include <pmacc/math/Vector.hpp>
@@ -124,41 +124,28 @@ namespace picongpu
         }
 
         template<typename T_DerivedField>
-        typename EMFieldBase<T_DerivedField>::DataBoxType EMFieldBase<T_DerivedField>::getHostDataBox()
+        void EMFieldBase<T_DerivedField>::communication()
         {
-            return buffer->getHostBuffer().getDataBox();
-        }
-
-        template<typename T_DerivedField>
-        typename EMFieldBase<T_DerivedField>::DataBoxType EMFieldBase<T_DerivedField>::getDeviceDataBox()
-        {
-            return buffer->getDeviceBuffer().getDataBox();
-        }
-
-        template<typename T_DerivedField>
-        EventTask EMFieldBase<T_DerivedField>::asyncCommunication(EventTask serialEvent)
-        {
-            EventTask eB = buffer->asyncCommunication(serialEvent);
-            return eB;
+            buffer->communication();
         }
 
         template<typename T_DerivedField>
         void EMFieldBase<T_DerivedField>::reset(uint32_t)
         {
-            buffer->getHostBuffer().reset(true);
-            buffer->getDeviceBuffer().reset(false);
+            pmacc::mem::buffer::reset(buffer->host(), true);
+            pmacc::mem::buffer::reset(buffer->device(), false);
         }
 
         template<typename T_DerivedField>
         void EMFieldBase<T_DerivedField>::syncToDevice()
         {
-            buffer->hostToDevice();
+            pmacc::mem::buffer::copy(device().write(), host().read());
         }
 
         template<typename T_DerivedField>
         void EMFieldBase<T_DerivedField>::synchronize()
         {
-            buffer->deviceToHost();
+            pmacc::mem::buffer::copy(host().write(), device().read());
         }
 
         template<typename T_DerivedField>

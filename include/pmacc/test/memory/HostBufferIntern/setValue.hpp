@@ -51,16 +51,19 @@ namespace pmacc
                         {
                             ::pmacc::DataSpace<T_Dim::value> const dataSpace
                                 = ::pmacc::DataSpace<T_Dim::value>::create(nElementsPerDim[i]);
-                            ::pmacc::HostBufferIntern<Data, T_Dim::value> hostBufferIntern(dataSpace);
+                            ::pmacc::mem::HostBuffer<Data, T_Dim::value> hostBuffer(dataSpace);
 
                             const Data value = 255;
-                            hostBufferIntern.setValue(value);
-
-                            auto ptr = hostBufferIntern.getPointer();
-                            for(size_t j = 0; j < static_cast<size_t>(dataSpace.productOfComponents()); ++j)
-                            {
-                                REQUIRE(ptr[j] == value);
-                            }
+                            ::pmacc::mem::buffer::fill( hostBuffer, value );
+                            ::pmacc::Environment<>::task(
+                                []( auto buf ) {
+                                    auto ptr = buf.getPointer();
+                                    for(size_t j = 0; j < static_cast<size_t>(dataSpace.productOfComponents()); ++j)
+                                    {
+                                        REQUIRE(ptr[j] == value);
+                                    }
+                                },
+                                hostBuffer.read());
                         }
                     }
 

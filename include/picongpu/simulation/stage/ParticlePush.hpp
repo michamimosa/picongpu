@@ -23,8 +23,6 @@
 
 #include "picongpu/particles/ParticlesFunctors.hpp"
 
-#include <pmacc/eventSystem/Manager.hpp>
-
 #include <cstdint>
 
 
@@ -42,13 +40,10 @@ namespace picongpu
                  * @param step index of time iteration
                  * @param[out] commEvent particle communication event
                  */
-                void operator()(uint32_t const step, pmacc::EventTask& commEvent) const
+                void operator()(uint32_t const step) const
                 {
-                    pmacc::EventTask initEvent = __getTransactionEvent();
-                    pmacc::EventTask updateEvent;
                     particles::PushAllSpecies pushAllSpecies;
-                    pushAllSpecies(step, initEvent, updateEvent, commEvent);
-                    __setTransactionEvent(updateEvent);
+                    pushAllSpecies(step);
                 }
             };
 

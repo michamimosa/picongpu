@@ -62,7 +62,8 @@ namespace picongpu
 
             SimStartInitialiser simStartInitialiser;
             Environment<>::get().DataConnector().initialise(simStartInitialiser, 0);
-            __getTransactionEvent().waitForFinished();
+
+            Environment<>::get().waitForAllTasks();
 
             log<picLog::SIMULATION_STATE>("Loading from default values finished");
         }
@@ -78,7 +79,7 @@ namespace picongpu
                 % restartDirectory;
 
             Environment<>::get().PluginConnector().restartPlugins(restartStep, restartDirectory);
-            __getTransactionEvent().waitForFinished();
+            Environment<>::get().waitForAllTasks();
 
             CUDA_CHECK(cuplaDeviceSynchronize());
             CUDA_CHECK(cuplaGetLastError());
@@ -86,7 +87,8 @@ namespace picongpu
             GridController<simDim>& gc = Environment<simDim>::get().GridController();
 
             // avoid deadlock between not finished pmacc tasks and MPI_Barrier
-            __getTransactionEvent().waitForFinished();
+            Environment<>::get().waitForAllTasks();
+
             /* can be spared for better scalings, but guarantees the user
              * that the restart was successful */
             MPI_CHECK(MPI_Barrier(gc.getCommunicator().getMPIComm()));
@@ -188,7 +190,7 @@ namespace picongpu
         {
             SimStartInitialiser simStartInitialiser;
             Environment<>::get().DataConnector().initialise(simStartInitialiser, currentStep);
-            __getTransactionEvent().waitForFinished();
+            Environment<>::get().waitForAllTasks();
         }
 
     private:
