@@ -102,14 +102,12 @@ namespace picongpu
                     auto incidentFieldSolver = fields::incidentField::Solver{cellDescription};
                     // update B by half step, to step = currentStep + 0.5, so step for E_inc = currentStep
                     incidentFieldSolver.updateBHalf(static_cast<float_X>(currentStep));
-                    auto& fieldB = solver.getFieldB();
-                    EventTask eRfieldB = fieldB.asyncCommunication(__getTransactionEvent());
+                    solver.getFieldB().communication();
 
                     solver.template updateE<CORE>(currentStep);
                     // Incident field solver update does not use exchanged B, so does not have to wait for it
                     // update E by full step, to step = currentStep + 1, so step for B_inc = currentStep + 0.5
                     incidentFieldSolver.updateE(static_cast<float_X>(currentStep) + 0.5_X);
-                    __setTransactionEvent(eRfieldB);
                     solver.template updateE<BORDER>(currentStep);
                 }
 
@@ -128,29 +126,17 @@ namespace picongpu
                      * in a call to update_beforeCurrent() on the next time step.
                      */
                     if(laserProfiles::Selected::INIT_TIME > 0.0_X)
-                        LaserPhysics{}(currentStep);
+                        Environment<>::fun_task( LaserPhysics{}, currentStep );
 
                     // Incident field solver update does not use exchanged E, so does not have to wait for it
                     auto incidentFieldSolver = fields::incidentField::Solver{cellDescription};
                     // update B by half step, to step currentStep + 1.5, so step for E_inc = currentStep + 1
                     incidentFieldSolver.updateBHalf(static_cast<float_X>(currentStep) + 1.0_X);
 
-                    auto& fieldE = solver.getFieldE();
-                    EventTask eRfieldE = fieldE.asyncCommunication(__getTransactionEvent());
-
+                    solver.getFieldE().communication();
                     solver.template updateBFirstHalf<CORE>(currentStep);
-                    __setTransactionEvent(eRfieldE);
                     solver.template updateBFirstHalf<BORDER>(currentStep);
-
-                    auto& fieldB = solver.getFieldB();
-                    EventTask eRfieldB = fieldB.asyncCommunication(__getTransactionEvent());
-                    __setTransactionEvent(eRfieldB);
-                }
-
-                static pmacc::traits::StringProperty getStringProperties()
-                {
-                    pmacc::traits::StringProperty propList("name", "Yee");
-                    return propList;
+                    solver.getFieldB().communication();
                 }
 
             private:

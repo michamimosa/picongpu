@@ -1,4 +1,4 @@
-/* Copyright 2013-2021 Rene Widera, Benjamin Worpitz, Alexander Grund
+/* Copyright 2020-2021 Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -21,105 +21,29 @@
 
 #pragma once
 
-
-#include "pmacc/cuSTL/container/HostBuffer.hpp"
-#include "pmacc/dimensions/DataSpace.hpp"
-#include "pmacc/memory/buffers/Buffer.hpp"
+#include <pmacc/dimensions/DataSpace.hpp>
+#include <pmacc/memory/buffers/Buffer.hpp>
+#include <pmacc/memory/buffers/hostBuffer/Resource.hpp>
+#include <pmacc/memory/buffers/Reset.hpp>
 
 namespace pmacc
 {
-    template<class TYPE, unsigned DIM>
-    class HostBuffer;
-
-    namespace detail
+    namespace mem
     {
-        template<class TYPE>
-        container::HostBuffer<TYPE, 1u> make_CartBuffer(HostBuffer<TYPE, 1u>& hb)
+        template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+        struct HostBuffer : host_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>
         {
-            return container::HostBuffer<TYPE, 1u>(hb.getBasePointer(), hb.getDataSpace(), false);
-        }
+            /*! create a new host buffer
+             *
+             * @param capacity extent for each dimension (in elements)
+             */
+            HostBuffer(DataSpace<T_dim> capacity)
+                : host_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>(
+                    host_buffer::HostBufferResource<T_Item, T_dim, T_DataAccessPolicy>(capacity).make_guard())
+            {
+                pmacc::mem::buffer::reset(*this, false);
+            }
+        };
 
-        template<class TYPE>
-        container::HostBuffer<TYPE, 2u> make_CartBuffer(HostBuffer<TYPE, 2u>& hb)
-        {
-            math::Size_t<2u - 1u> pitch;
-            pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
-            return container::HostBuffer<TYPE, 2u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
-        }
-
-        template<class TYPE>
-        container::HostBuffer<TYPE, 3u> make_CartBuffer(HostBuffer<TYPE, 3u>& hb)
-        {
-            math::Size_t<3u - 1u> pitch;
-            pitch[0] = hb.getPhysicalMemorySize()[0] * sizeof(TYPE);
-            pitch[1] = pitch[0] * hb.getPhysicalMemorySize()[1];
-            return container::HostBuffer<TYPE, 3u>(hb.getBasePointer(), hb.getDataSpace(), false, pitch);
-        }
-    } // namespace detail
-    class EventTask;
-
-    template<class TYPE, unsigned DIM>
-    class DeviceBuffer;
-
-    template<class TYPE, unsigned DIM>
-    class Buffer;
-
-    /**
-     * Interface for a DIM-dimensional Buffer of type TYPE on the host
-     *
-     * @tparam TYPE datatype for buffer data
-     * @tparam DIM dimension of the buffer
-     */
-    template<class TYPE, unsigned DIM>
-    class HostBuffer : public Buffer<TYPE, DIM>
-    {
-    public:
-        /**
-         * Copies the data from the given DeviceBuffer to this HostBuffer.
-         *
-         * @param other DeviceBuffer to copy data from
-         */
-        virtual void copyFrom(DeviceBuffer<TYPE, DIM>& other) = 0;
-
-        /**
-         * Returns the current size pointer.
-         *
-         * @return pointer to current size
-         */
-        virtual size_t* getCurrentSizePointer()
-        {
-            __startOperation(ITask::TASK_HOST);
-            return this->current_size;
-        }
-
-        /**
-         * Destructor.
-         */
-        virtual ~HostBuffer(){};
-
-        /**
-         * Conversion to cuSTL HostBuffer.
-         *
-         * Returns a cuSTL HostBuffer with reference to the same data.
-         */
-        HINLINE
-        container::HostBuffer<TYPE, DIM> cartBuffer()
-        {
-            return detail::make_CartBuffer(*this);
-        }
-
-    protected:
-        /** Constructor.
-         *
-         * @param size extent for each dimension (in elements)
-         *             if the buffer is a view to an existing buffer the size
-         *             can be less than `physicalMemorySize`
-         * @param physicalMemorySize size of the physical memory (in elements)
-         */
-        HostBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize)
-            : Buffer<TYPE, DIM>(size, physicalMemorySize)
-        {
-        }
-    };
-
+    } // namespace mem
 } // namespace pmacc

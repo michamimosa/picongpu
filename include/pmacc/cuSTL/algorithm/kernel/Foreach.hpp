@@ -24,7 +24,6 @@
 #include "detail/ForeachKernel.hpp"
 #include "detail/SphericMapper.hpp"
 #include "pmacc/cuSTL/zone/SphericZone.hpp"
-#include "pmacc/eventSystem/events/kernelEvents.hpp"
 #include "pmacc/math/vector/Int.hpp"
 #include "pmacc/math/vector/Size_t.hpp"
 #include "pmacc/types.hpp"
@@ -35,6 +34,8 @@
 #include <boost/preprocessor/repetition/enum_params.hpp>
 #include <boost/preprocessor/repetition/repeat.hpp>
 #include <boost/preprocessor/repetition/repeat_from_to.hpp>
+
+#include "pmacc/exec/kernelEvents.hpp"
 
 namespace pmacc
 {

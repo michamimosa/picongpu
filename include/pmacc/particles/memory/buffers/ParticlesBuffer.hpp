@@ -1,4 +1,5 @@
-/* Copyright 2013-2021 Axel Huebl, Felix Schmitt, Rene Widera, Benjamin Worpitz
+/* Copyright 2013-2020 Axel Huebl, Felix Schmitt, Rene Widera,
+ *                     Benjamin Worpitz, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -22,7 +23,6 @@
 #pragma once
 
 #include "pmacc/dimensions/GridLayout.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
 #include "pmacc/math/Vector.hpp"
 #include "pmacc/memory/buffers/GridBuffer.hpp"
 #include "pmacc/memory/dataTypes/Mask.hpp"
@@ -48,6 +48,15 @@
 
 namespace pmacc
 {
+    namespace particles_buffer
+    {
+        template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+        struct HostGuard;
+
+        template<typename T_ParticleDescription, class SuperCellSize_, typename T_DeviceHeap, unsigned DIM>
+        struct DeviceGuard;
+    } // namespace particles_buffer
+
     /**
      * Describes DIM-dimensional buffer for particles data on the host.
      *
@@ -122,6 +131,7 @@ namespace pmacc
         typedef SuperCell<FrameType> SuperCellType;
 
         typedef T_DeviceHeap DeviceHeap;
+
         /* Type of the particle box which particle buffer create */
         typedef ParticlesBox<FrameType, typename DeviceHeap::AllocatorHandle, DIM> ParticlesBoxType;
 
@@ -148,16 +158,21 @@ namespace pmacc
             : m_deviceHeap(deviceHeap)
             , superCellSize(superCellSize)
             , gridSize(layout)
-            , framesExchanges(nullptr)
+            , exchangeMemoryIndexer(DataSpace<DIM1>(0))
+            , framesExchanges(DataSpace<DIM1>(0))
+            , superCells(DataSpace<DIM>(layout / superCellSize))
         {
-            exchangeMemoryIndexer = new GridBuffer<BorderFrameIndex, DIM1>(DataSpace<DIM1>(0));
-            framesExchanges = new GridBuffer<FrameType, DIM1, FrameTypeBorder>(DataSpace<DIM1>(0));
-
-            DataSpace<DIM> superCellsCount = gridSize / superCellSize;
-
-            superCells = new GridBuffer<SuperCellType, DIM>(superCellsCount);
-
             reset();
+        }
+
+        ParticlesBuffer(ParticlesBuffer const& other)
+            : m_deviceHeap(other.m_deviceHeap)
+            , superCellSize(other.superCellSize)
+            , gridSize(other.gridSize)
+            , exchangeMemoryIndexer(other.exchangeMemoryIndexer)
+            , framesExchanges(other.framesExchanges)
+            , superCells(other.superCells)
+        {
         }
 
         /**
@@ -165,9 +180,16 @@ namespace pmacc
          */
         virtual ~ParticlesBuffer()
         {
-            __delete(superCells);
-            __delete(framesExchanges);
-            __delete(exchangeMemoryIndexer);
+        }
+
+        auto host()
+        {
+            return particles_buffer::HostGuard<T_ParticleDescription, SuperCellSize, DeviceHeap, DIM>(*this);
+        }
+
+        auto device()
+        {
+            return particles_buffer::DeviceGuard<T_ParticleDescription, SuperCellSize, DeviceHeap, DIM>(*this);
         }
 
         /**
@@ -175,8 +197,8 @@ namespace pmacc
          */
         void reset()
         {
-            superCells->getDeviceBuffer().setValue(SuperCellType());
-            superCells->getHostBuffer().setValue(SuperCellType());
+            mem::buffer::fill(superCells.device(), SuperCellType());
+            mem::buffer::fill(superCells.host(), SuperCellType());
         }
 
         /**
@@ -190,7 +212,7 @@ namespace pmacc
             size_t numFrameTypeBorders = usedMemory / SizeOfOneBorderElement;
 
             framesExchanges
-                ->addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), communicationTag, true, false);
+                .addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), communicationTag, true, false);
 
             /* Generate a new tag from this type
              *
@@ -200,30 +222,7 @@ namespace pmacc
              */
             auto const newTag = traits::GetUniqueTypeId<ParticlesBuffer, uint32_t>::uid();
             exchangeMemoryIndexer
-                ->addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), newTag, true, false);
-        }
-
-        /**
-         * Returns a ParticlesBox for device frame data.
-         *
-         * @return device frames ParticlesBox
-         */
-        ParticlesBoxType getDeviceParticleBox()
-        {
-            return ParticlesBoxType(superCells->getDeviceBuffer().getDataBox(), m_deviceHeap->getAllocatorHandle());
-        }
-
-        /**
-         * Returns a ParticlesBox for host frame data.
-         *
-         * @return host frames ParticlesBox
-         */
-        ParticlesBoxType getHostParticleBox(int64_t memoryOffset)
-        {
-            return ParticlesBoxType(
-                superCells->getHostBuffer().getDataBox(),
-                m_deviceHeap->getAllocatorHandle(),
-                memoryOffset);
+                .addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), newTag, true, false);
         }
 
         /**
@@ -234,7 +233,7 @@ namespace pmacc
          */
         bool hasSendExchange(uint32_t ex)
         {
-            return framesExchanges->hasSendExchange(ex);
+            return framesExchanges.hasSendExchange(ex);
         }
 
         /**
@@ -245,50 +244,39 @@ namespace pmacc
          */
         bool hasReceiveExchange(uint32_t ex)
         {
-            return framesExchanges->hasReceiveExchange(ex);
+            return framesExchanges.hasReceiveExchange(ex);
         }
 
         StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1> getSendExchangeStack(uint32_t ex)
         {
             return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1>(
-                framesExchanges->getSendExchange(ex),
-                exchangeMemoryIndexer->getSendExchange(ex));
+                *framesExchanges.getSendExchange(ex),
+                *exchangeMemoryIndexer.getSendExchange(ex));
         }
 
         StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1> getReceiveExchangeStack(uint32_t ex)
         {
             return StackExchangeBuffer<FrameTypeBorder, BorderFrameIndex, DIM - 1>(
-                framesExchanges->getReceiveExchange(ex),
-                exchangeMemoryIndexer->getReceiveExchange(ex));
+                *framesExchanges.getReceiveExchange(ex),
+                *exchangeMemoryIndexer.getReceiveExchange(ex));
         }
 
-        /**
-         * Starts sync data from own device buffer to neighbor device buffer.
-         *
-         * GridBuffer
-         *
-         */
-        EventTask asyncCommunication(EventTask serialEvent)
+        void communication()
         {
-            return framesExchanges->asyncCommunication(serialEvent)
-                + exchangeMemoryIndexer->asyncCommunication(serialEvent);
+            framesExchanges.communication();
+            exchangeMemoryIndexer.communication();
         }
 
-        EventTask asyncSendParticles(EventTask serialEvent, uint32_t ex)
+        void send(uint32_t direction)
         {
-            /* store each gpu-free event separately to avoid race conditions */
-            EventTask framesExchangesGPUEvent;
-            EventTask exchangeMemoryIndexerGPUEvent;
-            EventTask returnEvent
-                = framesExchanges->asyncSend(serialEvent, ex) + exchangeMemoryIndexer->asyncSend(serialEvent, ex);
-
-            return returnEvent;
+            framesExchanges.send(direction);
+            exchangeMemoryIndexer.send(direction);
         }
 
-        EventTask asyncReceiveParticles(EventTask serialEvent, uint32_t ex)
+        void recv(uint32_t direction)
         {
-            return framesExchanges->asyncReceive(serialEvent, ex)
-                + exchangeMemoryIndexer->asyncReceive(serialEvent, ex);
+            framesExchanges.recv(direction);
+            exchangeMemoryIndexer.recv(direction);
         }
 
         /**
@@ -298,8 +286,7 @@ namespace pmacc
          */
         DataSpace<DIM> getSuperCellsCount()
         {
-            PMACC_ASSERT(superCells != nullptr);
-            return superCells->getGridLayout().getDataSpace();
+            return superCells.getGridLayout().getDataSpace();
         }
 
         /**
@@ -309,8 +296,7 @@ namespace pmacc
          */
         GridLayout<DIM> getSuperCellsLayout()
         {
-            PMACC_ASSERT(superCells != nullptr);
-            return superCells->getGridLayout();
+            return superCells.getGridLayout();
         }
 
         /**
@@ -325,19 +311,131 @@ namespace pmacc
 
         void deviceToHost()
         {
-            superCells->deviceToHost();
+            mem::buffer::copy(superCells.host().write(), superCells.device().read());
         }
 
+    protected:
+        mem::GridBuffer<BorderFrameIndex, DIM1> exchangeMemoryIndexer;
 
-    private:
-        GridBuffer<BorderFrameIndex, DIM1>* exchangeMemoryIndexer;
-
-        GridBuffer<SuperCellType, DIM>* superCells;
+        mem::GridBuffer<SuperCellType, DIM> superCells;
         /*GridBuffer for hold borderFrames, we need a own buffer to create first exchanges without core memory*/
-        GridBuffer<FrameType, DIM1, FrameTypeBorder>* framesExchanges;
+        mem::GridBuffer<FrameType, DIM1, FrameTypeBorder> framesExchanges;
 
         DataSpace<DIM> superCellSize;
         DataSpace<DIM> gridSize;
         std::shared_ptr<DeviceHeap> m_deviceHeap;
-    };
+
+    }; // class ParticlesBuffer
+
+
+    namespace particles_buffer
+    {
+        template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
+        struct HostGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
+        {
+            friend class redGrapes::trait::BuildProperties<HostGuard>;
+
+            using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::
+                ParticlesBoxType;
+
+            HostGuard(ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& b)
+                : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b)
+            {
+            }
+
+            /**
+             * Returns a ParticlesBox for host frame data.
+             *
+             * @return host frames ParticlesBox
+             */
+            ParticlesBoxType getParticlesBox(int64_t memoryOffset)
+            {
+                return ParticlesBoxType(
+                    this->superCells.host().data().getDataBox(),
+                    this->m_deviceHeap->getAllocatorHandle(),
+                    memoryOffset);
+            }
+        };
+
+        template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
+        struct DeviceGuard : private ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>
+        {
+            friend class redGrapes::trait::BuildProperties<DeviceGuard>;
+
+            using typename ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>::
+                ParticlesBoxType;
+
+            uint32_t area;
+            Mask directions;
+
+            DeviceGuard(ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& b)
+                : ParticlesBuffer<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>(b)
+                , area{CORE + BORDER + GUARD}
+            {
+                for(int i = 1; i < 27; ++i)
+                    this->directions = this->directions + Mask(i);
+            }
+
+            /**
+             * Returns a ParticlesBox for device frame data.
+             *
+             * @return device frames ParticlesBox
+             */
+            ParticlesBoxType getParticlesBox()
+            {
+                return ParticlesBoxType(
+                    this->superCells.device().data().getDataBox(),
+                    this->m_deviceHeap->getAllocatorHandle());
+            }
+
+            //! only reduces resource access, not memory offset
+            auto access_dataPlace(uint32_t area) const
+            {
+                auto n = *this;
+                n.area = area;
+                n.directions = this->directions;
+                return n;
+            }
+
+            //! only reduces resource access, not memory offset
+            auto access_directions(Mask directions) const
+            {
+                auto n = *this;
+                n.area = this->area;
+                n.directions = directions;
+                return n;
+            }
+        };
+
+    } // namespace particles_buffer
+
 } // namespace pmacc
+
+
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
+struct redGrapes::trait::BuildProperties<
+    pmacc::particles_buffer::HostGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>>
+{
+    template<typename Builder>
+    static void build(
+        Builder& builder,
+        pmacc::particles_buffer::HostGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& buf)
+    {
+        builder.add(
+            buf.superCells.host().data()); //.access_dataPlace( buf.area ).access_directions( buf.exchangeType ) );
+    }
+};
+
+template<typename T_ParticleDescription, class T_SuperCellSize, typename T_DeviceHeap, unsigned T_dim>
+struct redGrapes::trait::BuildProperties<
+    pmacc::particles_buffer::DeviceGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim>>
+{
+    template<typename Builder>
+    static void build(
+        Builder& builder,
+        pmacc::particles_buffer::DeviceGuard<T_ParticleDescription, T_SuperCellSize, T_DeviceHeap, T_dim> const& buf)
+    {
+        builder.add(buf.superCells.device().data().access_dataPlace(buf.area).access_directions(buf.directions));
+    }
+};
+

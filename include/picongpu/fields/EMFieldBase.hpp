@@ -1,5 +1,5 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch,
- *                     Benjamin Worpitz, Sergei Bastrakov
+/* Copyright 2013-2020 Axel Huebl, Heiko Burau, Rene Widera, Richard Pausch,
+ *                     Benjamin Worpitz, Sergei Bastrakov, Michael Sippel
  *
  * This file is part of PIConGPU.
  *
@@ -71,7 +71,7 @@ namespace picongpu
             static constexpr int numComponents = ValueType::dim;
 
             //! Type of host-device buffer for field values
-            using Buffer = pmacc::GridBuffer<ValueType, simDim>;
+            using Buffer = pmacc::mem::GridBuffer<ValueType, simDim>;
 
             //! Type of data box for field values on host and device
             using DataBoxType = pmacc::DataBox<PitchedBox<ValueType, simDim>>;
@@ -92,17 +92,8 @@ namespace picongpu
             //! Get the grid layout
             HINLINE GridLayout<simDim> getGridLayout();
 
-            //! Get the host data box for the field values
-            HINLINE DataBoxType getHostDataBox();
-
-            //! Get the device data box for the field values
-            HINLINE DataBoxType getDeviceDataBox();
-
-            /** Start asynchronous communication of field values
-             *
-             * @param serialEvent event to depend on
-             */
-            HINLINE EventTask asyncCommunication(EventTask serialEvent);
+            //! Start asynchronous communication of field values
+            HINLINE void communication();
 
             /** Reset the host-device buffer for field values
              *
@@ -118,6 +109,16 @@ namespace picongpu
 
             //! Get id
             HINLINE SimulationDataId getUniqueId() override;
+
+            //! buffer access guards
+            auto device()
+            {
+                return buffer->device();
+            }
+            auto host()
+            {
+                return buffer->host();
+            }
 
         private:
             //! Host-device buffer for field values

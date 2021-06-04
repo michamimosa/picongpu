@@ -87,7 +87,7 @@ namespace picongpu
                     /* implement ISimulationData members */
                     void synchronize() override
                     {
-                        m_rateMatrix->deviceToHost();
+                        pmacc::mem::buffer::copy(m_rateMatrix->host(), m_rateMatrix->device());
                     }
 
                     SimulationDataId getUniqueId() override

@@ -178,6 +178,16 @@ namespace picongpu
                     (gridBlocks, numWorkers)(laserProfiles::Selected(currentStep));
                 }
             }
+
+            template<typename Builder>
+            void buildTaskProperties(Builder& builder)
+            {
+                builder.label("LaserPhysics");
+                builder.scheduling_tags({SCHED_CUPLA});
+
+                DataConnector& dc = Environment<>::get().DataConnector();
+                builder.add(dc.get<FieldE>(FieldE::getName(), true)->device().data());
+            }
         };
     } // namespace fields
 } // namespace picongpu

@@ -25,7 +25,6 @@
 #include <pmacc/dimensions/DataSpace.hpp>
 #include <pmacc/types.hpp>
 
-
 namespace pmacc
 {
     namespace test
@@ -39,6 +38,7 @@ namespace pmacc
                 const pmacc::DataSpace<T_dim> devices = pmacc::DataSpace<T_dim>::create(1);
                 const pmacc::DataSpace<T_dim> periodic = pmacc::DataSpace<T_dim>::create(1);
                 pmacc::Environment<T_dim>::get().initDevices(devices, periodic);
+                pmacc::Environment<T_dim>::get().initScheduler(std::thread::hardware_concurrency(), 6);
             }
 
             ~PMaccFixture()

@@ -159,20 +159,30 @@ namespace pmacc
         {
             GridBuffer<uint64_cu, DIM1> counter(DataSpace<DIM1>(1));
 
-            AreaMapping<AREA, CellDesc> mapper(cellDescription);
-            constexpr uint32_t numWorkers
-                = traits::GetNumWorkers<math::CT::volume<typename CellDesc::SuperCellSize>::type::value>::value;
+            Environment<>::task(
+                [cellDescription, filter, parFilter](auto buffer, auto counter) {
+                    AreaMapping<AREA, CellDesc> mapper(cellDescription);
 
-            PMACC_KERNEL(KernelCountParticles<numWorkers>{})
-            (mapper.getGridDim(), numWorkers)(
-                buffer.getDeviceParticlesBox(),
-                counter.getDeviceBuffer().getBasePointer(),
-                filter,
-                mapper,
-                parFilter);
+                    constexpr uint32_t numWorkers = traits::GetNumWorkers<
+                        math::CT::volume<typename CellDesc::SuperCellSize>::type::value>::value;
+
+                    PMACC_KERNEL(KernelCountParticles<numWorkers>{})
+                    (mapper.getGridDim(),
+                     numWorkers)(buffer.getParticlesBox(), counter.getBasePointer(), filter, mapper, parFilter);
+                },
+
+                TaskProperties::Builder().label("KernelCountParticles").scheduling_tags({SCHED_CUPLA}),
+
+                buffer.getParticlesBuffer().device(),
+                counter.device().data().write());
 
             counter.deviceToHost();
-            return *(counter.getHostBuffer().getDataBox());
+
+            return Environment<>::task(
+                       [](auto counterData) { return counterData.getDataBox()[0]; },
+                       TaskProperties::Builder().label("read particle count"),
+                       counter.host().data().read())
+                .get();
         }
 
         /** Get particle count

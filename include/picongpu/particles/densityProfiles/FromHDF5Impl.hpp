@@ -27,6 +27,7 @@
 #include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/memory/boxes/DataBoxDim1Access.hpp>
 #include <pmacc/memory/buffers/GridBuffer.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Fill.hpp>
 #include <pmacc/static_assert.hpp>
 
 #include <splash/splash.h>
@@ -79,7 +80,7 @@ namespace picongpu
                 auto fieldTmp = dc.get<FieldTmp>(FieldTmp::getUniqueId(0), true);
                 auto& fieldBuffer = fieldTmp->getGridBuffer();
 
-                deviceDataBox = fieldBuffer.getDeviceBuffer().getDataBox();
+                deviceDataBox = fieldBuffer.device().data().getDataBox();
 
                 GridController<simDim>& gc = Environment<simDim>::get().GridController();
                 const pmacc::Selection<simDim> localDomain = Environment<simDim>::get().SubGrid().getLocalDomain();
@@ -119,7 +120,7 @@ namespace picongpu
                         domainSize[d] = localDomainSize[d];
 
                     /* clear host buffer with default value */
-                    fieldBuffer.getHostBuffer().setValue(float1_X(ParamClass::defaultDensity));
+                    pmacc::mem::buffer::fill(fieldBuffer.host(), float1_X(ParamClass::defaultDensity));
 
                     /* get dimensions and offsets (collective call) */
                     Domain fileDomain = pdc.getGlobalDomain(ParamClass::iteration, ParamClass::datasetName);
@@ -202,7 +203,8 @@ namespace picongpu
                         }
 
                         /* get the databox of the host buffer */
-                        auto dataBox = fieldBuffer.getHostBuffer().getDataBox();
+                        auto dataBox = fieldBuffer.host().data().getDataBox();
+
                         /* get a 1D access object to the databox */
                         using D1Box = DataBoxDim1Access<typename FieldTmp::DataBoxType>;
                         DataSpace<simDim> guards = fieldBuffer.getGridLayout().getGuard();
@@ -220,8 +222,7 @@ namespace picongpu
                     pdc.close();
 
                     /* copy host data to the device */
-                    fieldBuffer.hostToDevice();
-                    __getTransactionEvent().waitForFinished();
+                    pmacc::mem::buffer::copy(fieldBuffer.device(), fieldBuffer.host());
                 }
                 catch(const DCException& e)
                 {

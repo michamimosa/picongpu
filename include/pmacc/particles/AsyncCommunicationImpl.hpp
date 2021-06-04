@@ -1,4 +1,5 @@
-/* Copyright 2013-2021 Heiko Burau, Rene Widera, Alexander Grund
+/* Copyright 2013-2020 Heiko Burau, Rene Widera, Alexander Grund,
+ *                     Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -48,17 +49,30 @@ namespace pmacc
         struct AsyncCommunicationImpl<T_Data, Bool2Type<IsParticleSpecies<T_Data>::value>>
         {
             template<class T_Particles>
-            EventTask operator()(T_Particles& par, EventTask event) const
+            void operator()(T_Particles& particles) const
             {
-                EventTask ret;
-                __startTransaction(event);
-                Environment<>::get().ParticleFactory().createTaskParticlesReceive(par);
-                ret = __endTransaction();
+                typename T_Particles::HandleGuardRegion::HandleExchanged handleExchanged;
+                typename T_Particles::HandleGuardRegion::HandleNotExchanged handleNotExchanged;
 
-                __startTransaction(event);
-                Environment<>::get().ParticleFactory().createTaskParticlesSend(par);
-                ret += __endTransaction();
-                return ret;
+                size_t n_exchanges = traits::NumberOfExchanges<T_Particles::Dim>::value;
+
+                for(size_t i = 1; i < n_exchanges; ++i)
+                {
+                    if(particles.getParticlesBuffer().hasSendExchange(i))
+                        handleExchanged.handleOutgoing(particles, i);
+                    else
+                        handleNotExchanged.handleOutgoing(particles, i);
+                }
+
+                for(size_t i = 1; i < n_exchanges; ++i)
+                {
+                    if(particles.getParticlesBuffer().hasReceiveExchange(i))
+                        handleExchanged.handleIncoming(particles, i);
+                    else
+                        handleNotExchanged.handleIncoming(particles, i);
+                }
+
+                particles.fillBorderGaps();
             }
         };
 

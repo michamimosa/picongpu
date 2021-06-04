@@ -117,6 +117,8 @@ namespace picongpu
             picongpu::MappingDesc cellDescription,
             SimulationDataId datasetID);
 
+
+        // fixme: deprecated?
         void createParticleBuffer();
 
         void update(uint32_t const currentStep);

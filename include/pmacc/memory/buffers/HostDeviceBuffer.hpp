@@ -1,4 +1,4 @@
-/* Copyright 2016-2021 Alexander Grund
+/* Copyright 2016-2020 Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -22,105 +22,194 @@
 #pragma once
 
 #include "pmacc/memory/buffers/DeviceBuffer.hpp"
-#include "pmacc/memory/buffers/DeviceBufferIntern.hpp"
 #include "pmacc/memory/buffers/HostBuffer.hpp"
-#include "pmacc/memory/buffers/HostBufferIntern.hpp"
 #include "pmacc/types.hpp"
 
 #include <boost/type_traits.hpp>
 
+#include <pmacc/memory/buffers/copy/DeviceToHost.hpp>
 
 namespace pmacc
 {
-    /** Buffer that contains a host and device buffer and allows synchronizing those 2 */
-    template<typename T_Type, unsigned T_dim>
-    class HostDeviceBuffer
+    namespace mem
     {
-        typedef HostBufferIntern<T_Type, T_dim> HostBufferType;
-        typedef DeviceBufferIntern<T_Type, T_dim> DeviceBufferType;
+        namespace host_device_buffer
+        {
+            template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+            struct HostDeviceBufferGuard
+            {
+                using Item = T_Item;
+                static constexpr std::size_t dim = T_dim;
+                using DataAccessPolicy = T_DataAccessPolicy;
+                using DataBoxType = DataBox<PitchedBox<Item, dim>>;
 
-    public:
-        using ValueType = T_Type;
-        typedef HostBuffer<T_Type, T_dim> HBuffer;
-        typedef DeviceBuffer<T_Type, T_dim> DBuffer;
-        typedef typename HostBufferType::DataBoxType DataBoxType;
-        PMACC_CASSERT_MSG(
-            DataBoxTypes_must_match,
-            boost::is_same<DataBoxType, typename DeviceBufferType::DataBoxType>::value);
 
-        /**
-         * Constructor that creates the buffers with the given size
-         *
-         * @param size DataSpace representing buffer size
-         * @param sizeOnDevice if true, internal buffers must store their
-         *        size additionally on the device
-         *        (as we keep this information coherent with the host, it influences
-         *        performance on host-device copies, but some algorithms on the device
-         *        might need to know the size of the buffer)
-         */
-        HostDeviceBuffer(const DataSpace<T_dim>& size, bool sizeOnDevice = false);
+                //! todo: currently the size is stored doubled, in host buffer and device buffer
+                //        and could possibly be shared (using only one DeviceBufferSize for both buffers)
+                host_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> host_buf;
+                device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy> device_buf;
+            };
 
-        /**
-         * Constructor that reuses the given device buffer instead of creating an own one.
-         * Sizes should match. If size is smaller than the buffer size, then only the part near the origin is used.
-         * Passing a size bigger than the buffer is undefined.
-         */
-        HostDeviceBuffer(DBuffer& otherDeviceBuffer, const DataSpace<T_dim>& size, bool sizeOnDevice = false);
+            template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+            struct HostDeviceBufferResource
+            {
+                using Item = T_Item;
+                static constexpr std::size_t dim = T_dim;
+                using DataAccessPolicy = T_DataAccessPolicy;
+                using DataBoxType = DataBox<PitchedBox<Item, dim>>;
 
-        /**
-         * Constructor that reuses the given buffers instead of creating own ones.
-         * The data from [offset, offset+size) is used
-         * Passing a size bigger than the buffer (minus the offset) is undefined.
-         */
-        HostDeviceBuffer(
-            HBuffer& otherHostBuffer,
-            const DataSpace<T_dim>& offsetHost,
-            DBuffer& otherDeviceBuffer,
-            const DataSpace<T_dim>& offsetDevice,
-            const GridLayout<T_dim> size,
-            bool sizeOnDevice = false);
+                HostDeviceBufferResource(DataSpace<dim> capacity, bool use_vector_as_base = false)
+                    : host(capacity)
+                    , device(use_vector_as_base)
+                {
+                }
 
-        HINLINE virtual ~HostDeviceBuffer();
+                auto make_guard(bool size_on_device = false)
+                {
+                    return HostDeviceBufferGuard<Item, dim, DataAccessPolicy>{
+                        host.make_guard(),
+                        device.make_guard(size_on_device)};
+                }
 
-        /**
-         * Returns the internal data buffer on host side
-         *
-         * @return internal HBuffer
-         */
-        HINLINE HBuffer& getHostBuffer() const;
+            protected:
+                host_buffer::HostBufferResource<Item, dim, DataAccessPolicy> host;
 
-        /**
-         * Returns the internal data buffer on device side
-         *
-         * @return internal DBuffer
-         */
-        HINLINE DBuffer& getDeviceBuffer() const;
+                device_buffer::DeviceBufferResource<Item, dim, DataAccessPolicy> device;
+            };
 
-        /**
-         * Resets both internal buffers.
-         *
-         * See DeviceBuffer::reset and HostBuffer::reset for details.
-         *
-         * @param preserveData determines if data on internal buffers should not be erased
-         */
-        void reset(bool preserveData = true);
+            template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+            struct ReadGuard : protected HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>
+            {
+                auto read() const noexcept
+                {
+                    return *this;
+                }
 
-        /**
-         * Asynchronously copies data from internal host to internal device buffer.
-         *
-         */
-        HINLINE void hostToDevice();
+                auto host() const noexcept
+                {
+                    return this->host_buf.read();
+                }
+                auto device() const noexcept
+                {
+                    return this->device_buf.read();
+                }
 
-        /**
-         * Asynchronously copies data from internal device to internal host buffer.
-         */
-        HINLINE void deviceToHost();
+                auto sub_area(DataSpace<T_dim> offset, DataSpace<T_dim> data_space) const
+                {
+                    return ReadGuard(HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>{
+                        this->host_buf.sub_area(offset, data_space),
+                        this->device_buf.sub_area(offset, data_space)});
+                }
 
-    private:
-        HBuffer* hostBuffer;
-        DBuffer* deviceBuffer;
-    };
+            protected:
+                ReadGuard(HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy> const& b)
+                    : HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>(b)
+                {
+                }
+            };
+
+            template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+            struct WriteGuard : protected ReadGuard<T_Item, T_dim, T_DataAccessPolicy>
+            {
+                auto write() const noexcept
+                {
+                    return *this;
+                }
+
+                auto host() const noexcept
+                {
+                    return this->host_buf.write();
+                }
+                auto device() const noexcept
+                {
+                    return this->device_buf.write();
+                }
+
+                auto sub_area(DataSpace<T_dim> offset, DataSpace<T_dim> data_space) const
+                {
+                    return WriteGuard(HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>{
+                        this->host_buf.sub_area(offset, data_space),
+                        this->device_buf.sub_area(offset, data_space)});
+                }
+
+                void deviceToHost()
+                {
+                    pmacc::mem::buffer::copy(host().write(), device().read());
+                }
+
+            protected:
+                WriteGuard(HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy> const& b)
+                    : ReadGuard<T_Item, T_dim, T_DataAccessPolicy>(b)
+                {
+                }
+            };
+
+        } // namespace host_device_buffer
+
+        template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+        struct HostDeviceBuffer : host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>
+        {
+            using DataBoxType = DataBox<PitchedBox<T_Item, T_dim>>;
+
+            HostDeviceBuffer(DataSpace<T_dim> capacity, bool size_on_device = false)
+                : host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>(
+                    host_device_buffer::HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>{
+                        HostBuffer<T_Item, T_dim, T_DataAccessPolicy>(capacity),
+                        DeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>(capacity, size_on_device)})
+            {
+            }
+
+            HostDeviceBuffer(
+                device_buffer::DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy> other_device_buffer,
+                DataSpace<T_dim> capacity,
+                bool size_on_device = false)
+                : host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>(
+                    host_device_buffer::HostDeviceBufferGuard<T_Item, T_dim, T_DataAccessPolicy>{
+                        HostBuffer<T_Item, T_dim, T_DataAccessPolicy>(capacity),
+                        device_buffer::DeviceBufferResource<T_Item, T_dim, T_DataAccessPolicy>(other_device_buffer)
+                            .make_guard(size_on_device)})
+            {
+            }
+        };
+
+    } // namespace mem
+
+    template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy = rg::access::IOAccess>
+    using HostDeviceBuffer = mem::HostDeviceBuffer<T_Item, T_dim, T_DataAccessPolicy>;
 
 } // namespace pmacc
 
-#include "pmacc/memory/buffers/HostDeviceBuffer.tpp"
+namespace redGrapes
+{
+    namespace trait
+    {
+        template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+        struct BuildProperties<pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy>>
+        {
+            template<typename Builder>
+            static void build(
+                Builder& builder,
+                pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const& buf)
+            {
+                builder.add(buf.host());
+                builder.add(buf.device());
+            }
+        };
+
+        template<typename T_Item, std::size_t T_dim, typename T_DataAccessPolicy>
+        struct BuildProperties<pmacc::mem::host_device_buffer::WriteGuard<T_Item, T_dim, T_DataAccessPolicy>>
+        {
+            template<typename Builder>
+            static void build(
+                Builder& builder,
+                pmacc::mem::host_device_buffer::ReadGuard<T_Item, T_dim, T_DataAccessPolicy> const& buf)
+            {
+                builder.add(buf.host());
+                builder.add(buf.device());
+            }
+        };
+
+    } // namespace trait
+
+} // namespace redGrapes
+

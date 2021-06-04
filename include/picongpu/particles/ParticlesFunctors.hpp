@@ -30,9 +30,10 @@
 #include <pmacc/math/MapTuple.hpp>
 #include <pmacc/particles/meta/FindByNameOrType.hpp>
 #include <pmacc/traits/HasFlag.hpp>
-#if(PMACC_CUDA_ENABLED == 1)
-#    include "picongpu/particles/bremsstrahlung/Bremsstrahlung.hpp"
-#endif
+#include "picongpu/particles/traits/GetIonizerList.hpp"
+//#if( PMACC_CUDA_ENABLED == 1 )
+//#   include "picongpu/particles/bremsstrahlung/Bremsstrahlung.hpp"
+//#endif
 #include "picongpu/particles/creation/creation.hpp"
 #include "picongpu/particles/flylite/IFlyLite.hpp"
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.hpp"
@@ -184,17 +185,12 @@ namespace picongpu
             using SpeciesType = pmacc::particles::meta::FindByNameOrType_t<VectorAllSpecies, T_SpeciesType>;
             using FrameType = typename SpeciesType::FrameType;
 
-            template<typename T_EventList>
-            HINLINE void operator()(const uint32_t currentStep, const EventTask& eventInt, T_EventList& updateEvent)
-                const
+            HINLINE void operator()(const uint32_t currentStep) const
             {
                 DataConnector& dc = Environment<>::get().DataConnector();
                 auto species = dc.get<SpeciesType>(FrameType::getName(), true);
 
-                __startTransaction(eventInt);
                 species->update(currentStep);
-                EventTask ev = __endTransaction();
-                updateEvent.push_back(ev);
             }
         };
 
@@ -210,16 +206,12 @@ namespace picongpu
             using SpeciesType = pmacc::particles::meta::FindByNameOrType_t<VectorAllSpecies, T_SpeciesType>;
             using FrameType = typename SpeciesType::FrameType;
 
-            template<typename T_EventList>
-            HINLINE void operator()(T_EventList& updateEventList, T_EventList& commEventList) const
+            HINLINE void operator()() const
             {
                 DataConnector& dc = Environment<>::get().DataConnector();
                 auto species = dc.get<SpeciesType>(FrameType::getName(), true);
 
-                EventTask updateEvent(*(updateEventList.begin()));
-
-                updateEventList.pop_front();
-                commEventList.push_back(communication::asyncCommunication(*species, updateEvent));
+                communication::asyncCommunication(*species);
             }
         };
 
@@ -232,37 +224,18 @@ namespace picongpu
              * @param pushEvent[out] grouped event that marks the end of the species push
              * @param commEvent[out] grouped event that marks the end of the species communication
              */
-            HINLINE void operator()(
-                const uint32_t currentStep,
-                const EventTask& eventInt,
-                EventTask& pushEvent,
-                EventTask& commEvent) const
+            HINLINE void operator()(const uint32_t currentStep) const
             {
-                using EventList = std::list<EventTask>;
-                EventList updateEventList;
-                EventList commEventList;
-
                 /* push all species */
                 using VectorSpeciesWithPusher =
                     typename pmacc::particles::traits::FilterByFlag<VectorAllSpecies, particlePusher<>>::type;
-                meta::ForEach<VectorSpeciesWithPusher, particles::PushSpecies<bmpl::_1>> pushSpecies;
-                pushSpecies(currentStep, eventInt, updateEventList);
 
-                /* join all push events */
-                for(typename EventList::iterator iter = updateEventList.begin(); iter != updateEventList.end(); ++iter)
-                {
-                    pushEvent += *iter;
-                }
+                meta::ForEach<VectorSpeciesWithPusher, particles::PushSpecies<bmpl::_1>> pushSpecies;
+                pushSpecies(currentStep);
 
                 /* call communication for all species */
                 meta::ForEach<VectorSpeciesWithPusher, particles::CommunicateSpecies<bmpl::_1>> communicateSpecies;
-                communicateSpecies(updateEventList, commEventList);
-
-                /* join all communication events */
-                for(typename EventList::iterator iter = commEventList.begin(); iter != commEventList.end(); ++iter)
-                {
-                    commEvent += *iter;
-                }
+                communicateSpecies();
             }
         };
 
@@ -355,6 +328,84 @@ namespace picongpu
          *
          * @tparam T_ElectronSpecies type or name as boost::mpl::string of electron particle species
          */
+
+        /*
+        template<typename T_ElectronSpecies>
+        struct CallBremsstrahlung
+        {
+            using ElectronSpecies = pmacc::particles::meta::FindByNameOrType_t<
+                VectorAllSpecies,
+                T_ElectronSpecies
+            >;
+            using ElectronFrameType = typename ElectronSpecies::FrameType;
+
+            using IonSpecies = pmacc::particles::meta::FindByNameOrType_t<
+                VectorAllSpecies,
+                typename pmacc::particles::traits::ResolveAliasFromSpecies<
+                    ElectronSpecies,
+                    bremsstrahlungIons<>
+                >::type
+            >;
+            using PhotonSpecies = pmacc::particles::meta::FindByNameOrType_t<
+                VectorAllSpecies,
+                typename pmacc::particles::traits::ResolveAliasFromSpecies<
+                    ElectronSpecies,
+                    bremsstrahlungPhotons<>
+                >::type
+            >;
+            using PhotonFrameType = typename PhotonSpecies::FrameType;
+            using BremsstrahlungFunctor = bremsstrahlung::Bremsstrahlung<
+                IonSpecies,
+                ElectronSpecies,
+                PhotonSpecies
+            >;
+
+            /** Functor implementation
+             *
+             * \tparam T_CellDescription contains the number of blocks and blocksize
+             *                           that is later passed to the kernel
+             * \param cellDesc logical block information like dimension and cell sizes
+             * \param currentStep the current time step
+             */
+        /*
+            template<typename T_CellDescription, typename ScaledSpectrumMap>
+            HINLINE void operator()(
+                T_CellDescription cellDesc,
+                const uint32_t currentStep,
+                const ScaledSpectrumMap& scaledSpectrumMap,
+                const bremsstrahlung::GetPhotonAngle& photonAngle
+            ) const
+            {
+                DataConnector &dc = Environment<>::get().DataConnector();
+
+                /* alias for pointer on source species */
+        //      auto electronSpeciesPtr = dc.get< ElectronSpecies >( ElectronFrameType::getName(), true );
+        /* alias for pointer on destination species */
+/*        auto photonSpeciesPtr = dc.get< PhotonSpecies >( PhotonFrameType::getName(), true );
+
+            template<typename T_EventList>
+            HINLINE void operator()(T_EventList& updateEventList, T_EventList& commEventList) const
+            {
+                DataConnector& dc = Environment<>::get().DataConnector();
+                auto species = dc.get<SpeciesType>(FrameType::getName(), true);
+
+                EventTask updateEvent(*(updateEventList.begin()));
+
+                updateEventList.pop_front();
+                commEventList.push_back(communication::asyncCommunication(*species, updateEvent));
+
+                dc.releaseData(FrameType::getName());
+            }
+        };
+*/
+#endif
+
+#if(PMACC_CUDA_ENABLED == 1)
+
+        /** Handles the bremsstrahlung effect for electrons on ions.
+         *
+         * @tparam T_ElectronSpecies type or name as boost::mpl::string of electron particle species
+         */
         template<typename T_ElectronSpecies>
         struct CallBremsstrahlung
         {
@@ -409,6 +460,7 @@ namespace picongpu
                     cellDesc);
             }
         };
+
 #endif
 
         /** Handles the synchrotron radiation emission of photons from electrons

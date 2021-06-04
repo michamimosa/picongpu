@@ -73,6 +73,15 @@ namespace picongpu
                     }
                 }
 
+                template<typename Builder>
+                void buildTaskProperties(Builder& builder)
+                {
+                    builder.label("CurrentBackground");
+
+                    DataConnector& dc = Environment<>::get().DataConnector();
+                    builder.add(*dc.get<FieldJ>(FieldJ::getName(), true));
+                }
+
             private:
                 //! Mapping for kernels
                 MappingDesc cellDescription;

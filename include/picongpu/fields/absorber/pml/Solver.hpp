@@ -139,18 +139,30 @@ namespace picongpu
                             (SPEED_OF_LIGHT * SPEED_OF_LIGHT * DELTA_T * DELTA_T * INV_CELL2_SUM) <= 1.0
                                 && sizeof(T_CurlE*) != 0);
 
-                        constexpr auto numWorkers = getNumWorkers();
-                        using Kernel = KernelUpdateE<numWorkers, BlockDescription<CurlB>>;
-                        AreaMapper<T_Area> mapper{cellDescription};
-                        // Note: optimization considerations same as in updateBHalf( ).
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(), numWorkers)(
-                            mapper,
-                            getLocalParameters(mapper, currentStep),
-                            CurlB(),
-                            fieldB->getDeviceDataBox(),
-                            fieldE->getDeviceDataBox(),
-                            psiE->getDeviceOuterLayerBox());
+                        Environment<>::task(
+                            [cellDescription = this->cellDescription,
+                             currentStep](auto fieldEDeviceData, auto fieldBDeviceData, auto psiEDevice) {
+                                constexpr auto numWorkers = getNumWorkers();
+                                using Kernel = KernelUpdateE<numWorkers, BlockDescription<CurlB>>;
+                                AreaMapper<T_Area> mapper{cellDescription};
+                                // Note: optimization considerations same as in updateBHalf( ).
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    getLocalParameters(mapper, currentStep),
+                                    CurlB(),
+                                    fieldEDeviceData.getDataBox(),
+                                    fieldBDeviceData.getDataBox(),
+                                    psiEDevice.getOuterLayerBox());
+                            },
+
+                            TaskProperties::Builder()
+                                .label("fields::absorber::pml::Solver::updateE()")
+                                .scheduling_tags({SCHED_CUPLA}),
+
+                            fieldE->device().data(),
+                            fieldB->device().data(),
+                            psiE->device());
                     }
 
                 private:
@@ -199,24 +211,36 @@ namespace picongpu
                     template<uint32_t T_Area>
                     void updateBHalf(uint32_t const currentStep, bool const updatePsiB)
                     {
-                        constexpr auto numWorkers = getNumWorkers();
-                        using Kernel = KernelUpdateBHalf<numWorkers, BlockDescription<CurlE>>;
-                        AreaMapper<T_Area> mapper{cellDescription};
-                        /* Note: here it is possible to first check if PML is enabled
-                         * in the local domain at all, and otherwise optimize by calling
-                         * the normal Yee update kernel. We do not do that, as this
-                         * would be fragile with respect to future separation of PML
-                         * into a plugin.
-                         */
-                        PMACC_KERNEL(Kernel{})
-                        (mapper.getGridDim(), numWorkers)(
-                            mapper,
-                            getLocalParameters(mapper, currentStep),
-                            CurlE(),
-                            fieldE->getDeviceDataBox(),
-                            updatePsiB,
-                            fieldB->getDeviceDataBox(),
-                            psiB->getDeviceOuterLayerBox());
+                        Environment<>::task(
+                            [cellDescription = this->cellDescription,
+                             updatePsiB,
+                             currentStep](auto fieldEDeviceData, auto fieldBDeviceData, auto psiBDevice) {
+                                constexpr auto numWorkers = getNumWorkers();
+                                using Kernel = KernelUpdateBHalf<numWorkers, BlockDescription<CurlE>>;
+                                AreaMapper<T_Area> mapper{cellDescription};
+                                /* Note: here it is possible to first check if PML is enabled
+                                 * in the local domain at all, and otherwise optimize by calling
+                                 * the normal Yee update kernel. We do not do that, as this
+                                 * would be fragile with respect to future separation of PML
+                                 * into a plugin.
+                                 */
+                                PMACC_KERNEL(Kernel{})
+                                (mapper.getGridDim(), numWorkers)(
+                                    mapper,
+                                    getLocalParameters(mapper, currentStep),
+                                    CurlE(),
+                                    fieldEDeviceData.getDataBox(),
+                                    updatePsiB,
+                                    fieldBDeviceData->getDataBox(),
+                                    psiBDevice.getOuterLayerBox());
+                            },
+                            TaskProperties::Builder()
+                                .label("fields::absorber::pml::updateBHalf()")
+                                .scheduling_tags({SCHED_CUPLA}),
+
+                            fieldE->device().data(),
+                            fieldB->device().data(),
+                            psiB->device());
                     }
 
                     void initParameters()

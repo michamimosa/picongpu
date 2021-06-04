@@ -1,5 +1,5 @@
-/* Copyright 2014-2021 Felix Schmitt, Conrad Schumann,
- *                     Alexander Grund, Axel Huebl
+/* Copyright 2014-2020 Felix Schmitt, Conrad Schumann,
+ *                     Alexander Grund, Axel Huebl, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -27,15 +27,15 @@
 #include "pmacc/communication/manager_common.hpp"
 #include "pmacc/dataManagement/DataConnector.hpp"
 #include "pmacc/device/MemoryInfo.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/eventSystem/events/EventPool.hpp"
-#include "pmacc/eventSystem/streams/StreamController.hpp"
-#include "pmacc/mappings/simulation/Filesystem.hpp"
 #include "pmacc/mappings/simulation/GridController.hpp"
+#include "pmacc/mappings/simulation/Filesystem.hpp"
 #include "pmacc/mappings/simulation/SubGrid.hpp"
-#include "pmacc/particles/tasks/ParticleFactory.hpp"
+#include "pmacc/mappings/simulation/EnvironmentController.hpp"
+
 #include "pmacc/pluginSystem/PluginConnector.hpp"
 #include "pmacc/simulationControl/SimulationDescription.hpp"
+
+#include <pmacc/type/Scheduler.hpp>
 
 #include <mpi.h>
 
@@ -153,43 +153,78 @@ namespace pmacc
             {
             }
 
+            auto& ResourceManager_ptr()
+            {
+                static RedGrapesManager* mgr_ptr;
+                return mgr_ptr;
+            }
+
+            auto& ResourceManager()
+            {
+                return *ResourceManager_ptr();
+            }
+
+            auto& mpi_scheduler()
+            {
+                static redGrapes::helpers::mpi::MPIScheduler<RedGrapesManager> mpi_sched;
+                return mpi_sched;
+            }
+
+            auto mpi_request_pool()
+            {
+                return mpi_scheduler().request_pool;
+            }
+
             /** cleanup the environment */
             void finalize()
             {
+                delete ResourceManager_ptr();
                 EnvironmentContext::getInstance().finalize();
             }
 
-            /** get the singleton StreamController
-             *
-             * @return instance of StreamController
-             */
-            pmacc::StreamController& StreamController()
+            void initScheduler(int n_threads, int n_cupla_streams)
             {
-                PMACC_ASSERT_MSG(
-                    EnvironmentContext::getInstance().isDeviceSelected(),
-                    "Environment< DIM >::initDevices() must be called before this method!");
-                return StreamController::getInstance();
+                ResourceManager_ptr() = new RedGrapesManager();
+                auto& mgr = ResourceManager();
+
+                auto default_scheduler = redGrapes::scheduler::make_default_scheduler(mgr, n_threads);
+
+                auto cupla_scheduler = redGrapes::helpers::cupla::make_cupla_scheduler(
+                    mgr,
+                    [](auto t) { return t.get().required_scheduler_tags.test(SCHED_CUPLA); },
+                    n_cupla_streams);
+
+                mpi_scheduler() = redGrapes::helpers::mpi::make_mpi_scheduler(
+                    mgr,
+                    TaskProperties::Builder().scheduling_tags({SCHED_MPI}));
+
+                redGrapes::thread::idle = [this, cupla_scheduler] {
+                    mpi_scheduler().fifo->consume();
+                    mpi_scheduler().request_pool->poll();
+                    cupla_scheduler->poll();
+                };
+
+                mgr.set_scheduler(redGrapes::scheduler::make_tag_match_scheduler(mgr)
+                                      .add({}, default_scheduler)
+                                      .add({SCHED_CUPLA}, cupla_scheduler)
+                                      .add({SCHED_MPI}, mpi_scheduler().fifo));
             }
 
-            /** get the singleton Manager
-             *
-             * @return instance of Manager
-             */
-            pmacc::Manager& Manager()
+            template<typename... Args>
+            auto task(Args&&... args)
             {
-                return Manager::getInstance();
+                return ResourceManager().emplace_task(std::forward<Args>(args)...);
             }
 
-            /** get the singleton TransactionManager
-             *
-             * @return instance of TransactionManager
-             */
-            pmacc::TransactionManager& TransactionManager() const
+            template<typename... Args>
+            auto mpi_task(Args&&... args)
             {
-                PMACC_ASSERT_MSG(
-                    EnvironmentContext::getInstance().isDeviceSelected(),
-                    "Environment< DIM >::initDevices() must be called before this method!");
-                return TransactionManager::getInstance();
+                return mpi_scheduler().emplace_mpi_task(std::forward<Args>(args)...);
+            }
+
+            void waitForAllTasks()
+            {
+                ResourceManager().wait_for_all();
             }
 
             /** get the singleton EnvironmentController
@@ -202,40 +237,6 @@ namespace pmacc
                     EnvironmentContext::getInstance().isMpiInitialized(),
                     "Environment< DIM >::initDevices() must be called before this method!");
                 return EnvironmentController::getInstance();
-            }
-
-            /** get the singleton Factory
-             *
-             * @return instance of Factory
-             */
-            pmacc::Factory& Factory()
-            {
-                PMACC_ASSERT_MSG(
-                    EnvironmentContext::getInstance().isMpiInitialized()
-                        && EnvironmentContext::getInstance().isDeviceSelected(),
-                    "Environment< DIM >::initDevices() must be called before this method!");
-                return Factory::getInstance();
-            }
-
-            /** get the singleton EventPool
-             *
-             * @return instance of EventPool
-             */
-            pmacc::EventPool& EventPool()
-            {
-                PMACC_ASSERT_MSG(
-                    EnvironmentContext::getInstance().isDeviceSelected(),
-                    "Environment< DIM >::initDevices() must be called before this method!");
-                return EventPool::getInstance();
-            }
-
-            /** get the singleton ParticleFactory
-             *
-             * @return instance of ParticleFactory
-             */
-            pmacc::ParticleFactory& ParticleFactory()
-            {
-                return ParticleFactory::getInstance();
             }
 
             /** get the singleton DataConnector
@@ -267,6 +268,7 @@ namespace pmacc
                     "Environment< DIM >::initDevices() must be called before this method!");
                 return device::MemoryInfo::getInstance();
             }
+
 
             /** get the singleton SimulationDescription
              *
@@ -338,6 +340,20 @@ namespace pmacc
             return instance;
         }
 
+        template<typename... Args>
+        static auto task(Args&&... args)
+        {
+            return get().ResourceManager().emplace_task(std::forward<Args>(args)...);
+        }
+
+        template<typename Functor, typename... Args>
+        static auto fun_task(Functor f, Args&&... args)
+        {
+            auto propBuilder = TaskProperties::Builder();
+            f.buildTaskProperties(propBuilder);
+            return task(f, propBuilder, std::forward<Args>(args)...);
+        }
+
         /** create and initialize the environment of PMacc
          *
          * Usage of MPI or device(accelerator) function calls before this method
@@ -361,11 +377,7 @@ namespace pmacc
 
             detail::EnvironmentContext::getInstance().setDevice(static_cast<int>(GridController().getHostRank()));
 
-            StreamController().activate();
-
             MemoryInfo();
-
-            TransactionManager();
 
             SimulationDescription();
         }
@@ -423,7 +435,6 @@ namespace pmacc
         {
             if(m_isMpiInitialized)
             {
-                pmacc::Environment<>::get().Manager().waitForAllTasks();
                 // Required by scorep for flushing the buffers
                 cuplaDeviceSynchronize();
                 m_isMpiInitialized = false;
@@ -550,38 +561,3 @@ namespace pmacc
     } // namespace detail
 } // namespace pmacc
 
-/* No namespace for macro defines */
-
-/** start a dependency chain */
-#define __startTransaction(...) (pmacc::Environment<>::get().TransactionManager().startTransaction(__VA_ARGS__))
-
-/** end a opened dependency chain */
-#define __endTransaction() (pmacc::Environment<>::get().TransactionManager().endTransaction())
-
-/** mark the begin of an operation
- *
- * depended on the opType this method is blocking
- *
- * @param opType place were the operation is running
- *               possible places are: `ITask::TASK_DEVICE`, `ITask::TASK_MPI`, `ITask::TASK_HOST`
- */
-#define __startOperation(opType) (pmacc::Environment<>::get().TransactionManager().startOperation(opType))
-
-/** get a `EventStream` that must be used for cuda calls
- *
- * depended on the opType this method is blocking
- *
- * @param opType place were the operation is running
- *               possible places are: `ITask::TASK_DEVICE`, `ITask::TASK_MPI`, `ITask::TASK_HOST`
- */
-#define __getEventStream(opType) (pmacc::Environment<>::get().TransactionManager().getEventStream(opType))
-
-/** get the event of the current transaction */
-#define __getTransactionEvent() (pmacc::Environment<>::get().TransactionManager().getTransactionEvent())
-
-/** set a event to the current transaction */
-#define __setTransactionEvent(event) (pmacc::Environment<>::get().TransactionManager().setTransactionEvent((event)))
-
-#include "pmacc/eventSystem/EventSystem.tpp"
-#include "pmacc/eventSystem/events/CudaEvent.hpp"
-#include "pmacc/particles/tasks/ParticleFactory.tpp"

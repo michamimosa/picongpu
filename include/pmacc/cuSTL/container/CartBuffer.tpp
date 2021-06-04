@@ -24,7 +24,8 @@
 
 #include "pmacc/Environment.hpp"
 #include "pmacc/cuSTL/container/allocator/tag.hpp"
-#include "pmacc/eventSystem/EventSystem.hpp"
+
+#include "pmacc/Environment.hpp"
 
 #include <exception>
 #include <iostream>
@@ -90,23 +91,6 @@ namespace pmacc
             {
             }
 
-            template<>
-            HDINLINE void notifyEventSystem<allocator::tag::device>()
-            {
-#ifndef __CUDA_ARCH__
-                using namespace pmacc;
-                __startOperation(ITask::TASK_DEVICE);
-#endif
-            }
-
-            template<>
-            HDINLINE void notifyEventSystem<allocator::tag::host>()
-            {
-#ifndef __CUDA_ARCH__
-                using namespace pmacc;
-                __startOperation(ITask::TASK_HOST);
-#endif
-            }
         } // namespace detail
 
         template<typename Type, int T_dim, typename Allocator, typename Copier, typename Assigner>

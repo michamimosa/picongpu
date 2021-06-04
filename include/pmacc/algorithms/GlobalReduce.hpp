@@ -72,8 +72,22 @@ namespace pmacc
             }
 
         private:
+
+            friend class redGrapes::trait::BuildProperties<GlobalReduce>;
             ::pmacc::device::Reduce reduce;
+
             ::pmacc::mpi::MPIReduce mpi_reduce;
         };
     } // namespace algorithms
 } // namespace pmacc
+
+template<>
+struct redGrapes::trait::BuildProperties<pmacc::algorithms::GlobalReduce>
+{
+    template<typename Builder>
+    static void build(Builder& builder, pmacc::algorithms::GlobalReduce const& reduce)
+    {
+        builder.add(std::ref(reduce.reduce));
+    }
+};
+

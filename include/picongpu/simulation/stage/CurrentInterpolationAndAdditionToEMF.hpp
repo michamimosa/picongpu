@@ -93,11 +93,13 @@ namespace picongpu
                         typename pmacc::particles::traits::FilterByFlag<VectorAllSpecies, current<>>::type;
                     auto const numSpeciesWithCurrentSolver = bmpl::size<SpeciesWithCurrentSolver>::type::value;
                     auto const existsCurrent = numSpeciesWithCurrentSolver > 0;
+
                     if(existsCurrent)
                     {
                         DataConnector& dc = Environment<>::get().DataConnector();
                         auto& fieldJ = *dc.get<FieldJ>(FieldJ::getName(), true);
-                        auto eRecvCurrent = fieldJ.asyncCommunication(__getTransactionEvent());
+                        fieldJ.communication();
+
                         auto& interpolation = fields::currentInterpolation::CurrentInterpolation::get();
                         auto const currentRecvLower = interpolation.getLowerMargin();
                         auto const currentRecvUpper = interpolation.getUpperMargin();
@@ -109,7 +111,6 @@ namespace picongpu
                            && currentRecvUpper == DataSpace<simDim>::create(0))
                         {
                             addCurrentToEMF<type::CORE>(fieldJ);
-                            __setTransactionEvent(eRecvCurrent);
                             addCurrentToEMF<type::BORDER>(fieldJ);
                         }
                         else
@@ -117,11 +118,10 @@ namespace picongpu
                             /* in case we perform a current interpolation/filter, we need
                              * to access the BORDER area from the CORE (and the GUARD area
                              * from the BORDER)
-                             * `fieldJ->asyncCommunication` first adds the neighbors' values
+                             * `fieldJ->communication` first adds the neighbors' values
                              * to BORDER (send) and then updates the GUARD (receive)
                              * \todo split the last `receive` part in a separate method to
                              *       allow already a computation of CORE */
-                            __setTransactionEvent(eRecvCurrent);
                             addCurrentToEMF<type::CORE + type::BORDER>(fieldJ);
                         }
                     }

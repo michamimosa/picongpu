@@ -20,6 +20,7 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+#include <picongpu/algorithms/KinEnergy.hpp>
 
 // pmacc
 #include <pmacc/dataManagement/ISimulationData.hpp>
@@ -28,7 +29,6 @@
 #include <pmacc/memory/Array.hpp>
 #include <pmacc/memory/buffers/GridBuffer.hpp>
 #include <pmacc/memory/shared/Allocate.hpp>
-
 
 namespace picongpu
 {

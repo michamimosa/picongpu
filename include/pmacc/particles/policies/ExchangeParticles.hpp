@@ -1,4 +1,4 @@
-/* Copyright 2015-2021 Alexander Grund
+/* Copyright 2015-2020 Alexander Grund, Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -37,15 +37,44 @@ namespace pmacc
             struct ExchangeParticles
             {
                 template<class T_Particles>
-                void handleOutgoing(T_Particles& par, int32_t direction) const
+
+                void handleOutgoing(T_Particles& par, uint32_t direction) const
                 {
-                    Environment<>::get().ParticleFactory().createTaskSendParticlesExchange(par, direction);
+                    size_t size, max_size;
+                    do
+                    {
+                        par.copyGuardToExchange(direction);
+                        par.getParticlesBuffer().send(direction);
+
+                        size = par.getParticlesBuffer()
+                                   .getSendExchangeStack(direction)
+                                   .host()
+                                   .getParticlesCurrentSize();
+
+                        max_size = par.getParticlesBuffer().getSendExchangeStack(direction).getMaxParticlesCount();
+
+                        PMACC_ASSERT(size <= max_size);
+                    } while(size == max_size);
                 }
 
                 template<class T_Particles>
-                void handleIncoming(T_Particles& par, int32_t direction) const
+                void handleIncoming(T_Particles& par, uint32_t direction) const
                 {
-                    Environment<>::get().ParticleFactory().createTaskReceiveParticlesExchange(par, direction);
+                    size_t size, max_size;
+                    do
+                    {
+                        par.getParticlesBuffer().recv(direction);
+                        par.insertParticles(direction);
+
+                        size = par.getParticlesBuffer()
+                                   .getReceiveExchangeStack(direction)
+                                   .host()
+                                   .getParticlesCurrentSize();
+
+                        max_size = par.getParticlesBuffer().getReceiveExchangeStack(direction).getMaxParticlesCount();
+
+                        PMACC_ASSERT(size <= max_size);
+                    } while(size == max_size);
                 }
             };
 

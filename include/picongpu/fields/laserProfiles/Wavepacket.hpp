@@ -170,7 +170,7 @@ namespace picongpu
                 {
                     // get data
                     DataConnector& dc = Environment<>::get().DataConnector();
-                    dataBoxE = dc.get<FieldE>(FieldE::getName(), true)->getDeviceDataBox();
+                    dataBoxE = dc.get<FieldE>(FieldE::getName(), true)->device().data().getDataBox();
 
                     // get meta data for offsets
                     SubGrid<simDim> const& subGrid = Environment<simDim>::get().SubGrid();

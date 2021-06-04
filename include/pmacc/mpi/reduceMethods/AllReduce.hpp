@@ -49,8 +49,9 @@ namespace pmacc
                     MPI_Op op,
                     MPI_Comm comm) const
                 {
-                    // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
-                    __getTransactionEvent().waitForFinished();
+                    // avoid deadlock between not finished pmacc tasks and mpi blocking
+                    // fixme: anything todo in redGrapes?
+
                     MPI_CHECK(MPI_Allreduce((void*) src, (void*) dest, count, type, op, comm));
                 }
             };

@@ -117,9 +117,9 @@ namespace picongpu
                     auto fieldB = dc.get<FieldB>(FieldB::getName(), true);
                     auto fieldJ = dc.get<FieldJ>(FieldJ::getName(), true);
                     /* initialize device-side E-(B-)field and current density databoxes */
-                    eBox = fieldE->getDeviceDataBox();
-                    bBox = fieldB->getDeviceDataBox();
-                    jBox = fieldJ->getDeviceDataBox();
+                    eBox = fieldE->device().data().getDataBox();
+                    bBox = fieldB->device().data().getDataBox();
+                    jBox = fieldJ->device().data().getDataBox();
                 }
 
                 /** cache fields used by this functor

@@ -125,24 +125,35 @@ namespace picongpu
             void operator()(T_Field field, T_OpFunctor opFunctor, T_ValFunctor valFunctor, uint32_t const currentStep)
                 const
             {
-                SubGrid<simDim> const& subGrid = Environment<simDim>::get().SubGrid();
-                // offset to the local domain relative to the origin of the global domain
-                DataSpace<simDim> totalDomainOffset(subGrid.getLocalDomain().offset);
-                uint32_t const numSlides = MovingWindow::getInstance().getSlideCounter(currentStep);
+                Environment<>::task(
+                    [opFunctor, valFunctor, currentStep, cellDescription = m_cellDescription](auto fieldDeviceData) {
+                        SubGrid<simDim> const& subGrid = Environment<simDim>::get().SubGrid();
 
-                /** Assumption: all GPUs have the same number of cells in
-                 *              y direction for sliding window
-                 */
-                totalDomainOffset.y() += numSlides * subGrid.getLocalDomain().size.y();
+                        // offset to the local domain relative to the origin of the global domain
+                        DataSpace<simDim> totalDomainOffset(subGrid.getLocalDomain().offset);
+                        uint32_t const numSlides = MovingWindow::getInstance().getSlideCounter(currentStep);
 
-                constexpr uint32_t numWorkers
-                    = pmacc::traits::GetNumWorkers<pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
+                        /** Assumption: all GPUs have the same number of cells in
+                         *              y direction for sliding window
+                         */
+                        totalDomainOffset.y() += numSlides * subGrid.getLocalDomain().size.y();
 
-                AreaMapping<T_Area, MappingDesc> mapper(m_cellDescription);
+                        constexpr uint32_t numWorkers
+                            = pmacc::traits::GetNumWorkers<pmacc::math::CT::volume<SuperCellSize>::type::value>::value;
 
-                PMACC_KERNEL(KernelCellwiseOperation<numWorkers>{})
-                (mapper.getGridDim(),
-                 numWorkers)(field->getDeviceDataBox(), opFunctor, valFunctor, totalDomainOffset, currentStep, mapper);
+                        AreaMapping<T_Area, MappingDesc> mapper(cellDescription);
+
+                        PMACC_KERNEL(KernelCellwiseOperation<numWorkers>{})
+                        (mapper.getGridDim(), numWorkers)(
+                            fieldDeviceData.getDataBox(),
+                            opFunctor,
+                            valFunctor,
+                            totalDomainOffset,
+                            currentStep,
+                            mapper);
+                    },
+                    TaskProperties::Builder().label("KernelCellwiseOperation").scheduling_tags({SCHED_CUPLA}),
+                    field->device().data());
             }
         };
 

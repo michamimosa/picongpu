@@ -1,5 +1,4 @@
-/* Copyright 2013-2021 Heiko Burau, Rene Widera, Benjamin Worpitz
- *                     Alexander Grund
+/* Copyright 2020-2021 Michael Sippel
  *
  * This file is part of PMacc.
  *
@@ -22,139 +21,64 @@
 
 #pragma once
 
-
-#include "pmacc/cuSTL/container/DeviceBuffer.hpp"
-#include "pmacc/cuSTL/container/view/View.hpp"
-#include "pmacc/math/vector/Int.hpp"
-#include "pmacc/math/vector/Size_t.hpp"
-#include "pmacc/memory/buffers/Buffer.hpp"
-#include "pmacc/types.hpp"
-
-#include <stdexcept>
+#include <pmacc/dimensions/DataSpace.hpp>
+#include <pmacc/memory/buffers/Buffer.hpp>
+#include <pmacc/memory/buffers/Reset.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Data.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Size.hpp>
+#include <pmacc/memory/buffers/deviceBuffer/Resource.hpp>
 
 namespace pmacc
 {
-    class EventTask;
+namespace mem
+{
 
-    template<class TYPE, unsigned DIM>
-    class HostBuffer;
-
-    template<class TYPE, unsigned DIM>
-    class Buffer;
-
-    /**
-     * Interface for a DIM-dimensional Buffer of type TYPE on the device.
+template <
+    typename T_Item,
+    std::size_t T_dim,
+    typename T_DataAccessPolicy = rg::access::IOAccess
+>
+struct DeviceBuffer
+    : device_buffer::WriteGuard<
+        T_Item,
+        T_dim,
+        T_DataAccessPolicy
+    >
+{
+    /*! create a new device buffer
      *
-     * @tparam TYPE datatype of the buffer
-     * @tparam DIM dimension of the buffer
+     * @param capacity extent for each dimension (in elements)
+     * @param size_on_device whether a copy of the size is stored on device
+     * @param use_vector_as_base use a vector as base of the array (is not lined pitched)
+     *                           if true size_on_device is atomaticly set to false
      */
-    template<class TYPE, unsigned DIM>
-    class DeviceBuffer : public Buffer<TYPE, DIM>
+    DeviceBuffer(
+        DataSpace< T_dim > capacity,
+        bool size_on_device = false,
+        bool use_vector_as_base = false
+    ) :
+        device_buffer::WriteGuard<
+            T_Item,
+            T_dim,
+            T_DataAccessPolicy
+        >(
+            device_buffer::DeviceBufferResource<
+                T_Item,
+                T_dim,
+                T_DataAccessPolicy
+            >(
+                capacity,
+                use_vector_as_base
+            ).make_guard( size_on_device )
+        )
     {
-    protected:
-        /** constructor
-         *
-         * @param size extent for each dimension (in elements)
-         *             if the buffer is a view to an existing buffer the size
-         *             can be less than `physicalMemorySize`
-         * @param physicalMemorySize size of the physical memory (in elements)
-         */
-        DeviceBuffer(DataSpace<DIM> size, DataSpace<DIM> physicalMemorySize)
-            : Buffer<TYPE, DIM>(size, physicalMemorySize)
-        {
-        }
+        buffer::reset( *this, false );
+    }
+};
 
-    public:
-        using Buffer<TYPE, DIM>::setCurrentSize; //!\todo :this function was hidden, I don't know why.
 
-        /**
-         * Destructor.
-         */
-        virtual ~DeviceBuffer(){};
 
-        HINLINE
-        container::CartBuffer<
-            TYPE,
-            DIM,
-            allocator::DeviceMemAllocator<TYPE, DIM>,
-            copier::D2DCopier<DIM>,
-            assigner::DeviceMemAssigner<>>
-        cartBuffer() const
-        {
-            cuplaPitchedPtr cuplaData = this->getCudaPitched();
-            math::Size_t<DIM - 1> pitch;
-            if(DIM >= 2)
-                pitch[0] = cuplaData.pitch;
-            if(DIM == 3)
-                pitch[1] = pitch[0] * this->getPhysicalMemorySize()[1];
-            container::DeviceBuffer<TYPE, DIM> result((TYPE*) cuplaData.ptr, this->getDataSpace(), false, pitch);
-            return result;
-        }
-
-        /**
-         * Returns offset of elements in every dimension.
-         *
-         * @return count of elements
-         */
-        virtual DataSpace<DIM> getOffset() const = 0;
-
-        /**
-         * Show if current size is stored on device.
-         *
-         * @return return false if no size is stored on device, true otherwise
-         */
-        virtual bool hasCurrentSizeOnDevice() const = 0;
-
-        /**
-         * Returns pointer to current size on device.
-         *
-         * @return pointer which point to device memory of current size
-         */
-        virtual size_t* getCurrentSizeOnDevicePointer() = 0;
-
-        /** Returns host pointer of current size storage
-         *
-         * @return pointer to stored value on host side
-         */
-        virtual size_t* getCurrentSizeHostSidePointer() = 0;
-
-        /**
-         * Sets current size of any dimension.
-         *
-         * If stream is 0, this function is blocking (we use a kernel to set size).
-         * Keep in mind: on Fermi-architecture, kernels in different streams may run at the same time
-         * (only used if size is on device).
-         *
-         * @param size count of elements per dimension
-         */
-        virtual void setCurrentSize(const size_t size) = 0;
-
-        /**
-         * Returns the internal pitched cupla pointer.
-         *
-         * @return internal pitched cupla pointer
-         */
-        virtual const cuplaPitchedPtr getCudaPitched() const = 0;
-
-        /** get line pitch of memory in byte
-         *
-         * @return size of one line in memory
-         */
-        virtual size_t getPitch() const = 0;
-
-        /**
-         * Copies data from the given HostBuffer to this DeviceBuffer.
-         *
-         * @param other the HostBuffer to copy from
-         */
-        virtual void copyFrom(HostBuffer<TYPE, DIM>& other) = 0;
-
-        /**
-         * Copies data from the given DeviceBuffer to this DeviceBuffer.
-         *
-         * @param other the DeviceBuffer to copy from
-         */
-        virtual void copyFrom(DeviceBuffer<TYPE, DIM>& other) = 0;
-    };
+} // namespace mem
 
 } // namespace pmacc
+

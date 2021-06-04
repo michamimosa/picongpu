@@ -30,7 +30,8 @@
 #include <pmacc/mpi/MPIReduce.hpp>
 #include <pmacc/mpi/reduceMethods/AllReduce.hpp>
 #include <pmacc/traits/GetNumWorkers.hpp>
-
+#include <pmacc/memory/buffers/copy/HostToDevice.hpp>
+#include <pmacc/memory/buffers/copy/DeviceToHost.hpp>
 
 namespace picongpu
 {
@@ -53,25 +54,34 @@ namespace picongpu
                 DataConnector& dc = Environment<>::get().DataConnector();
                 auto& electrons = *(dc.get<T_ElectronSpecies>(Frame::getName(), true));
 
-                pmacc::AreaMapping<CORE + BORDER, MappingDesc> mapper(cellDescription);
-                constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
-                    pmacc::math::CT::volume<MappingDesc::SuperCellSize>::type::value>::value;
-
                 auto hostDeviceBuffer = pmacc::HostDeviceBuffer<Estimate, 1>{1u};
-                auto hostBox = hostDeviceBuffer.getHostBuffer().getDataBox();
-                hostDeviceBuffer.hostToDevice();
-                auto kernel = DebyeLengthEstimateKernel<numWorkers>{};
-                PMACC_KERNEL(kernel)
-                (mapper.getGridDim(), numWorkers)(
-                    electrons.getDeviceParticlesBox(),
-                    mapper,
-                    minMacroparticlesPerSupercell,
-                    hostDeviceBuffer.getDeviceBuffer().getDataBox());
-                hostDeviceBuffer.deviceToHost();
 
-                // Copy is asynchronous, need to wait for it to finish
-                __getTransactionEvent().waitForFinished();
-                return hostBox(0);
+                pmacc::mem::buffer::copy( hostDeviceBuffer.device().write(), hostDeviceBuffer.host().read() );
+
+                Environment<>::task(
+                    [cellDescription, minMacroparticlesPerSupercell](auto hostData, auto electronsDevice) {
+                        pmacc::AreaMapping<CORE + BORDER, MappingDesc> mapper(cellDescription);
+                        constexpr uint32_t numWorkers = pmacc::traits::GetNumWorkers<
+                            pmacc::math::CT::volume<MappingDesc::SuperCellSize>::type::value>::value;
+
+                        auto kernel = DebyeLengthEstimateKernel<numWorkers>{};
+                        PMACC_KERNEL(kernel)
+                        (mapper.getGridDim(), numWorkers)(
+                            electronsDevice.getParticlesBox(),
+                            mapper,
+                            minMacroparticlesPerSupercell,
+                            hostData.getDataBox());
+                    },
+                    TaskProperties::Builder().label("DebyeLengthEstimateKernel").scheduling_tags({SCHED_CUPLA}),
+                    hostDeviceBuffer.host().data(),
+                    electrons.getParticlesBuffer().device());
+
+                pmacc::mem::buffer::copy( hostDeviceBuffer.host().write(), hostDeviceBuffer.device().read() );
+
+                return Environment<>::task(
+                           [](auto hostData) { return hostData.getDataBox()(0); },
+                           hostDeviceBuffer.host().data())
+                    .get();
             }
 
             /** Estimate Debye length for the given electron species in the global domain
